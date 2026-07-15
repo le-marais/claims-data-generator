@@ -1,0 +1,42 @@
+# Personal motor insurance preset.
+# Values are calibrated so that generated development triangles fall within
+# the bands observed across the Schedule P private passenger auto reference
+# data (data/reference/ppauto_pos98-07).
+name: motor-personal
+book:
+  growth_factor: 1.03
+  size_volatility: 0.06
+  spread: 0.4
+  sum_insured_median: 20000
+  sum_insured_inflation: 1.03
+  excess_choices:
+    - {value: 0, weight: 0.10}
+    - {value: 100, weight: 0.20}
+    - {value: 300, weight: 0.30}
+    - {value: 500, weight: 0.30}
+    - {value: 1000, weight: 0.10}
+  premium_rate_factor: 0.035
+claims:
+  base_frequency: 0.12
+  report_lag_median: 2
+  report_lag_sigma: 1.2
+  severity:
+    third_party_weight: 0.15
+    own_damage_median_fraction: 0.12
+    own_damage_sigma: 1.0
+    third_party_scale: 4000
+    third_party_alpha: 2.2
+  close_lag:
+    shape: 1.5
+    mean_days: 60
+    size_threshold: 25000
+    size_multiplier: 5
+    risk_loading: 0.3
+runoff:
+  case_adequacy_mean: 1.0
+  case_adequacy_sigma: 0.35
+  payments_per_year: 2.5
+  settlement_share: 0.4
+  concentration: 1.0
+  revisions_per_year: 4
+  revision_sigma: 0.3
