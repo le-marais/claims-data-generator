@@ -21,16 +21,16 @@ claims:
   report_lag_median: 2
   report_lag_sigma: 1.2
   severity:
-    third_party_weight: 0.15
+    third_party_weight: 0.20
     own_damage_median_fraction: 0.12
     own_damage_sigma: 1.0
     third_party_scale: 4000
     third_party_alpha: 2.2
   close_lag:
-    shape: 1.5
-    mean_days: 60
-    size_threshold: 25000
-    size_multiplier: 5
+    shape: 1.2
+    mean_days: 120
+    size_threshold: 20000
+    size_multiplier: 6
     risk_loading: 0.3
 runoff:
   case_adequacy_mean: 1.0

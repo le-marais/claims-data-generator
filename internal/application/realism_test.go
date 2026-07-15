@@ -8,6 +8,28 @@ import (
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
 )
 
+// TestDefaultPresetIsRealistic is the MVP realism gate: data generated with
+// the shipped motor-personal preset must land inside the bands observed
+// across the Schedule P reference companies.
+func TestDefaultPresetIsRealistic(t *testing.T) {
+	refs, err := schedulep.LoadDir("../../data/reference/ppauto_pos98-07")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := request(t)
+	req.StartYear = 1998
+	req.Years = 10
+	req.InitialBookSize = 10000
+	ds, err := application.GenerateDataset(random.NewSource(42), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := application.EvaluateRealism(ds, refs, req.StartYear, req.Years)
+	if !report.Pass() {
+		t.Errorf("generated data outside Schedule P bands:\n%s", report)
+	}
+}
+
 func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 	refs, err := schedulep.LoadDir("../../data/reference/ppauto_pos98-07")
 	if err != nil {
