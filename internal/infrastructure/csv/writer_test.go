@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/le-marais/claimsgen/internal/application"
-	csvout "github.com/le-marais/claimsgen/internal/infrastructure/csv"
 	"github.com/le-marais/claimsgen/internal/infrastructure/config"
+	csvout "github.com/le-marais/claimsgen/internal/infrastructure/csv"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 )
 
