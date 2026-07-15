@@ -65,7 +65,7 @@ Three CSVs with a policy -> claims -> transactions key chain:
 - **claims.csv**: `claim_id, policy_id, occurrence_date, report_date, close_date, initial_estimate`
 - **transactions.csv**: `transaction_id, claim_id, date, type (PAYMENT | ESTIMATE), amount`
 
-Transaction convention: `ESTIMATE` rows carry the signed movement in the outstanding case estimate; `PAYMENT` rows carry the amount paid (positive). A payment event writes a `PAYMENT` row plus a matching negative `ESTIMATE` row (money out reduces outstanding). A pure revision writes only an `ESTIMATE` row. Outstanding case = initial estimate plus cumulative `ESTIMATE` movements after report, and reaches exactly zero at the close date.
+Transaction convention: `ESTIMATE` rows carry the signed movement in the outstanding case estimate; `PAYMENT` rows carry the amount paid (positive). Each claim's first transaction is an `ESTIMATE` row equal to the initial estimate on the report date, so transactions.csv is self-contained: outstanding case at any time is the running sum of `ESTIMATE` amounts, reaching exactly zero at the close date. A payment event writes a `PAYMENT` row plus a matching negative `ESTIMATE` row (money out reduces outstanding). A pure revision writes only an `ESTIMATE` row. (Refined during implementation: the original wording kept the initial estimate out of the transactions file, which would have forced consumers to join claims.csv to reconstruct outstanding case.)
 
 There is no valuation date - all claims develop fully and run to closure, supporting out-of-sample analysis.
 
