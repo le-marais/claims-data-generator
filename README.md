@@ -27,6 +27,14 @@ claimsgen generate \
   --initial-book-size 20000   # policies written in the first year
 ```
 
+## Browser UI
+
+```
+./claimsgen ui
+```
+
+Serves a local web UI on `http://127.0.0.1:8080` (`--port` to change). It offers the same run flags as the CLI plus every line of business parameter (prefilled from the preset, editable), writes the same three CSVs on Generate, and shows the result: per-year summary stats, paid and incurred development triangles with age-to-age factors, severity and lag distributions, and the run's position inside the Schedule P realism bands. The Schedule P reference data is embedded in the binary.
+
 ## How the simulation works
 
 1. **Policy book** - each year's book size is the previous year's size times a growth factor times random noise, so the book trends upward but can shrink in individual years. Per policy: sum insured (lognormal with calendar-year inflation), a mean-1 risk factor loading claim frequency, an excess from a discrete choice set, and premium proportional to sum insured and risk.
