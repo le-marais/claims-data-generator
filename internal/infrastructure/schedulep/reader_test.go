@@ -2,9 +2,11 @@ package schedulep_test
 
 import (
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
+	refdata "github.com/le-marais/claimsgen/data/reference"
 )
 
 const refDir = "../../../data/reference/ppauto_pos98-07"
@@ -44,5 +46,22 @@ func TestLoadKnownCompany(t *testing.T) {
 	}
 	if len(ref.EarnedPremium) != 10 || ref.EarnedPremium[0] != 9347 {
 		t.Errorf("EarnedPremium = %v, want 10 entries starting 9347", ref.EarnedPremium)
+	}
+}
+
+func TestLoadFSEmbeddedMatchesDisk(t *testing.T) {
+	embedded, err := schedulep.LoadFS(refdata.Files, "ppauto_pos98-07")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(embedded) != 143 {
+		t.Fatalf("embedded reference sets = %d, want 143", len(embedded))
+	}
+	disk, err := schedulep.LoadDir("../../../data/reference/ppauto_pos98-07")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(embedded, disk) {
+		t.Fatal("embedded reference sets differ from disk")
 	}
 }

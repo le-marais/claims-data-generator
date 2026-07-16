@@ -6,7 +6,9 @@ package schedulep
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -58,15 +60,19 @@ func (p *premiumJSON) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// LoadFile reads one reference company file.
+// LoadFile reads one reference company file from disk.
 func LoadFile(path string) (triangle.ReferenceSet, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return triangle.ReferenceSet{}, fmt.Errorf("reading reference file: %w", err)
 	}
+	return parse(filepath.Base(path), b)
+}
+
+func parse(name string, b []byte) (triangle.ReferenceSet, error) {
 	var f fileJSON
 	if err := json.Unmarshal(b, &f); err != nil {
-		return triangle.ReferenceSet{}, fmt.Errorf("parsing %s: %w", filepath.Base(path), err)
+		return triangle.ReferenceSet{}, fmt.Errorf("parsing %s: %w", name, err)
 	}
 	ep := make([]float64, 0, len(f.EarnedPremium))
 	sort.Slice(f.EarnedPremium, func(i, j int) bool { return f.EarnedPremium[i].Year < f.EarnedPremium[j].Year })
@@ -74,33 +80,43 @@ func LoadFile(path string) (triangle.ReferenceSet, error) {
 		ep = append(ep, p.Amount)
 	}
 	return triangle.ReferenceSet{
-		Name:          strings.TrimSuffix(filepath.Base(path), ".json"),
+		Name:          strings.TrimSuffix(name, ".json"),
 		Paid:          toTriangle(f.Paid),
 		Incurred:      toTriangle(f.Incurred),
 		EarnedPremium: ep,
 	}, nil
 }
 
-// LoadDir reads every reference company file in a directory, sorted by
-// file name for determinism.
-func LoadDir(dir string) ([]triangle.ReferenceSet, error) {
-	paths, err := filepath.Glob(filepath.Join(dir, "*.json"))
+// LoadFS reads every reference company file in dir of fsys, sorted by file
+// name for determinism.
+func LoadFS(fsys fs.FS, dir string) ([]triangle.ReferenceSet, error) {
+	names, err := fs.Glob(fsys, path.Join(dir, "*.json"))
 	if err != nil {
 		return nil, err
 	}
-	if len(paths) == 0 {
+	if len(names) == 0 {
 		return nil, fmt.Errorf("no reference files found in %s", dir)
 	}
-	sort.Strings(paths)
-	refs := make([]triangle.ReferenceSet, 0, len(paths))
-	for _, p := range paths {
-		ref, err := LoadFile(p)
+	sort.Strings(names)
+	refs := make([]triangle.ReferenceSet, 0, len(names))
+	for _, n := range names {
+		b, err := fs.ReadFile(fsys, n)
+		if err != nil {
+			return nil, fmt.Errorf("reading reference file: %w", err)
+		}
+		ref, err := parse(path.Base(n), b)
 		if err != nil {
 			return nil, err
 		}
 		refs = append(refs, ref)
 	}
 	return refs, nil
+}
+
+// LoadDir reads every reference company file in a directory on disk, sorted
+// by file name for determinism.
+func LoadDir(dir string) ([]triangle.ReferenceSet, error) {
+	return LoadFS(os.DirFS(dir), ".")
 }
 
 func toTriangle(t triangleJSON) triangle.Triangle {
