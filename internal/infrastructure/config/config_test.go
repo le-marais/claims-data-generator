@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -112,5 +113,46 @@ func TestMotorPersonalPresetIsValid(t *testing.T) {
 	}
 	if l.Name != "motor-personal" {
 		t.Errorf("preset name = %q, want motor-personal", l.Name)
+	}
+}
+
+func TestPresets(t *testing.T) {
+	got := Presets()
+	want := []PresetInfo{{ID: "motor-personal", Name: "Motor personal"}}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Presets() = %+v, want %+v", got, want)
+	}
+}
+
+func TestPresetParamsRoundTrip(t *testing.T) {
+	params, err := PresetParams("motor-personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := MotorPersonal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := params.ToDomain(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("PresetParams().ToDomain() = %+v, want %+v", got, want)
+	}
+}
+
+func TestPresetKnown(t *testing.T) {
+	l, err := Preset("motor-personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l.Name != "motor-personal" {
+		t.Fatalf("Preset name = %q, want motor-personal", l.Name)
+	}
+}
+
+func TestPresetUnknown(t *testing.T) {
+	if _, err := Preset("marine-cargo"); err == nil {
+		t.Fatal("Preset(marine-cargo): want error, got nil")
+	}
+	if _, err := PresetParams("marine-cargo"); err == nil {
+		t.Fatal("PresetParams(marine-cargo): want error, got nil")
 	}
 }
