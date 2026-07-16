@@ -257,10 +257,209 @@ function attachTooltip(el, lines) {
   el.addEventListener("pointerleave", () => { tooltip.hidden = true; });
 }
 
-// Chart tabs - implemented in the charts change; stubs keep renderResults total.
-function renderTriangles(t) {}
-function renderDistributions(d) {}
-function renderRealism(r) {}
+// SVG helpers ---------------------------------------------------------------
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  return el;
+}
+
+// Bar with a 4px rounded data-end and a square baseline.
+function barPath(x, y, w, h, r) {
+  r = Math.min(r, w / 2, h);
+  return `M${x},${y + h} L${x},${y + r} Q${x},${y} ${x + r},${y}` +
+    ` L${x + w - r},${y} Q${x + w},${y} ${x + w},${y + r} L${x + w},${y + h} Z`;
+}
+
+const fmtCompact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const compact = (n) => (Math.abs(n) >= 1000 ? fmtCompact.format(n) : String(Math.round(n * 100) / 100));
+
+function chartCard(title) {
+  const card = document.createElement("figure");
+  card.className = "chart-card";
+  const caption = document.createElement("figcaption");
+  caption.textContent = title;
+  card.append(caption);
+  return card;
+}
+
+// Triangles tab ---------------------------------------------------------------
+
+// The full sequential blue ramp (reference palette, steps 100 to 700).
+const SEQ_RAMP = ["#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7",
+  "#3987e5", "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"];
+
+function renderTriangles(triangles) {
+  const panel = $("#tab-triangles");
+  panel.replaceChildren();
+  const toggle = document.createElement("div");
+  toggle.className = "toggle";
+  let table = triangleTable(triangles.paid);
+  for (const kind of ["paid", "incurred"]) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = kind === "paid" ? "Paid" : "Incurred";
+    if (kind === "paid") btn.classList.add("active");
+    btn.addEventListener("click", () => {
+      for (const b of toggle.children) b.classList.toggle("active", b === btn);
+      const next = triangleTable(triangles[kind]);
+      table.replaceWith(next);
+      table = next;
+    });
+    toggle.append(btn);
+  }
+  panel.append(toggle, table);
+}
+
+function triangleTable(tri) {
+  const wrap = document.createElement("div");
+  wrap.className = "triangle-wrap";
+  const table = document.createElement("table");
+  table.className = "data-table triangle";
+  const devs = Math.max(...tri.cells.map((row) => row.length));
+  const maxVal = Math.max(1, ...tri.cells.flat());
+  const head = table.createTHead().insertRow();
+  head.append(th("Origin"));
+  for (let d = 0; d < devs; d++) head.append(th(`Dev ${d + 1}`));
+  const body = table.createTBody();
+  tri.cells.forEach((row, i) => {
+    const tr = body.insertRow();
+    tr.append(th(String(tri.start_year + i)));
+    row.forEach((v, d) => {
+      const td = tr.insertCell();
+      td.textContent = compact(v);
+      const step = Math.min(SEQ_RAMP.length - 1, Math.max(0, Math.floor((v / maxVal) * SEQ_RAMP.length)));
+      td.style.background = SEQ_RAMP[step];
+      // Ink flips to white where the fixed ramp hex turns dark, independent of theme.
+      td.style.color = step >= 6 ? "#ffffff" : "#0b0b0b";
+      attachTooltip(td, [`$${fmtMoney.format(v)}`, `origin ${tri.start_year + i}, cumulative to dev year ${d + 1}`]);
+    });
+  });
+  // ATA footer: the factor under dev column d develops d to d+1.
+  const foot = table.createTFoot().insertRow();
+  foot.append(th("ATA"));
+  for (let d = 0; d < devs; d++) {
+    const td = foot.insertCell();
+    const f = tri.ata ? tri.ata[d] : null;
+    td.textContent = f == null ? "" : f.toFixed(3);
+  }
+  wrap.append(table);
+  return wrap;
+}
+
+// Distributions tab -----------------------------------------------------------
+
+function renderDistributions(d) {
+  $("#tab-distributions").replaceChildren(
+    histogramCard("Claim severity (ultimate paid, log-spaced bins)", d.severity, (v) => `$${compact(v)}`),
+    histogramCard("Report lag (days)", d.report_lag_days, compact),
+    histogramCard("Close lag (days)", d.close_lag_days, compact),
+  );
+}
+
+function histogramCard(title, hist, formatX) {
+  const card = chartCard(title);
+  const bins = hist.bins || [];
+  if (bins.length === 0) {
+    const note = document.createElement("div");
+    note.className = "empty-note";
+    note.textContent = "No data.";
+    card.append(note);
+    return card;
+  }
+  const W = 460, H = 200;
+  const pad = { top: 12, right: 8, bottom: 24, left: 44 };
+  const plotW = W - pad.left - pad.right, plotH = H - pad.top - pad.bottom;
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+  const maxCount = Math.max(1, ...bins.map((b) => b.count));
+  const ticks = 4;
+  for (let i = 0; i <= ticks; i++) {
+    const value = Math.round((maxCount / ticks) * i);
+    const y = pad.top + plotH - (value / maxCount) * plotH;
+    svg.append(svgEl("line", { x1: pad.left, x2: W - pad.right, y1: y, y2: y, class: "gridline" }));
+    const label = svgEl("text", { x: pad.left - 6, y: y + 3, class: "axis-label", "text-anchor": "end" });
+    label.textContent = compact(value);
+    svg.append(label);
+  }
+  const slot = plotW / bins.length;
+  const barW = Math.min(24, Math.max(1, slot - 2)); // ≤24px thick, 2px surface gap
+  bins.forEach((b, i) => {
+    const h = (b.count / maxCount) * plotH;
+    const x = pad.left + i * slot + (slot - barW) / 2;
+    const bar = svgEl("path", { d: barPath(x, pad.top + plotH - h, barW, Math.max(h, 0.5), 4), class: "bar" });
+    attachTooltip(bar, [`${fmtInt.format(b.count)} claims`, `${formatX(b.lo)} to ${formatX(b.hi)}`]);
+    svg.append(bar);
+  });
+  svg.append(svgEl("line", { x1: pad.left, x2: W - pad.right, y1: pad.top + plotH, y2: pad.top + plotH, class: "baseline" }));
+  const lo = svgEl("text", { x: pad.left, y: H - 6, class: "axis-label" });
+  lo.textContent = formatX(bins[0].lo);
+  const hi = svgEl("text", { x: W - pad.right, y: H - 6, class: "axis-label", "text-anchor": "end" });
+  hi.textContent = formatX(bins.at(-1).hi);
+  svg.append(lo, hi);
+  card.append(svg);
+  return card;
+}
+
+// Realism tab -----------------------------------------------------------------
+
+function renderRealism(r) {
+  const panel = $("#tab-realism");
+  panel.replaceChildren();
+  const banner = document.createElement("div");
+  banner.className = `banner ${r.pass ? "banner-pass" : "banner-fail"}`;
+  banner.textContent = r.pass
+    ? "✓ Pass - every metric inside the Schedule P reference bands"
+    : "✗ Fail - some metrics fall outside the Schedule P reference bands";
+  panel.append(
+    banner,
+    bandCard("Paid age-to-age factors vs reference band", r.paid_ata || []),
+    bandCard("Incurred age-to-age factors vs reference band", r.incurred_ata || []),
+    bandCard("Ultimate loss ratio vs reference band", [{ ...r.loss_ratio, label: "ULR" }]),
+  );
+}
+
+function bandCard(title, checks) {
+  const card = chartCard(title);
+  if (checks.length === 0) {
+    const note = document.createElement("div");
+    note.className = "empty-note";
+    note.textContent = "No checkable ages.";
+    card.append(note);
+    return card;
+  }
+  const W = 460, rowH = 26, padLeft = 64, padRight = 76;
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${checks.length * rowH + 8}`, role: "img" });
+  let lo = Infinity, hi = -Infinity;
+  for (const c of checks) {
+    lo = Math.min(lo, c.min, c.value);
+    hi = Math.max(hi, c.max, c.value);
+  }
+  const span = hi - lo || 1;
+  lo -= span * 0.08;
+  hi += span * 0.08;
+  const x = (v) => padLeft + ((v - lo) / (hi - lo)) * (W - padLeft - padRight);
+  checks.forEach((c, i) => {
+    const cy = i * rowH + rowH / 2 + 4;
+    const label = svgEl("text", { x: padLeft - 8, y: cy + 3, class: "axis-label", "text-anchor": "end" });
+    label.textContent = c.label ?? `${c.age + 1}→${c.age + 2}`;
+    const band = svgEl("rect", {
+      x: x(c.min), y: cy - 5, width: Math.max(x(c.max) - x(c.min), 1), height: 10, rx: 5, class: "band",
+    });
+    const dot = svgEl("circle", { cx: x(c.value), cy, r: 5, class: c.within ? "dot" : "dot dot-out" });
+    attachTooltip(dot, [c.value.toFixed(4), `band ${c.min.toFixed(4)} to ${c.max.toFixed(4)}`]);
+    const status = svgEl("text", {
+      x: W - padRight + 8, y: cy + 3,
+      class: `status-label ${c.within ? "status-ok" : "status-out"}`,
+    });
+    status.textContent = c.within ? "✓ within" : "✗ outside";
+    svg.append(label, band, dot, status);
+  });
+  card.append(svg);
+  return card;
+}
 
 function initTabs() {
   $("#tabs").addEventListener("click", (e) => {

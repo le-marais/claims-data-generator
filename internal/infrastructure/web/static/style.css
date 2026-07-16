@@ -141,3 +141,51 @@ summary { cursor: pointer; }
   z-index: 10;
 }
 .tooltip-value { font-weight: 600; }
+
+/* charts */
+.chart-card {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  margin: 0 0 16px;
+  max-width: 540px;
+}
+.chart-card figcaption { font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.chart-card svg { width: 100%; height: auto; display: block; }
+.gridline { stroke: var(--grid); stroke-width: 1; }
+.baseline { stroke: var(--baseline); stroke-width: 1; }
+.axis-label { fill: var(--muted); font-size: 10px; }
+.bar { fill: var(--series-1); }
+.bar:hover { opacity: 0.85; }
+.band { fill: var(--grid); }
+.dot { fill: var(--series-1); stroke: var(--surface-1); stroke-width: 2; }
+.dot-out { fill: var(--status-critical); }
+.status-label { font-size: 10px; }
+.status-ok { fill: var(--status-good); }
+.status-out { fill: var(--status-critical); }
+.empty-note { color: var(--muted); font-size: 13px; }
+
+/* realism banner: icon + text carry the state, color reinforces it */
+.banner { padding: 10px 12px; border-radius: 6px; font-weight: 600; margin-bottom: 16px; }
+.banner-pass {
+  background: color-mix(in srgb, var(--status-good) 12%, var(--surface-1));
+  border: 1px solid var(--status-good);
+}
+.banner-fail {
+  background: color-mix(in srgb, var(--status-critical) 12%, var(--surface-1));
+  border: 1px solid var(--status-critical);
+}
+
+/* triangle heatmap */
+.toggle { display: flex; gap: 4px; margin-bottom: 12px; }
+.toggle button {
+  padding: 4px 10px;
+  border: 1px solid var(--baseline);
+  background: var(--surface-1);
+  border-radius: 6px;
+  color: var(--text-secondary);
+}
+.toggle button.active { background: var(--series-1); color: #ffffff; border-color: var(--series-1); }
+.triangle-wrap { overflow-x: auto; }
+.triangle td { border-bottom: none; }
