@@ -3,10 +3,11 @@ package schedulep_test
 import (
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
-	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
 	refdata "github.com/le-marais/claimsgen/data/reference"
+	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
 )
 
 const refDir = "../../../data/reference/ppauto_pos98-07"
@@ -63,5 +64,16 @@ func TestLoadFSEmbeddedMatchesDisk(t *testing.T) {
 	}
 	if !reflect.DeepEqual(embedded, disk) {
 		t.Fatal("embedded reference sets differ from disk")
+	}
+}
+
+func TestLoadDirEmptyNamesDirectory(t *testing.T) {
+	dir := t.TempDir()
+	_, err := schedulep.LoadDir(dir)
+	if err == nil {
+		t.Fatal("LoadDir on empty dir: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), dir) {
+		t.Fatalf("error %q does not name the directory %q", err, dir)
 	}
 }

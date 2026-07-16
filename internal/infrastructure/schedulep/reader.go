@@ -5,6 +5,7 @@ package schedulep
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -15,6 +16,9 @@ import (
 
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
 )
+
+// errNoReferenceFiles lets LoadDir rewrite the location in the message.
+var errNoReferenceFiles = errors.New("no reference files found")
 
 type fileJSON struct {
 	ClassID       int           `json:"ClassId"`
@@ -95,7 +99,7 @@ func LoadFS(fsys fs.FS, dir string) ([]triangle.ReferenceSet, error) {
 		return nil, err
 	}
 	if len(names) == 0 {
-		return nil, fmt.Errorf("no reference files found in %s", dir)
+		return nil, fmt.Errorf("%w in %s", errNoReferenceFiles, dir)
 	}
 	sort.Strings(names)
 	refs := make([]triangle.ReferenceSet, 0, len(names))
@@ -116,7 +120,11 @@ func LoadFS(fsys fs.FS, dir string) ([]triangle.ReferenceSet, error) {
 // LoadDir reads every reference company file in a directory on disk, sorted
 // by file name for determinism.
 func LoadDir(dir string) ([]triangle.ReferenceSet, error) {
-	return LoadFS(os.DirFS(dir), ".")
+	refs, err := LoadFS(os.DirFS(dir), ".")
+	if errors.Is(err, errNoReferenceFiles) {
+		return nil, fmt.Errorf("%w in %s", errNoReferenceFiles, dir)
+	}
+	return refs, err
 }
 
 func toTriangle(t triangleJSON) triangle.Triangle {
