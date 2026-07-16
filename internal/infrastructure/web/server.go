@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/http"
+	"net/url"
 
 	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
@@ -41,8 +43,36 @@ func NewServer(refs []triangle.ReferenceSet) *Server {
 	return s
 }
 
+// ServeHTTP guards against DNS rebinding (foreign Host) and cross-site
+// requests (foreign Origin) before dispatching: the server is loopback-only
+// and the browser must not be usable as a bridge to it.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if !localHost(r.Host) {
+		writeError(w, http.StatusForbidden, "forbidden host")
+		return
+	}
+	if origin := r.Header.Get("Origin"); origin != "" && !localOrigin(origin) {
+		writeError(w, http.StatusForbidden, "forbidden origin")
+		return
+	}
 	s.mux.ServeHTTP(w, r)
+}
+
+// localHost reports whether a request Host (with optional port) is loopback.
+func localHost(host string) bool {
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return host == "127.0.0.1" || host == "localhost" || host == "::1"
+}
+
+// localOrigin reports whether an Origin header points at a loopback origin.
+func localOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	return localHost(u.Host)
 }
 
 func (s *Server) handleLOBs(w http.ResponseWriter, r *http.Request) {
@@ -74,6 +104,7 @@ type generateRequest struct {
 }
 
 func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	var req generateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("parsing request: %v", err))

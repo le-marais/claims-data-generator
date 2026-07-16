@@ -55,8 +55,13 @@ let preset = null; // defaults for the selected LoB, as served by the API
 
 async function fetchJSON(url, options) {
   const res = await fetch(url, options);
-  const body = await res.json();
-  if (!res.ok) throw new Error(body.error || res.statusText);
+  let body = null;
+  try {
+    body = await res.json();
+  } catch {
+    // Non-JSON response (e.g. a plain-text 404); fall back to statusText.
+  }
+  if (!res.ok) throw new Error((body && body.error) || res.statusText);
   return body;
 }
 

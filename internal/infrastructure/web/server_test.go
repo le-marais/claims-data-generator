@@ -42,7 +42,9 @@ func do(t *testing.T, srv http.Handler, method, target string, body any) *httpte
 		reader = bytes.NewReader(nil)
 	}
 	rec := httptest.NewRecorder()
-	srv.ServeHTTP(rec, httptest.NewRequest(method, target, reader))
+	req := httptest.NewRequest(method, target, reader)
+	req.Host = "127.0.0.1" // httptest.NewRequest defaults to "example.com"; tests exercise a local client
+	srv.ServeHTTP(rec, req)
 	return rec
 }
 
@@ -240,5 +242,50 @@ func TestServesUI(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "claimsgen") {
 		t.Fatal("page body does not mention claimsgen")
+	}
+}
+
+func TestRejectsForeignHost(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("GET", "/api/lobs", nil)
+	req.Host = "evil.example.com"
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+}
+
+func TestRejectsForeignOrigin(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("POST", "/api/generate", strings.NewReader("{}"))
+	req.Host = "127.0.0.1:8080"
+	req.Header.Set("Origin", "https://evil.example.com")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+}
+
+func TestAllowsLocalOrigin(t *testing.T) {
+	srv := newTestServer(t)
+	req := httptest.NewRequest("GET", "/api/lobs", nil)
+	req.Host = "localhost:8080"
+	req.Header.Set("Origin", "http://localhost:8080")
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestServesStaticAssets(t *testing.T) {
+	srv := newTestServer(t)
+	for _, target := range []string{"/app.js", "/style.css"} {
+		rec := do(t, srv, "GET", target, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s: status = %d, want 200", target, rec.Code)
+		}
 	}
 }
