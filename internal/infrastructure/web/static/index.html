@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>claimsgen</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="config">
+    <h1>claimsgen</h1>
+    <div id="error-banner" class="error-banner" hidden></div>
+    <form id="config-form">
+      <label>Line of business
+        <select id="lob-select"></select>
+      </label>
+      <fieldset class="run-flags">
+        <legend>Run</legend>
+        <label>Seed <input type="number" id="seed" value="1" min="0" step="1" required></label>
+        <label>Start year <input type="number" id="start-year" value="1998" step="1" required></label>
+        <label>Years <input type="number" id="years" value="10" min="1" step="1" required></label>
+        <label>Initial book size <input type="number" id="initial-book-size" value="20000" min="1" step="1" required></label>
+        <label>Output directory <input type="text" id="out-dir" value="output" required></label>
+      </fieldset>
+      <details id="params-details">
+        <summary>Line of business parameters</summary>
+        <div id="params-form"></div>
+        <button type="button" id="reset-params">Reset to preset defaults</button>
+      </details>
+      <button type="submit" id="generate-btn">Generate</button>
+    </form>
+  </aside>
+  <main class="results">
+    <div id="empty-state">Configure a run and hit Generate.</div>
+    <div id="results" hidden>
+      <div id="run-header"></div>
+      <nav class="tabs" id="tabs">
+        <button type="button" data-tab="summary" class="active">Summary</button>
+        <button type="button" data-tab="triangles">Triangles</button>
+        <button type="button" data-tab="distributions">Distributions</button>
+        <button type="button" data-tab="realism">Realism</button>
+      </nav>
+      <section id="tab-summary" class="tab-panel"></section>
+      <section id="tab-triangles" class="tab-panel" hidden></section>
+      <section id="tab-distributions" class="tab-panel" hidden></section>
+      <section id="tab-realism" class="tab-panel" hidden></section>
+    </div>
+  </main>
+</div>
+<div id="tooltip" class="tooltip" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

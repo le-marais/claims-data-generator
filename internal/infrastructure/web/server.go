@@ -3,8 +3,10 @@
 package web
 
 import (
+	"embed"
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"net/http"
 
 	"github.com/le-marais/claimsgen/internal/application"
@@ -13,6 +15,9 @@ import (
 	csvout "github.com/le-marais/claimsgen/internal/infrastructure/csv"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 )
+
+//go:embed static
+var staticFS embed.FS
 
 // Server handles the UI's HTTP API. It is stateless apart from the loaded
 // reference sets: the latest run lives in the browser.
@@ -26,6 +31,13 @@ func NewServer(refs []triangle.ReferenceSet) *Server {
 	s.mux.HandleFunc("GET /api/lobs", s.handleLOBs)
 	s.mux.HandleFunc("GET /api/lobs/{id}/preset", s.handlePreset)
 	s.mux.HandleFunc("POST /api/generate", s.handleGenerate)
+
+	staticRoot, err := fs.Sub(staticFS, "static")
+	if err != nil {
+		panic(err) // the embedded tree is fixed at compile time
+	}
+	s.mux.Handle("GET /", http.FileServerFS(staticRoot))
+
 	return s
 }
 

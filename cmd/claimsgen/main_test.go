@@ -90,3 +90,20 @@ func TestNoCommandFails(t *testing.T) {
 		t.Fatal("expected nonzero exit when no command given")
 	}
 }
+
+func TestUIRejectsBadFlags(t *testing.T) {
+	var stdout, stderr strings.Builder
+	if code := run([]string{"ui", "--bogus"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+}
+
+func TestUnknownSubcommandPrintsUsage(t *testing.T) {
+	var stdout, stderr strings.Builder
+	if code := run([]string{"frobnicate"}, &stdout, &stderr); code != 2 {
+		t.Fatalf("exit code = %d, want 2", code)
+	}
+	if !strings.Contains(stderr.String(), "usage") {
+		t.Fatalf("stderr = %q, want usage text", stderr.String())
+	}
+}

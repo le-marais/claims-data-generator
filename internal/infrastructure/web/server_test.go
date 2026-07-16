@@ -229,3 +229,16 @@ func TestGenerateBadParam(t *testing.T) {
 		t.Fatalf("body = %s, want mention of growth_factor", rec.Body.String())
 	}
 }
+
+func TestServesUI(t *testing.T) {
+	rec := do(t, newTestServer(t), "GET", "/", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/html") {
+		t.Fatalf("content type = %q, want text/html", ct)
+	}
+	if !strings.Contains(rec.Body.String(), "claimsgen") {
+		t.Fatal("page body does not mention claimsgen")
+	}
+}
