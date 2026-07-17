@@ -33,6 +33,9 @@ func TestDatasetInvariants(t *testing.T) {
 
 	type claimInfo struct {
 		report, close shared.Date
+		firstClose    shared.Date
+		reopen        shared.Date
+		reopened      bool
 		isNil, ownDmg bool
 	}
 	claims := map[int]claimInfo{}
@@ -53,7 +56,25 @@ func TestDatasetInvariants(t *testing.T) {
 		if c.InitialEstimate <= 0 {
 			t.Fatalf("claim %d initial estimate %v not positive", c.ID, c.InitialEstimate)
 		}
-		claims[c.ID] = claimInfo{c.ReportDate, c.CloseDate, c.Nil, c.OwnDamage}
+		if c.Reopened() {
+			if !c.ReopenDate.After(c.FirstCloseDate) {
+				t.Fatalf("claim %d reopen %s not strictly after first close %s", c.ID, c.ReopenDate, c.FirstCloseDate)
+			}
+			if !c.CloseDate.After(c.ReopenDate) {
+				t.Fatalf("claim %d final close %s not strictly after reopen %s", c.ID, c.CloseDate, c.ReopenDate)
+			}
+			if c.ReopenEstimate <= 0 {
+				t.Fatalf("claim %d reopen estimate %v not positive", c.ID, c.ReopenEstimate)
+			}
+			if c.FirstCloseDate.Before(c.ReportDate) {
+				t.Fatalf("claim %d first close %s before report %s", c.ID, c.FirstCloseDate, c.ReportDate)
+			}
+		}
+		firstClose := c.CloseDate
+		if c.Reopened() {
+			firstClose = c.FirstCloseDate
+		}
+		claims[c.ID] = claimInfo{c.ReportDate, c.CloseDate, firstClose, c.ReopenDate, c.Reopened(), c.Nil, c.OwnDamage}
 	}
 
 	type state struct {
@@ -64,6 +85,7 @@ func TestDatasetInvariants(t *testing.T) {
 		first       transaction.Transaction
 		last        transaction.Transaction
 		lastCase    transaction.Transaction // last non-recovery row
+		afterReopen bool
 	}
 	perClaim := map[int]*state{}
 	for _, tx := range ds.Transactions {
@@ -84,6 +106,18 @@ func TestDatasetInvariants(t *testing.T) {
 			s = &state{first: tx}
 			perClaim[tx.ClaimID] = s
 		}
+		if !tx.Type.IsRecovery() && c.reopened && !s.afterReopen && tx.Date.After(c.firstClose) {
+			if s.outstanding != 0 {
+				t.Fatalf("claim %d outstanding at first close = %v, want 0", tx.ClaimID, s.outstanding)
+			}
+			if tx.Type != transaction.Estimate || tx.Amount <= 0 || tx.Date != c.reopen {
+				t.Fatalf("claim %d first row after first close %+v is not a positive re-raise on the reopen date %s", tx.ClaimID, tx, c.reopen)
+			}
+			s.afterReopen = true
+		}
+		if c.isNil && tx.Type == transaction.Payment && !tx.Date.After(c.firstClose) {
+			t.Fatalf("nil claim %d paid %v on %s, before its first close %s", tx.ClaimID, tx.Amount, tx.Date, c.firstClose)
+		}
 		if s.rows > 0 && tx.Date.Before(s.last.Date) {
 			t.Fatalf("claim %d transactions out of order at transaction %d", tx.ClaimID, tx.ID)
 		}
@@ -99,8 +133,8 @@ func TestDatasetInvariants(t *testing.T) {
 			if tx.Amount <= 0 {
 				t.Fatalf("transaction %d recovery amount %v not positive", tx.ID, tx.Amount)
 			}
-			if !c.ownDmg || c.isNil {
-				t.Fatalf("recovery %d on ineligible claim %d (own damage %v, nil %v)", tx.ID, tx.ClaimID, c.ownDmg, c.isNil)
+			if !c.ownDmg {
+				t.Fatalf("recovery %d on non-own-damage claim %d", tx.ID, tx.ClaimID)
 			}
 			s.recovered += tx.Amount
 		default:
@@ -127,12 +161,15 @@ func TestDatasetInvariants(t *testing.T) {
 		if s.outstanding != 0 {
 			t.Fatalf("claim %d outstanding at close = %v, want 0", c.ID, s.outstanding)
 		}
-		if c.Nil {
+		if c.Nil && !c.Reopened() {
 			if s.paid != 0 {
 				t.Fatalf("nil claim %d total paid %v, want 0", c.ID, s.paid)
 			}
 		} else if s.paid <= 0 {
 			t.Fatalf("claim %d total paid %v not positive", c.ID, s.paid)
+		}
+		if c.Reopened() && !s.afterReopen {
+			t.Fatalf("reopened claim %d has no transactions after its first close", c.ID)
 		}
 		if s.recovered > 0 && s.recovered >= s.paid {
 			t.Fatalf("claim %d recovered %v >= gross paid %v", c.ID, s.recovered, s.paid)

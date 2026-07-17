@@ -50,6 +50,8 @@ func GenerateDataset(src shared.RandomSource, req GenerateRequest) (Dataset, err
 	claims := claim.NewClaimSimulator(req.LOB.Claims).
 		WithInflation(inflation).
 		Simulate(src.Split("claims"), book)
+	claims = claim.NewReopenSimulator(req.LOB.Claims).
+		Apply(src.Split("reopening"), claims)
 	txs := transaction.NewRunoffSimulator(req.LOB.Runoff).
 		Simulate(src.Split("runoff"), claims)
 	txs = transaction.NewRecoverySimulator(req.LOB.Claims.Recoveries).

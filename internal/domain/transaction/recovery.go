@@ -76,9 +76,12 @@ func (s *RecoverySimulator) Apply(src shared.RandomSource, claims []claim.Claim,
 
 // simulateClaim draws at most one salvage and one subrogation row. Only
 // own-damage claims that paid something are eligible; the total recovered
-// stays strictly below the claim's gross paid.
+// stays strictly below the claim's gross paid. A nil claim that never
+// reopens has paid 0 and stays ineligible through the paid check alone; a
+// reopened nil claim that paid in its second episode is recovery-eligible
+// like any other paying own-damage claim.
 func (s *RecoverySimulator) simulateClaim(src shared.RandomSource, c claim.Claim, paid shared.Money) []Transaction {
-	if !c.OwnDamage || c.Nil || paid <= 0 {
+	if !c.OwnDamage || paid <= 0 {
 		return nil
 	}
 	kinds := []struct {
