@@ -1,6 +1,6 @@
 # Background context: claims data simulator
 
-Consolidated from the transcripts in `docs/transcripts/`.
+Consolidated from the transcripts in `docs/transcripts/`. This is the original brief and captures the initial thinking, including open questions since resolved - see `docs/superpowers/specs/` for design decisions and `docs/roadmap.md` for current status.
 
 ## Purpose
 
