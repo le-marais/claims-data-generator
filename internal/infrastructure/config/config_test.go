@@ -53,6 +53,12 @@ claims:
       concentration: 10
       lag_median_days: 180
       lag_sigma: 0.7
+  reopening:
+    probability: 0.04
+    estimate_factor: 0.45
+    estimate_sigma: 0.5
+    lag_median_days: 90
+    lag_sigma: 0.7
 runoff:
   case_adequacy_mean: 1.0
   case_adequacy_sigma: 0.3
@@ -98,12 +104,25 @@ func TestLoadValidYAML(t *testing.T) {
 	if l.Claims.Recoveries.Subrogation.LagMedianDays != 180 {
 		t.Errorf("subrogation lag_median_days = %v, want 180", l.Claims.Recoveries.Subrogation.LagMedianDays)
 	}
+	if l.Claims.Reopening.Probability != 0.04 {
+		t.Errorf("reopening probability = %v, want 0.04", l.Claims.Reopening.Probability)
+	}
+	if l.Claims.Reopening.LagMedianDays != 90 {
+		t.Errorf("reopening lag_median_days = %v, want 90", l.Claims.Reopening.LagMedianDays)
+	}
 }
 
 func TestLoadRejectsMissingRecoveriesBlock(t *testing.T) {
 	bad := strings.Replace(validYAML, "  recoveries:", "  recoveries_gone:", 1)
 	if _, err := Load(strings.NewReader(bad)); err == nil {
 		t.Fatal("config without a recoveries block: want error, got nil")
+	}
+}
+
+func TestLoadRejectsMissingReopeningBlock(t *testing.T) {
+	bad := strings.Replace(validYAML, "  reopening:", "  reopening_gone:", 1)
+	if _, err := Load(strings.NewReader(bad)); err == nil {
+		t.Fatal("config without a reopening block: want error, got nil")
 	}
 }
 

@@ -59,6 +59,18 @@ claims:
       concentration: 10
       lag_median_days: 180
       lag_sigma: 0.7
+  # Reopening: a closed claim can reopen once - the case is re-raised a
+  # lognormal lag after the first close, a second episode develops and pays
+  # an additional amount (the reopen estimate is `estimate_factor` times the
+  # original initial estimate, with lognormal noise), then the claim closes
+  # for good. claims.csv shows the final close date. probability 0 switches
+  # reopening off.
+  reopening:
+    probability: 0.04
+    estimate_factor: 0.45
+    estimate_sigma: 0.5
+    lag_median_days: 90
+    lag_sigma: 0.7
 runoff:
   case_adequacy_mean: 1.0
   case_adequacy_sigma: 0.35

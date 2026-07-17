@@ -47,6 +47,7 @@ func validMotor() LineOfBusiness {
 				Salvage:     RecoveryTypeParams{Probability: 0.1, MeanShare: 0.15, Concentration: 10, LagMedianDays: 21, LagSigma: 0.5},
 				Subrogation: RecoveryTypeParams{Probability: 0.2, MeanShare: 0.8, Concentration: 10, LagMedianDays: 180, LagSigma: 0.7},
 			},
+			Reopening: ReopeningParams{Probability: 0.04, EstimateFactor: 0.45, EstimateSigma: 0.5, LagMedianDays: 90, LagSigma: 0.7},
 		},
 		Runoff: RunoffParams{
 			CaseAdequacyMean:  1.0,
@@ -111,6 +112,12 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"claims.recoveries.salvage.lag_sigma", func(l *LineOfBusiness) { l.Claims.Recoveries.Salvage.LagSigma = -0.1 }},
 		{"claims.recoveries.subrogation.probability", func(l *LineOfBusiness) { l.Claims.Recoveries.Subrogation.Probability = 1.5 }},
 		{"claims.recoveries.subrogation.mean_share", func(l *LineOfBusiness) { l.Claims.Recoveries.Subrogation.MeanShare = -0.2 }},
+		{"claims.reopening.probability", func(l *LineOfBusiness) { l.Claims.Reopening.Probability = 1.0 }},
+		{"claims.reopening.probability", func(l *LineOfBusiness) { l.Claims.Reopening.Probability = -0.1 }},
+		{"claims.reopening.estimate_factor", func(l *LineOfBusiness) { l.Claims.Reopening.EstimateFactor = 0 }},
+		{"claims.reopening.estimate_sigma", func(l *LineOfBusiness) { l.Claims.Reopening.EstimateSigma = -0.1 }},
+		{"claims.reopening.lag_median_days", func(l *LineOfBusiness) { l.Claims.Reopening.LagMedianDays = 0 }},
+		{"claims.reopening.lag_sigma", func(l *LineOfBusiness) { l.Claims.Reopening.LagSigma = -0.1 }},
 	}
 	for _, c := range cases {
 		l := validMotor()
@@ -177,5 +184,13 @@ func TestValidateAcceptsZeroRecoveryProbabilities(t *testing.T) {
 	l.Claims.Recoveries.Subrogation.Probability = 0
 	if err := l.Validate(); err != nil {
 		t.Fatalf("zero recovery probabilities (the off switch): want nil, got %v", err)
+	}
+}
+
+func TestValidateAcceptsZeroReopeningProbability(t *testing.T) {
+	l := validMotor()
+	l.Claims.Reopening.Probability = 0
+	if err := l.Validate(); err != nil {
+		t.Fatalf("zero reopening probability (the off switch): want nil, got %v", err)
 	}
 }

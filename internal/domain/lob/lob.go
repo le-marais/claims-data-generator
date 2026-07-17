@@ -57,6 +57,9 @@ type ClaimParams struct {
 	// Recoveries drives salvage and subrogation: money coming back on
 	// own-damage claims after they close.
 	Recoveries RecoveryParams
+	// Reopening drives the single optional reopen episode: a closed claim
+	// can reopen once, develop further, and close again.
+	Reopening ReopeningParams
 }
 
 // InflationParams is the stochastic annual claims-inflation path: each
@@ -92,6 +95,23 @@ type RecoveryTypeParams struct {
 	// LagMedianDays is the median days from close to receiving the money.
 	LagMedianDays float64
 	// LagSigma is the sigma of the lognormal close-to-receipt lag.
+	LagSigma float64
+}
+
+// ReopeningParams parameterizes the single optional reopen episode.
+type ReopeningParams struct {
+	// Probability is the chance a closed claim reopens once; 0 switches
+	// reopening off.
+	Probability float64
+	// EstimateFactor is the mean of the reopen case estimate as a factor of
+	// the claim's original initial estimate; it may exceed 1.
+	EstimateFactor float64
+	// EstimateSigma is the sigma of the mean-1 lognormal noise on the
+	// reopen estimate.
+	EstimateSigma float64
+	// LagMedianDays is the median days from first close to reopen.
+	LagMedianDays float64
+	// LagSigma is the sigma of the lognormal close-to-reopen lag.
 	LagSigma float64
 }
 
@@ -225,6 +245,9 @@ func (c ClaimParams) validate() error {
 	if err := c.Recoveries.Subrogation.validate("claims.recoveries.subrogation"); err != nil {
 		return err
 	}
+	if err := c.Reopening.validate(); err != nil {
+		return err
+	}
 	return c.CloseLag.validate()
 }
 
@@ -253,6 +276,25 @@ func (r RecoveryTypeParams) validate(prefix string) error {
 	}
 	if r.LagSigma < 0 {
 		return fmt.Errorf("%s.lag_sigma: must not be negative, got %v", prefix, r.LagSigma)
+	}
+	return nil
+}
+
+func (r ReopeningParams) validate() error {
+	if r.Probability < 0 || r.Probability >= 1 {
+		return fmt.Errorf("claims.reopening.probability: must be in [0, 1), got %v", r.Probability)
+	}
+	if r.EstimateFactor <= 0 {
+		return fmt.Errorf("claims.reopening.estimate_factor: must be positive, got %v", r.EstimateFactor)
+	}
+	if r.EstimateSigma < 0 {
+		return fmt.Errorf("claims.reopening.estimate_sigma: must not be negative, got %v", r.EstimateSigma)
+	}
+	if r.LagMedianDays <= 0 {
+		return fmt.Errorf("claims.reopening.lag_median_days: must be positive, got %v", r.LagMedianDays)
+	}
+	if r.LagSigma < 0 {
+		return fmt.Errorf("claims.reopening.lag_sigma: must not be negative, got %v", r.LagSigma)
 	}
 	return nil
 }

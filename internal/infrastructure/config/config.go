@@ -53,6 +53,7 @@ type ClaimsParams struct {
 	Inflation       InflationParams  `yaml:"inflation" json:"inflation"`
 	NilProbability  float64          `yaml:"nil_probability" json:"nil_probability"`
 	Recoveries      RecoveriesParams `yaml:"recoveries" json:"recoveries"`
+	Reopening       ReopeningParams  `yaml:"reopening" json:"reopening"`
 }
 
 type InflationParams struct {
@@ -71,6 +72,14 @@ type RecoveryTypeParams struct {
 	Concentration float64 `yaml:"concentration" json:"concentration"`
 	LagMedianDays float64 `yaml:"lag_median_days" json:"lag_median_days"`
 	LagSigma      float64 `yaml:"lag_sigma" json:"lag_sigma"`
+}
+
+type ReopeningParams struct {
+	Probability    float64 `yaml:"probability" json:"probability"`
+	EstimateFactor float64 `yaml:"estimate_factor" json:"estimate_factor"`
+	EstimateSigma  float64 `yaml:"estimate_sigma" json:"estimate_sigma"`
+	LagMedianDays  float64 `yaml:"lag_median_days" json:"lag_median_days"`
+	LagSigma       float64 `yaml:"lag_sigma" json:"lag_sigma"`
 }
 
 type SeverityParams struct {
@@ -218,6 +227,13 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			Recoveries: lob.RecoveryParams{
 				Salvage:     d.Claims.Recoveries.Salvage.toDomain(),
 				Subrogation: d.Claims.Recoveries.Subrogation.toDomain(),
+			},
+			Reopening: lob.ReopeningParams{
+				Probability:    d.Claims.Reopening.Probability,
+				EstimateFactor: d.Claims.Reopening.EstimateFactor,
+				EstimateSigma:  d.Claims.Reopening.EstimateSigma,
+				LagMedianDays:  d.Claims.Reopening.LagMedianDays,
+				LagSigma:       d.Claims.Reopening.LagSigma,
 			},
 		},
 		Runoff: lob.RunoffParams{
