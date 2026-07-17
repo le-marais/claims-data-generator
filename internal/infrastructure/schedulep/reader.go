@@ -64,7 +64,8 @@ func (p *premiumJSON) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// LoadFile reads one reference company file from disk.
+// LoadFile reads one reference company file from disk. Unlike LoadDir and
+// LoadFS, the resulting name is not vintage-qualified.
 func LoadFile(path string) (triangle.ReferenceSet, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -97,9 +98,12 @@ func parse(name string, b []byte) (triangle.ReferenceSet, error) {
 // (the parent of dir), e.g. "dec2025/10007", so companies that appear in
 // more than one vintage stay distinct.
 func LoadFS(fsys fs.FS, dirs ...string) ([]triangle.ReferenceSet, error) {
+	if len(dirs) == 0 {
+		return nil, errors.New("no reference directories given")
+	}
 	var refs []triangle.ReferenceSet
 	for _, dir := range dirs {
-		loaded, err := loadDirFS(fsys, dir, path.Base(path.Dir(dir)))
+		loaded, err := loadDirFS(fsys, dir, path.Base(path.Dir(path.Clean(dir))))
 		if err != nil {
 			return nil, err
 		}

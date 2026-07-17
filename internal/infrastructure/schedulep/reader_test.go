@@ -119,6 +119,13 @@ func TestLoadFSErrorsWhenAnyDirIsEmpty(t *testing.T) {
 	}
 }
 
+func TestLoadFSErrorsOnNoDirs(t *testing.T) {
+	_, err := schedulep.LoadFS(fstest.MapFS{})
+	if err == nil {
+		t.Fatal("LoadFS with no dirs: want error, got nil")
+	}
+}
+
 func TestLoadDirQualifiesNamesByVintage(t *testing.T) {
 	refs, err := schedulep.LoadDir(refDir)
 	if err != nil {
