@@ -74,3 +74,9 @@ func (s *Source) Gamma(shape, scale float64) float64 {
 func (s *Source) Pareto(xm, alpha float64) float64 {
 	return distuv.Pareto{Xm: xm, Alpha: alpha, Src: s.rng}.Rand()
 }
+
+// Beta draws from a Beta distribution with shape parameters alpha and beta;
+// values lie strictly in (0, 1).
+func (s *Source) Beta(alpha, beta float64) float64 {
+	return distuv.Beta{Alpha: alpha, Beta: beta, Src: s.rng}.Rand()
+}

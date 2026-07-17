@@ -11,4 +11,5 @@ type RandomSource interface {
 	LogNormal(mu, sigma float64) float64
 	Gamma(shape, scale float64) float64
 	Pareto(xm, alpha float64) float64
+	Beta(alpha, beta float64) float64
 }

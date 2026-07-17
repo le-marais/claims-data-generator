@@ -114,3 +114,28 @@ func TestParetoNeverBelowScale(t *testing.T) {
 		}
 	}
 }
+
+func TestBetaMeanAndBounds(t *testing.T) {
+	src := NewSource(9)
+	const n = 20000
+	sum := 0.0
+	for i := 0; i < n; i++ {
+		v := src.Beta(2, 8)
+		if v <= 0 || v >= 1 {
+			t.Fatalf("draw %d: Beta(2, 8) = %v, want strictly in (0, 1)", i, v)
+		}
+		sum += v
+	}
+	if mean := sum / n; math.Abs(mean-0.2) > 0.01 {
+		t.Errorf("mean of Beta(2, 8) draws = %v, want ~0.2", mean)
+	}
+}
+
+func TestBetaIsDeterministicPerSeed(t *testing.T) {
+	a, b := NewSource(11), NewSource(11)
+	for i := 0; i < 50; i++ {
+		if a.Beta(3, 5) != b.Beta(3, 5) {
+			t.Fatalf("draw %d differs for identical seeds", i)
+		}
+	}
+}
