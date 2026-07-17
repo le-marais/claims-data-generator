@@ -34,14 +34,13 @@ claims:
     risk_loading: 0.3
   # Claims inflation applied by occurrence year to every claim's ground-up
   # loss. Stochastic: each year's factor is `mean` times lognormal noise of
-  # sigma `volatility`, compounded from 1.0 in the start year. Identity here
-  # (mean 1.0, volatility 0.0) until calibration sets the real trend.
+  # sigma `volatility`, compounded from 1.0 in the start year.
   inflation:
-    mean: 1.0
-    volatility: 0.0
+    mean: 1.04
+    volatility: 0.015
   # Probability a reported claim closes without payment. 0 switches nil
   # claims off.
-  nil_probability: 0.0
+  nil_probability: 0.08
 runoff:
   case_adequacy_mean: 1.0
   case_adequacy_sigma: 0.35

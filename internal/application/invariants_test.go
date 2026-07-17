@@ -109,7 +109,11 @@ func TestDatasetInvariants(t *testing.T) {
 		if s.outstanding != 0 {
 			t.Fatalf("claim %d outstanding at close = %v, want 0", c.ID, s.outstanding)
 		}
-		if s.paid <= 0 {
+		if c.Nil {
+			if s.paid != 0 {
+				t.Fatalf("nil claim %d total paid %v, want 0", c.ID, s.paid)
+			}
+		} else if s.paid <= 0 {
 			t.Fatalf("claim %d total paid %v not positive", c.ID, s.paid)
 		}
 		if s.last.Date != c.CloseDate {
