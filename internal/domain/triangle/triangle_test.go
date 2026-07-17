@@ -117,6 +117,37 @@ func TestATAFactorsAreVolumeWeighted(t *testing.T) {
 	}
 }
 
+func TestNetPaidTriangleSubtractsRecoveries(t *testing.T) {
+	claims := []claim.Claim{{ID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1)}}
+	txs := []transaction.Transaction{
+		{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.April, 1), Type: transaction.Payment, Amount: shared.FromDollars(1000)},
+		{ID: 2, ClaimID: 1, Date: shared.NewDate(1999, time.June, 1), Type: transaction.Salvage, Amount: shared.FromDollars(150)},
+		{ID: 3, ClaimID: 1, Date: shared.NewDate(2000, time.June, 1), Type: transaction.Subrogation, Amount: shared.FromDollars(300)},
+	}
+	gross := triangle.PaidTriangle(claims, txs, 1998, 3, 3)
+	if got := gross.Cells[0]; got[0] != 1000 || got[1] != 1000 || got[2] != 1000 {
+		t.Fatalf("gross paid row = %v, want [1000 1000 1000]", got)
+	}
+	net := triangle.NetPaidTriangle(claims, txs, 1998, 3, 3)
+	if got := net.Cells[0]; got[0] != 1000 || got[1] != 850 || got[2] != 550 {
+		t.Fatalf("net paid row = %v, want [1000 850 550]", got)
+	}
+}
+
+func TestIncurredTriangleSubtractsRecoveries(t *testing.T) {
+	claims := []claim.Claim{{ID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1)}}
+	txs := []transaction.Transaction{
+		{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.March, 10), Type: transaction.Estimate, Amount: shared.FromDollars(1000)},
+		{ID: 2, ClaimID: 1, Date: shared.NewDate(1998, time.April, 1), Type: transaction.Payment, Amount: shared.FromDollars(1000)},
+		{ID: 3, ClaimID: 1, Date: shared.NewDate(1998, time.April, 1), Type: transaction.Estimate, Amount: shared.FromDollars(-1000)},
+		{ID: 4, ClaimID: 1, Date: shared.NewDate(1999, time.June, 1), Type: transaction.Salvage, Amount: shared.FromDollars(150)},
+	}
+	incurred := triangle.IncurredTriangle(claims, txs, 1998, 2, 2)
+	if got := incurred.Cells[0]; got[0] != 1000 || got[1] != 850 {
+		t.Fatalf("incurred row = %v, want [1000 850] (gross case + net paid)", got)
+	}
+}
+
 func TestBandsAcrossReferenceSets(t *testing.T) {
 	refs := []triangle.ReferenceSet{
 		{Paid: triangle.Triangle{Cells: [][]float64{{100, 150, 165}}}},

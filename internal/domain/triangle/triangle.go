@@ -21,23 +21,47 @@ type Triangle struct {
 	Cells     [][]float64
 }
 
-// PaidTriangle aggregates payments into a cumulative triangle by occurrence
-// year. Development years beyond the last column are accumulated into it.
+// PaidTriangle aggregates gross payments into a cumulative triangle by
+// occurrence year. Development years beyond the last column are accumulated
+// into it.
 func PaidTriangle(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int) Triangle {
-	return aggregate(claims, txs, startYear, origins, devs, func(t transaction.Transaction) bool {
-		return t.Type == transaction.Payment
+	return aggregate(claims, txs, startYear, origins, devs, func(t transaction.Transaction) float64 {
+		if t.Type == transaction.Payment {
+			return 1
+		}
+		return 0
 	})
 }
 
-// IncurredTriangle aggregates paid plus outstanding case estimates into a
-// cumulative triangle by occurrence year.
+// NetPaidTriangle aggregates payments net of recoveries: salvage and
+// subrogation rows subtract, so cumulative net paid can develop downward at
+// late ages. Schedule P paid losses are net of salvage and subrogation, so
+// this is the triangle the realism comparison uses.
+func NetPaidTriangle(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int) Triangle {
+	return aggregate(claims, txs, startYear, origins, devs, func(t transaction.Transaction) float64 {
+		switch {
+		case t.Type == transaction.Payment:
+			return 1
+		case t.Type.IsRecovery():
+			return -1
+		}
+		return 0
+	})
+}
+
+// IncurredTriangle aggregates gross case plus net paid into a cumulative
+// triangle by occurrence year: estimate movements and payments add,
+// recoveries subtract.
 func IncurredTriangle(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int) Triangle {
-	return aggregate(claims, txs, startYear, origins, devs, func(t transaction.Transaction) bool {
-		return true // payments and estimate movements both move incurred
+	return aggregate(claims, txs, startYear, origins, devs, func(t transaction.Transaction) float64 {
+		if t.Type.IsRecovery() {
+			return -1
+		}
+		return 1
 	})
 }
 
-func aggregate(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int, include func(transaction.Transaction) bool) Triangle {
+func aggregate(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int, weight func(transaction.Transaction) float64) Triangle {
 	occurrenceYear := make(map[int]int, len(claims))
 	for _, c := range claims {
 		occurrenceYear[c.ID] = c.OccurrenceDate.Year()
@@ -47,7 +71,8 @@ func aggregate(claims []claim.Claim, txs []transaction.Transaction, startYear, o
 		incremental[i] = make([]float64, devs)
 	}
 	for _, tx := range txs {
-		if !include(tx) {
+		w := weight(tx)
+		if w == 0 {
 			continue
 		}
 		occ := occurrenceYear[tx.ClaimID]
@@ -62,7 +87,7 @@ func aggregate(claims []claim.Claim, txs []transaction.Transaction, startYear, o
 		if dev >= devs {
 			dev = devs - 1
 		}
-		incremental[origin][dev] += tx.Amount.Dollars()
+		incremental[origin][dev] += w * tx.Amount.Dollars()
 	}
 	for _, row := range incremental {
 		for d := 1; d < len(row); d++ {
