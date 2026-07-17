@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	refdata "github.com/le-marais/claimsgen/data/reference"
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
@@ -75,5 +76,50 @@ func TestLoadDirEmptyNamesDirectory(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), dir) {
 		t.Fatalf("error %q does not name the directory %q", err, dir)
+	}
+}
+
+const minimalRef = `{"ClassId":1,` +
+	`"PaidTriangle":{"TriangleValues":[[1998,[100,150]],[1999,[120]]]},` +
+	`"IncurredTriangle":{"TriangleValues":[[1998,[200,210]],[1999,[220]]]},` +
+	`"EarnedPremium":[[1998,400],[1999,450]]}`
+
+func TestLoadFSMergesDirsWithQualifiedNames(t *testing.T) {
+	fsys := fstest.MapFS{
+		"schedule p/dec2025/ppauto/10007.json": {Data: []byte(minimalRef)},
+		"schedule p/sep2011/auto/10007.json":   {Data: []byte(minimalRef)},
+	}
+	refs, err := schedulep.LoadFS(fsys, "schedule p/dec2025/ppauto", "schedule p/sep2011/auto")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(refs) != 2 {
+		t.Fatalf("loaded %d reference sets, want 2", len(refs))
+	}
+	if refs[0].Name != "dec2025/10007" || refs[1].Name != "sep2011/10007" {
+		t.Errorf("names = %q, %q; want dec2025/10007, sep2011/10007", refs[0].Name, refs[1].Name)
+	}
+}
+
+func TestLoadFSErrorsWhenAnyDirIsEmpty(t *testing.T) {
+	fsys := fstest.MapFS{
+		"schedule p/dec2025/ppauto/10007.json": {Data: []byte(minimalRef)},
+	}
+	_, err := schedulep.LoadFS(fsys, "schedule p/dec2025/ppauto", "schedule p/sep2011/auto")
+	if err == nil {
+		t.Fatal("LoadFS with an empty dir: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "schedule p/sep2011/auto") {
+		t.Fatalf("error %q does not name the empty directory", err)
+	}
+}
+
+func TestLoadDirQualifiesNamesByVintage(t *testing.T) {
+	refs, err := schedulep.LoadDir(refDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(refs[0].Name, "dec2025/") {
+		t.Errorf("Name = %q, want dec2025/ prefix", refs[0].Name)
 	}
 }

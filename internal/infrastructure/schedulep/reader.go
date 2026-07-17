@@ -91,9 +91,36 @@ func parse(name string, b []byte) (triangle.ReferenceSet, error) {
 	}, nil
 }
 
-// LoadFS reads every reference company file in dir of fsys, sorted by file
-// name for determinism.
-func LoadFS(fsys fs.FS, dir string) ([]triangle.ReferenceSet, error) {
+// LoadFS reads every reference company file in each dir of fsys, in the
+// order the dirs are given, files sorted by name within each dir for
+// determinism. Names are qualified with the dataset's vintage directory
+// (the parent of dir), e.g. "dec2025/10007", so companies that appear in
+// more than one vintage stay distinct.
+func LoadFS(fsys fs.FS, dirs ...string) ([]triangle.ReferenceSet, error) {
+	var refs []triangle.ReferenceSet
+	for _, dir := range dirs {
+		loaded, err := loadDirFS(fsys, dir, path.Base(path.Dir(dir)))
+		if err != nil {
+			return nil, err
+		}
+		refs = append(refs, loaded...)
+	}
+	return refs, nil
+}
+
+// LoadDir reads every reference company file in a directory on disk, sorted
+// by file name for determinism, with names qualified by the vintage
+// directory (the parent of dir).
+func LoadDir(dir string) ([]triangle.ReferenceSet, error) {
+	clean := filepath.Clean(dir)
+	refs, err := loadDirFS(os.DirFS(clean), ".", filepath.Base(filepath.Dir(clean)))
+	if errors.Is(err, errNoReferenceFiles) {
+		return nil, fmt.Errorf("%w in %s", errNoReferenceFiles, dir)
+	}
+	return refs, err
+}
+
+func loadDirFS(fsys fs.FS, dir, vintage string) ([]triangle.ReferenceSet, error) {
 	names, err := fs.Glob(fsys, path.Join(dir, "*.json"))
 	if err != nil {
 		return nil, err
@@ -112,19 +139,10 @@ func LoadFS(fsys fs.FS, dir string) ([]triangle.ReferenceSet, error) {
 		if err != nil {
 			return nil, err
 		}
+		ref.Name = vintage + "/" + ref.Name
 		refs = append(refs, ref)
 	}
 	return refs, nil
-}
-
-// LoadDir reads every reference company file in a directory on disk, sorted
-// by file name for determinism.
-func LoadDir(dir string) ([]triangle.ReferenceSet, error) {
-	refs, err := LoadFS(os.DirFS(dir), ".")
-	if errors.Is(err, errNoReferenceFiles) {
-		return nil, fmt.Errorf("%w in %s", errNoReferenceFiles, dir)
-	}
-	return refs, err
 }
 
 func toTriangle(t triangleJSON) triangle.Triangle {
