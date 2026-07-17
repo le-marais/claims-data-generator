@@ -37,9 +37,9 @@ claims:
     size_multiplier: 4
     risk_loading: 0.5
   inflation:
-    mean: 1.0
-    volatility: 0.0
-  nil_probability: 0.0
+    mean: 1.04
+    volatility: 0.02
+  nil_probability: 0.05
 runoff:
   case_adequacy_mean: 1.0
   case_adequacy_sigma: 0.3
@@ -69,6 +69,15 @@ func TestLoadValidYAML(t *testing.T) {
 	}
 	if l.Runoff.SettlementShare != 0.4 {
 		t.Errorf("SettlementShare = %v, want 0.4", l.Runoff.SettlementShare)
+	}
+	if l.Claims.Inflation.Mean != 1.04 {
+		t.Errorf("inflation mean = %v, want 1.04", l.Claims.Inflation.Mean)
+	}
+	if l.Claims.Inflation.Volatility != 0.02 {
+		t.Errorf("inflation volatility = %v, want 0.02", l.Claims.Inflation.Volatility)
+	}
+	if l.Claims.NilProbability != 0.05 {
+		t.Errorf("nil_probability = %v, want 0.05", l.Claims.NilProbability)
 	}
 }
 

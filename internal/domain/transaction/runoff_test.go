@@ -264,3 +264,46 @@ func TestNilClaimHasNoPaymentsAndClosesToZero(t *testing.T) {
 		t.Fatalf("last row on %s, want close date %s", last.Date, c.CloseDate)
 	}
 }
+
+func TestNilClaimTinyEstimateStillClosesOnCloseDate(t *testing.T) {
+	// A tiny initial estimate over a long duration is the case where revision
+	// targets can round to zero; the terminal release must still land on the
+	// close date.
+	c := claim.Claim{
+		ID:              1,
+		PolicyID:        1,
+		OccurrenceDate:  shared.NewDate(2000, time.January, 1),
+		ReportDate:      shared.NewDate(2000, time.January, 2),
+		CloseDate:       shared.NewDate(2003, time.January, 2),
+		InitialEstimate: shared.FromDollars(0.02),
+		RiskFactor:      1.0,
+		Nil:             true,
+	}
+	sim := transaction.NewRunoffSimulator(params())
+	// Try several seeds so at least one exercises revisions that round toward zero.
+	for seed := uint64(1); seed <= 25; seed++ {
+		txs := sim.Simulate(random.NewSource(seed), []claim.Claim{c})
+		if len(txs) == 0 {
+			t.Fatalf("seed %d: no transactions", seed)
+		}
+		outstanding := shared.Money(0)
+		paid := shared.Money(0)
+		for _, tx := range txs {
+			switch tx.Type {
+			case transaction.Payment:
+				paid += tx.Amount
+			case transaction.Estimate:
+				outstanding += tx.Amount
+			}
+		}
+		if paid != 0 {
+			t.Fatalf("seed %d: nil claim paid %v, want 0", seed, paid)
+		}
+		if outstanding != 0 {
+			t.Fatalf("seed %d: outstanding at close %v, want 0", seed, outstanding)
+		}
+		if last := txs[len(txs)-1]; last.Date != c.CloseDate {
+			t.Fatalf("seed %d: last transaction on %s, want close date %s", seed, last.Date, c.CloseDate)
+		}
+	}
+}

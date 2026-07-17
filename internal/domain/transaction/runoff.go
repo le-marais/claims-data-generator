@@ -125,6 +125,9 @@ func (s *RunoffSimulator) simulateNilClaim(src shared.RandomSource, c claim.Clai
 		remaining := emitter.outstanding.Dollars()
 		sigma := s.params.RevisionSigma * (1 - float64(e.offset)/float64(duration))
 		target := shared.FromDollars(remaining * shared.MeanOneLogNormal(src, sigma))
+		if target < 1 {
+			target = 1 // keep the case open so the terminal release lands on the close date
+		}
 		emitter.reviseTo(e.offset, target)
 	}
 

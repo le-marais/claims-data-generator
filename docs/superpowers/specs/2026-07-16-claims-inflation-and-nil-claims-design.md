@@ -50,7 +50,7 @@ The index is a small value object in the claim domain package (it parameterizes 
 
 ## Nil claims mechanics
 
-The nil decision is drawn in the claim-events stage, inside each claim's existing per-claim sub-stream, so claim IDs and dates for non-nil claims do not reshuffle when the knob moves: after a claim is confirmed reportable, draw `nil = src.Bernoulli(nil_probability)`. The `Claim` struct gains a `Nil bool` field, carried to the runoff stage but not written to claims.csv - the CSV schema is unchanged. Nil-ness is observable in the data the way it is in a real extract: a closed claim whose transactions contain no payments.
+The nil decision is drawn in the claim-events stage, inside each policy's existing per-policy sub-stream: after a claim is confirmed reportable, draw `nil = src.Bernoulli(nil_probability)`. A probability of 0 makes no draw at all, so it is a true no-op, and moving the knob between two positive probabilities is stable; but enabling nils from 0 inserts one draw per reported claim and so does shift subsequent draws within a multi-claim policy. The `Claim` struct gains a `Nil bool` field, carried to the runoff stage but not written to claims.csv - the CSV schema is unchanged. Nil-ness is observable in the data the way it is in a real extract: a closed claim whose transactions contain no payments.
 
 Runoff for a nil claim:
 
