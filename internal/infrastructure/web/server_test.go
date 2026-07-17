@@ -221,6 +221,7 @@ func TestGenerateResponseIncludesNilCount(t *testing.T) {
 			Total struct {
 				NilClaims int     `json:"nil_claims"`
 				Recovered float64 `json:"recovered"`
+				Reopened  int     `json:"reopened"`
 			} `json:"total"`
 		} `json:"summary"`
 		Triangles struct {
@@ -242,6 +243,9 @@ func TestGenerateResponseIncludesNilCount(t *testing.T) {
 	}
 	if resp.Summary.Total.Recovered <= 0 {
 		t.Fatalf("total recovered = %v, want positive with the default preset", resp.Summary.Total.Recovered)
+	}
+	if resp.Summary.Total.Reopened <= 0 {
+		t.Fatalf("total reopened = %d, want positive with the default preset", resp.Summary.Total.Reopened)
 	}
 	if len(resp.Triangles.NetPaid.Cells) == 0 {
 		t.Fatal("net paid triangle missing from the generate response")

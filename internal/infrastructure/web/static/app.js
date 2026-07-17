@@ -34,6 +34,8 @@ const FIELD_GROUPS = [
       { path: ["claims", "close_lag", "risk_loading"], label: "Close lag risk loading", tip: "Exponent on the policy risk factor." },
       { path: ["claims", "inflation", "mean"], label: "Claims inflation", tip: "Average annual claims inflation factor, applied by occurrence year (1.0 = flat)." },
       { path: ["claims", "nil_probability"], label: "Nil claim probability", tip: "Probability a claim closes without payment; 0 switches nil claims off." },
+      { path: ["claims", "reopening", "probability"], label: "Reopen probability", tip: "Chance a closed claim reopens once; 0 switches reopening off." },
+      { path: ["claims", "reopening", "estimate_factor"], label: "Reopen estimate factor", tip: "Mean reopen case estimate as a factor of the original initial estimate." },
     ],
   },
   {
@@ -228,7 +230,7 @@ function renderSummary(summary) {
   const table = document.createElement("table");
   table.className = "data-table";
   const head = table.createTHead().insertRow();
-  for (const label of ["Year", "Policies", "Claims", "Nil claims", "Earned premium", "Ultimate (paid)", "Recovered", "Loss ratio"]) {
+  for (const label of ["Year", "Policies", "Claims", "Nil claims", "Reopened", "Earned premium", "Ultimate (paid)", "Recovered", "Loss ratio"]) {
     head.append(th(label));
   }
   const body = table.createTBody();
@@ -244,6 +246,7 @@ function summaryRow(row, label) {
     fmtInt.format(row.policies),
     fmtInt.format(row.claims),
     fmtInt.format(row.nil_claims),
+    fmtInt.format(row.reopened),
     fmtMoney.format(row.earned_premium),
     fmtMoney.format(row.paid),
     fmtMoney.format(row.recovered),

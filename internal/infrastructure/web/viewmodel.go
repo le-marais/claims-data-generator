@@ -46,6 +46,7 @@ type summaryRowJSON struct {
 	Policies      int      `json:"policies"`
 	Claims        int      `json:"claims"`
 	NilClaims     int      `json:"nil_claims"`
+	Reopened      int      `json:"reopened"`
 	EarnedPremium float64  `json:"earned_premium"`
 	Paid          float64  `json:"paid"`
 	Recovered     float64  `json:"recovered"`
@@ -139,6 +140,7 @@ func summaryRowView(s application.YearSummary) summaryRowJSON {
 		Policies:      s.Policies,
 		Claims:        s.Claims,
 		NilClaims:     s.NilClaims,
+		Reopened:      s.Reopened,
 		EarnedPremium: s.EarnedPremium,
 		Paid:          s.Paid,
 		Recovered:     s.Recovered,
