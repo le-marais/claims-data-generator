@@ -1,3 +1,5 @@
 /output/
 /claimsgen
 *.exe
+tools/screenshots/node_modules/
+tools/screenshots/package-lock.json
