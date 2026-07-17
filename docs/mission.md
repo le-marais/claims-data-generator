@@ -49,7 +49,7 @@ Add further features of real claims data that are excluded from the MVP:
 
 - Nil claims (closed without payment) - done
 - Reopened claims
-- Recoveries (salvage and subrogation)
+- Recoveries (salvage and subrogation) - done
 - Claims inflation across calendar years - done
 
 See `docs/roadmap.md` for current status and sequencing.

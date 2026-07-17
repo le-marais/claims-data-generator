@@ -10,14 +10,14 @@ A living view of where claimsgen is and what comes next. Grounded in `mission.md
 - **Realism gate** - generated motor data is scored against the ~143 Schedule P private passenger auto reference datasets; the shipped preset must land inside the observed bands (`TestDefaultPresetIsRealistic`).
 - **Claims inflation** - stochastic occurrence-year inflation index, one user-facing mean knob per line of business, applied to every claim's ground-up loss.
 - **Nil claims** - a share of reported claims close without payment, with a dedicated no-payment runoff path and a `nil_probability` off switch.
+- **Recoveries (salvage and subrogation)** - money coming back on own-damage claims after close, as SALVAGE and SUBROGATION transaction types; triangles and the realism gate go net of recoveries, and the triangle tab gains a gross/net toggle.
 
 Only motor personal exists as a line of business today.
 
 ## Near term - finish the real-claims-data backlog
 
-The mission lists four features of real claims data excluded from the MVP. Two are done (claims inflation, nil claims). The remaining two enrich every future line of business and are best done before adding more classes, because two of them change the output schema and the CSV format becomes a contract once the tool is shared more widely.
+The mission lists four features of real claims data excluded from the MVP. Three are done (claims inflation, nil claims, recoveries). The remaining one enriches every future line of business and is best done before adding more classes, because it changes the output schema and the CSV format becomes a contract once the tool is shared more widely.
 
-- **Recoveries (salvage and subrogation)** - money coming back on a claim. Schema-changing: either negative payments or a new transaction type, plus a change to the reconciliation rule (gross versus net of recoveries). Very characteristic of motor, and gross-versus-net reserving is a real workflow. Do it while the format can still change freely. Own spec.
 - **Reopened claims** - the hardest of the four, because it breaks the "close date is final, every claim develops fully" assumption that the runoff simulator, the invariant sweep, and `claims.csv` all rely on. Needs a deliberate decision about what the claims file shows (real systems show the latest close date). Own spec, done last in this group.
 
 ## Mid term - second line of business

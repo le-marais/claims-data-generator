@@ -6,7 +6,7 @@ One run produces three linked CSV datasets for a class of business:
 
 - **policies.csv** - the book of policies per calendar year: cover dates, sum insured, excess, risk factor, premium
 - **claims.csv** - claim events with occurrence, report and close dates plus the initial case estimate
-- **transactions.csv** - each claim's case estimate movements and payments over its lifetime
+- **transactions.csv** - each claim's case estimate movements, payments, and recoveries (salvage and subrogation) over its lifetime
 
 ## Quickstart
 
@@ -33,7 +33,7 @@ claimsgen generate \
 ./claimsgen ui
 ```
 
-Serves a local web UI on `http://127.0.0.1:8080` (`--port` to change). It offers the same run flags as the CLI plus every line of business parameter (prefilled from the preset, editable), writes the same three CSVs on Generate, and shows the result: per-year summary stats, paid and incurred development triangles with age-to-age factors, severity and lag distributions, and the run's position inside the Schedule P realism bands. The Schedule P reference data is embedded in the binary.
+Serves a local web UI on `http://127.0.0.1:8080` (`--port` to change). It offers the same run flags as the CLI plus every line of business parameter (prefilled from the preset, editable, including a Recoveries group for the salvage and subrogation probabilities, mean shares, and lags), writes the same three CSVs on Generate, and shows the result: per-year summary stats (including a Recovered column), paid and incurred development triangles with age-to-age factors and a Paid (gross) / Paid (net) / Incurred toggle, severity and lag distributions, and the run's position inside the Schedule P realism bands. The Schedule P reference data is embedded in the binary.
 
 Configure a run in the sidebar and hit Generate - the summary tab shows per-year stats for the book:
 
@@ -54,7 +54,10 @@ Configure a run in the sidebar and hit Generate - the summary tab shows per-year
 1. **Policy book** - each year's book size is the previous year's size times a growth factor times random noise, so the book trends upward but can shrink in individual years. Per policy: sum insured (lognormal with calendar-year inflation), a mean-1 risk factor loading claim frequency, an excess from a discrete choice set, and premium proportional to sum insured and risk.
 2. **Claim events** - Poisson claim counts per policy scaled by the risk factor; short lognormal report lags; ground-up losses mixing own damage (lognormal, scaled by sum insured) and third party liability (Pareto, not capped at sum insured), then scaled by a claims-inflation index at the claim's occurrence year; losses below the excess are not reportable. Close delays are gamma distributed, stretched for large claims and risky policyholders. A share of reported claims are nil - they close without any payment.
 3. **Case estimate runoff** - each claim's true ultimate cost is drawn around the initial estimate, payments split it over the claim's life, and the case estimate is a noisy view of the remaining cost that settles as the claim ages. A nil claim instead carries its case estimate through revisions and releases it to zero at close, paying nothing.
-4. **Transactions** - the first row of every claim is its initial case estimate on the report date, so the outstanding case at any time is the running sum of `ESTIMATE` amounts. Every payment carries a matching case reduction. At close the outstanding case is exactly zero and total paid equals the ultimate (zero for a nil claim).
+4. **Transactions** - the first row of every claim is its initial case estimate on the report date, so the outstanding case at any time is the running sum of `ESTIMATE` amounts. Every payment carries a matching case reduction. At close the outstanding case is exactly zero and total paid equals the ultimate (zero for a nil claim). Recovery rows are the only transactions dated after a claim's close date.
+5. **Recoveries** - own-damage claims can yield salvage (the wreck is sold) and subrogation (the payout is recovered from an at-fault third party). Each is a Beta-distributed share of the claim's gross paid, received a lognormal lag after the close date - subrogation typically much later than salvage. Recoveries are pure cash events: the case estimate stays gross, and a claim's total recovered is always below its gross paid. Setting a recovery type's probability to 0 switches it off.
+
+Gross paid is the sum of a claim's `PAYMENT` rows; net paid subtracts its `SALVAGE` and `SUBROGATION` rows.
 
 Claims inflation is a stochastic path: each calendar year's factor is a mean level (a per-line-of-business knob) times lognormal noise, compounding from the start year and drawn from its own labelled sub-stream so it stays reproducible and independent of the other stages.
 
@@ -66,7 +69,7 @@ All behavior is driven by a YAML file mapped to the `LineOfBusiness` domain obje
 
 ## Realism
 
-Generated data is checked against the ~145 Schedule P private passenger auto reference datasets (1998-2007) in `data/reference/ppauto_pos98-07/`: paid and incurred age-to-age development factors and the ultimate loss ratio must fall inside the bands observed across the reference companies. This runs as a test gate (`TestDefaultPresetIsRealistic`).
+Generated data is checked against the ~145 Schedule P private passenger auto reference datasets (1998-2007) in `data/reference/ppauto_pos98-07/`: paid and incurred age-to-age development factors and the ultimate loss ratio must fall inside the bands observed across the reference companies. The paid comparison is net of recoveries, matching how Schedule P reports paid losses. This runs as a test gate (`TestDefaultPresetIsRealistic`).
 
 ## Development
 
