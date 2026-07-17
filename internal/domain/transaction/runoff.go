@@ -92,7 +92,7 @@ func (s *RunoffSimulator) simulateClaim(src shared.RandomSource, c claim.Claim) 
 		}
 		remaining := (ultimate - paid).Dollars()
 		sigma := s.params.RevisionSigma * (1 - float64(e.offset)/float64(duration))
-		target := shared.FromDollars(remaining * meanOneLogNormal(src, sigma))
+		target := shared.FromDollars(remaining * shared.MeanOneLogNormal(src, sigma))
 		emitter.reviseTo(e.offset, target)
 	}
 
@@ -208,13 +208,4 @@ func (e *emitter) pay(offset int, amount shared.Money) {
 		Amount:  amount,
 	})
 	e.estimate(offset, -amount)
-}
-
-// meanOneLogNormal draws from a lognormal with mean exactly 1; sigma 0
-// degenerates to the constant 1.
-func meanOneLogNormal(src shared.RandomSource, sigma float64) float64 {
-	if sigma <= 0 {
-		return 1
-	}
-	return src.LogNormal(-sigma*sigma/2, sigma)
 }
