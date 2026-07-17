@@ -6,7 +6,9 @@
 // a noisy assessor's view of the remaining cost that converges to zero at
 // close. The initial estimate is emitted as the first ESTIMATE row, so a
 // claim's outstanding case at any time is the running sum of its ESTIMATE
-// amounts.
+// amounts. Runoff is developed in episodes: a normal claim runs one episode
+// to close, while a reopened claim runs a first episode to its first close,
+// a re-raise to the reopen estimate, and a second episode to the final close.
 package transaction
 
 import (
@@ -67,13 +69,54 @@ type event struct {
 }
 
 func (s *RunoffSimulator) simulateClaim(src shared.RandomSource, c claim.Claim) []Transaction {
-	if c.Nil {
-		return s.simulateNilClaim(src, c)
+	e := &emitter{claimID: c.ID, report: c.ReportDate}
+	e.estimate(0, c.InitialEstimate)
+
+	firstClose := c.CloseDate
+	if c.Reopened() {
+		firstClose = c.FirstCloseDate
 	}
-	duration := shared.DaysBetween(c.ReportDate, c.CloseDate)
+	s.runEpisode(src, e, c.ReportDate, firstClose, c.InitialEstimate, c.Nil, false)
+
+	if c.Reopened() {
+		// The case is re-raised on the reopen date, then a second, smaller
+		// episode develops and pays the reopen estimate.
+		e.reviseTo(shared.DaysBetween(c.ReportDate, c.ReopenDate), c.ReopenEstimate)
+		s.runEpisode(src, e, c.ReopenDate, c.CloseDate, c.ReopenEstimate, false, true)
+	}
+	return e.txs
+}
+
+// runEpisode develops one open-close episode: interim payments and pure
+// revisions between start and close, a final settlement at close, and the
+// outstanding case released to exactly zero. A nil episode emits no
+// payments. floorRevisions keeps every revision target at least one cent
+// (the nil path's guard), used for reopen episodes whose opening estimates
+// can be tiny.
+func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, start, close shared.Date, opening shared.Money, isNil, floorRevisions bool) {
+	base := shared.DaysBetween(e.report, start)
+	duration := shared.DaysBetween(start, close)
 	years := float64(duration) / 365
 
-	ultimate := s.drawUltimate(src, c.InitialEstimate)
+	if isNil {
+		revisions := s.drawRevisions(src, duration, years)
+		sort.SliceStable(revisions, func(i, j int) bool {
+			return revisions[i].offset < revisions[j].offset
+		})
+		for _, ev := range revisions {
+			remaining := e.outstanding.Dollars()
+			sigma := s.params.RevisionSigma * (1 - float64(ev.offset)/float64(duration))
+			target := shared.FromDollars(remaining * shared.MeanOneLogNormal(src, sigma))
+			if target < 1 {
+				target = 1 // keep the case open so the terminal release lands on the close date
+			}
+			e.reviseTo(base+ev.offset, target)
+		}
+		e.reviseTo(base+duration, 0)
+		return
+	}
+
+	ultimate := s.drawUltimate(src, opening)
 	interims := s.drawInterimPayments(src, ultimate, duration, years)
 	events := append(s.drawRevisions(src, duration, years), interims...)
 	sort.SliceStable(events, func(i, j int) bool {
@@ -83,56 +126,26 @@ func (s *RunoffSimulator) simulateClaim(src shared.RandomSource, c claim.Claim) 
 		return events[i].kind < events[j].kind
 	})
 
-	emitter := &emitter{claimID: c.ID, report: c.ReportDate}
-	emitter.estimate(0, c.InitialEstimate)
-
 	paid := shared.Money(0)
-	for _, e := range events {
-		if e.kind == 1 {
-			emitter.pay(e.offset, e.amount)
-			paid += e.amount
+	for _, ev := range events {
+		if ev.kind == 1 {
+			e.pay(base+ev.offset, ev.amount)
+			paid += ev.amount
 			continue
 		}
 		remaining := (ultimate - paid).Dollars()
-		sigma := s.params.RevisionSigma * (1 - float64(e.offset)/float64(duration))
+		sigma := s.params.RevisionSigma * (1 - float64(ev.offset)/float64(duration))
 		target := shared.FromDollars(remaining * shared.MeanOneLogNormal(src, sigma))
-		emitter.reviseTo(e.offset, target)
+		if floorRevisions && target < 1 {
+			target = 1
+		}
+		e.reviseTo(base+ev.offset, target)
 	}
 
 	// Final settlement clears the remaining ultimate, then the case snaps
 	// to exactly zero.
-	emitter.pay(duration, ultimate-paid)
-	emitter.reviseTo(duration, 0)
-	return emitter.txs
-}
-
-// simulateNilClaim runs off a claim that closes without payment: the initial
-// case estimate, interim pure revisions as noise around the outstanding
-// reserve, then a single release to zero at close. No payments are emitted.
-func (s *RunoffSimulator) simulateNilClaim(src shared.RandomSource, c claim.Claim) []Transaction {
-	duration := shared.DaysBetween(c.ReportDate, c.CloseDate)
-	years := float64(duration) / 365
-
-	revisions := s.drawRevisions(src, duration, years)
-	sort.SliceStable(revisions, func(i, j int) bool {
-		return revisions[i].offset < revisions[j].offset
-	})
-
-	emitter := &emitter{claimID: c.ID, report: c.ReportDate}
-	emitter.estimate(0, c.InitialEstimate)
-
-	for _, e := range revisions {
-		remaining := emitter.outstanding.Dollars()
-		sigma := s.params.RevisionSigma * (1 - float64(e.offset)/float64(duration))
-		target := shared.FromDollars(remaining * shared.MeanOneLogNormal(src, sigma))
-		if target < 1 {
-			target = 1 // keep the case open so the terminal release lands on the close date
-		}
-		emitter.reviseTo(e.offset, target)
-	}
-
-	emitter.reviseTo(duration, 0)
-	return emitter.txs
+	e.pay(base+duration, ultimate-paid)
+	e.reviseTo(base+duration, 0)
 }
 
 func (s *RunoffSimulator) drawUltimate(src shared.RandomSource, initial shared.Money) shared.Money {

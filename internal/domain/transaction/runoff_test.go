@@ -265,6 +265,121 @@ func TestNilClaimHasNoPaymentsAndClosesToZero(t *testing.T) {
 	}
 }
 
+// reopenedClaim builds one claim with a reopen episode.
+func reopenedClaim(isNil bool) claim.Claim {
+	return claim.Claim{
+		ID:              1,
+		PolicyID:        1,
+		OccurrenceDate:  shared.NewDate(2000, time.January, 1),
+		ReportDate:      shared.NewDate(2000, time.January, 5),
+		FirstCloseDate:  shared.NewDate(2000, time.June, 1),
+		ReopenDate:      shared.NewDate(2000, time.September, 1),
+		CloseDate:       shared.NewDate(2001, time.February, 1),
+		InitialEstimate: shared.FromDollars(8000),
+		ReopenEstimate:  shared.FromDollars(3000),
+		RiskFactor:      1.0,
+		Nil:             isNil,
+	}
+}
+
+func TestReopenedClaimRunsTwoEpisodes(t *testing.T) {
+	c := reopenedClaim(false)
+	txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(11), []claim.Claim{c})
+
+	outstanding := shared.Money(0)
+	outstandingAtFirstClose := shared.Money(-1)
+	var reopenRow *transaction.Transaction
+	for i, tx := range txs {
+		if tx.Type == transaction.Estimate {
+			outstanding += tx.Amount
+		}
+		if !tx.Date.After(c.FirstCloseDate) {
+			outstandingAtFirstClose = outstanding
+		} else if reopenRow == nil {
+			reopenRow = &txs[i]
+		}
+	}
+	if outstandingAtFirstClose != 0 {
+		t.Fatalf("outstanding at first close = %v, want 0", outstandingAtFirstClose)
+	}
+	if reopenRow == nil {
+		t.Fatal("no transactions after the first close")
+	}
+	if reopenRow.Type != transaction.Estimate || reopenRow.Amount != c.ReopenEstimate || reopenRow.Date != c.ReopenDate {
+		t.Fatalf("re-raise row %+v, want ESTIMATE %v on %s", *reopenRow, c.ReopenEstimate, c.ReopenDate)
+	}
+	if outstanding != 0 {
+		t.Fatalf("outstanding at final close = %v, want 0", outstanding)
+	}
+	if last := txs[len(txs)-1]; last.Date != c.CloseDate {
+		t.Fatalf("last transaction on %s, want final close %s", last.Date, c.CloseDate)
+	}
+}
+
+func TestReopenedNilClaimPaysOnlyInEpisodeTwo(t *testing.T) {
+	c := reopenedClaim(true)
+	txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(12), []claim.Claim{c})
+
+	paidBeforeReopen := shared.Money(0)
+	paidAfterReopen := shared.Money(0)
+	for _, tx := range txs {
+		if tx.Type != transaction.Payment {
+			continue
+		}
+		if tx.Date.Before(c.ReopenDate) {
+			paidBeforeReopen += tx.Amount
+		} else {
+			paidAfterReopen += tx.Amount
+		}
+	}
+	if paidBeforeReopen != 0 {
+		t.Fatalf("reopened nil claim paid %v before the reopen, want 0", paidBeforeReopen)
+	}
+	if paidAfterReopen <= 0 {
+		t.Fatalf("reopened nil claim paid %v in episode 2, want positive", paidAfterReopen)
+	}
+}
+
+func TestReopenedClaimRowsChronological(t *testing.T) {
+	claims := testClaims(50)
+	for i := range claims {
+		if i%4 == 0 {
+			claims[i].FirstCloseDate = claims[i].CloseDate
+			claims[i].ReopenDate = claims[i].CloseDate.AddDays(60)
+			claims[i].ReopenEstimate = shared.FromDollars(2000)
+			claims[i].CloseDate = claims[i].ReopenDate.AddDays(90)
+		}
+	}
+	txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(13), claims)
+	for id, rows := range byClaim(txs) {
+		for i := 1; i < len(rows); i++ {
+			if rows[i].Date.Before(rows[i-1].Date) {
+				t.Fatalf("claim %d rows out of order", id)
+			}
+		}
+	}
+}
+
+func TestTinyReopenEstimateStillClosesOnFinalCloseDate(t *testing.T) {
+	c := reopenedClaim(false)
+	c.ReopenEstimate = shared.Money(2) // two cents over a five-month episode
+	for seed := uint64(1); seed <= 25; seed++ {
+		txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(seed), []claim.Claim{c})
+		outstanding := shared.Money(0)
+		for _, tx := range txs {
+			if tx.Type == transaction.Estimate {
+				outstanding += tx.Amount
+			}
+		}
+		if outstanding != 0 {
+			t.Fatalf("seed %d: outstanding at final close = %v, want 0", seed, outstanding)
+		}
+		if last := txs[len(txs)-1]; last.Date != c.CloseDate {
+			t.Fatalf("seed %d: last transaction on %s, want final close %s", seed, last.Date, c.CloseDate)
+		}
+	}
+}
+
 func TestNilClaimTinyEstimateStillClosesOnCloseDate(t *testing.T) {
 	// A tiny initial estimate over a long duration is the case where revision
 	// targets can round to zero; the terminal release must still land on the
