@@ -10,7 +10,7 @@ import (
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
 )
 
-const refDir = "../../../data/reference/ppauto_pos98-07"
+const refDir = "../../../data/reference/schedule p/dec2025/ppauto_pos98-07"
 
 func TestLoadDirReadsAllCompanies(t *testing.T) {
 	refs, err := schedulep.LoadDir(refDir)
@@ -51,14 +51,14 @@ func TestLoadKnownCompany(t *testing.T) {
 }
 
 func TestLoadFSEmbeddedMatchesDisk(t *testing.T) {
-	embedded, err := schedulep.LoadFS(refdata.Files, "ppauto_pos98-07")
+	embedded, err := schedulep.LoadFS(refdata.Files, "schedule p/dec2025/ppauto_pos98-07")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(embedded) != 143 {
 		t.Fatalf("embedded reference sets = %d, want 143", len(embedded))
 	}
-	disk, err := schedulep.LoadDir("../../../data/reference/ppauto_pos98-07")
+	disk, err := schedulep.LoadDir(refDir)
 	if err != nil {
 		t.Fatal(err)
 	}

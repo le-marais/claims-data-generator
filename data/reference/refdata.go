@@ -4,5 +4,5 @@ package refdata
 
 import "embed"
 
-//go:embed ppauto_pos98-07/*.json
+//go:embed "schedule p/dec2025/ppauto_pos98-07/*.json"
 var Files embed.FS

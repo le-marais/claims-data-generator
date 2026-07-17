@@ -70,7 +70,7 @@ All behavior is driven by a YAML file mapped to the `LineOfBusiness` domain obje
 
 ## Realism
 
-Generated data is checked against the ~145 Schedule P private passenger auto reference datasets (1998-2007) in `data/reference/ppauto_pos98-07/`: paid and incurred age-to-age development factors and the ultimate loss ratio must fall inside the bands observed across the reference companies. The paid comparison is net of recoveries, matching how Schedule P reports paid losses. This runs as a test gate (`TestDefaultPresetIsRealistic`).
+Generated data is checked against the ~145 Schedule P private passenger auto reference datasets (1998-2007) in `data/reference/schedule p/dec2025/ppauto_pos98-07/`: paid and incurred age-to-age development factors and the ultimate loss ratio must fall inside the bands observed across the reference companies. The paid comparison is net of recoveries, matching how Schedule P reports paid losses. This runs as a test gate (`TestDefaultPresetIsRealistic`).
 
 ## Development
 

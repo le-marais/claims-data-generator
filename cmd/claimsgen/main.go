@@ -113,7 +113,7 @@ func runUI(args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	refs, err := schedulep.LoadFS(refdata.Files, "ppauto_pos98-07")
+	refs, err := schedulep.LoadFS(refdata.Files, "schedule p/dec2025/ppauto_pos98-07")
 	if err != nil {
 		fmt.Fprintf(stderr, "claimsgen: reference data: %v\n", err)
 		return 1
