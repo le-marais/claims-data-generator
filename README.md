@@ -41,7 +41,7 @@ Configure a run in the sidebar and hit Generate - the summary tab shows per-year
 
 | Development triangles | Distributions |
 | --- | --- |
-| Paid and incurred cumulative triangles as heatmaps, with volume-weighted age-to-age factors underneath. | Claim severity (log-spaced bins) plus report and close lag histograms. |
+| Cumulative triangles as heatmaps - paid gross, paid net of recoveries, or incurred - with volume-weighted age-to-age factors underneath. | Claim severity (log-spaced bins) plus report and close lag histograms. |
 | ![Paid development triangle heatmap with age-to-age factors](docs/screenshots/ui-triangles.png) | ![Severity and lag distribution histograms](docs/screenshots/ui-distributions.png) |
 
 | Realism check | Realism check - failing run |
