@@ -85,3 +85,26 @@ func TestSummarizeCountsNilClaims(t *testing.T) {
 		t.Fatalf("total nil claims = %d, want 1", got.Total.NilClaims)
 	}
 }
+
+func TestSummarizeCountsRecoveredByOccurrenceYear(t *testing.T) {
+	ds := tinyDataset()
+	// A salvage recovery on claim 1 (occurred 1998), received in 1999: it
+	// books to the occurrence year, like Paid.
+	ds.Transactions = append(ds.Transactions, transaction.Transaction{
+		ID: 5, ClaimID: 1, Date: shared.NewDate(1999, time.February, 1), Type: transaction.Salvage, Amount: shared.FromDollars(150),
+	})
+	got := application.Summarize(ds, 1998, 2)
+	if got.Years[0].Recovered != 150 {
+		t.Errorf("1998 recovered = %v, want 150", got.Years[0].Recovered)
+	}
+	if got.Years[1].Recovered != 0 {
+		t.Errorf("1999 recovered = %v, want 0", got.Years[1].Recovered)
+	}
+	if got.Total.Recovered != 150 {
+		t.Errorf("total recovered = %v, want 150", got.Total.Recovered)
+	}
+	// Paid stays gross.
+	if got.Years[0].Paid != 1000 {
+		t.Errorf("1998 paid = %v, want 1000 (gross)", got.Years[0].Paid)
+	}
+}
