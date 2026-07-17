@@ -3,6 +3,7 @@ package application_test
 import (
 	"testing"
 
+	refdata "github.com/le-marais/claimsgen/data/reference"
 	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
@@ -12,7 +13,7 @@ import (
 // the shipped motor-personal preset must land inside the bands observed
 // across the Schedule P reference companies.
 func TestDefaultPresetIsRealistic(t *testing.T) {
-	refs, err := schedulep.LoadDir("../../data/reference/schedule p/dec2025/ppauto_pos98-07")
+	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDirs...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +32,7 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 }
 
 func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
-	refs, err := schedulep.LoadDir("../../data/reference/schedule p/dec2025/ppauto_pos98-07")
+	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDirs...)
 	if err != nil {
 		t.Fatal(err)
 	}
