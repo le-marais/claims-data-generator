@@ -48,7 +48,7 @@ Extend the engine to more short tail lines of business (e.g. commercial property
 Add further features of real claims data that are excluded from the MVP:
 
 - Nil claims (closed without payment) - done
-- Reopened claims
+- Reopened claims - done
 - Recoveries (salvage and subrogation) - done
 - Claims inflation across calendar years - done
 

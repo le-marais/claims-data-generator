@@ -1,0 +1,8 @@
+{
+  "name": "claimsgen-screenshots",
+  "private": true,
+  "description": "Regenerates the README UI screenshots. Usage: start `claimsgen ui --port 8093`, then `npm install && node screenshots.js`.",
+  "dependencies": {
+    "puppeteer-core": "^24.0.0"
+  }
+}

@@ -11,14 +11,13 @@ A living view of where claimsgen is and what comes next. Grounded in `mission.md
 - **Claims inflation** - stochastic occurrence-year inflation index, one user-facing mean knob per line of business, applied to every claim's ground-up loss.
 - **Nil claims** - a share of reported claims close without payment, with a dedicated no-payment runoff path and a `nil_probability` off switch.
 - **Recoveries (salvage and subrogation)** - money coming back on own-damage claims after close, as SALVAGE and SUBROGATION transaction types; triangles and the realism gate go net of recoveries, and the triangle tab gains a gross/net toggle.
+- **Reopened claims** - a closed claim can reopen once and develop a second episode; claims.csv shows the final close date and the reopen appears in transactions as a case re-raised after a release to zero, with a reopen_probability off switch.
 
 Only motor personal exists as a line of business today.
 
-## Near term - finish the real-claims-data backlog
+## Near term
 
-The mission lists four features of real claims data excluded from the MVP. Three are done (claims inflation, nil claims, recoveries). The remaining one enriches every future line of business and is best done before adding more classes, because it changes the output schema and the CSV format becomes a contract once the tool is shared more widely.
-
-- **Reopened claims** - the hardest of the four, because it breaks the "close date is final, every claim develops fully" assumption that the runoff simulator, the invariant sweep, and `claims.csv` all rely on. Needs a deliberate decision about what the claims file shows (real systems show the latest close date). Own spec, done last in this group.
+The real-claims-data backlog from the mission is complete (claims inflation, nil claims, recoveries, reopened claims). The next candidate is the mid-term second line of business below.
 
 ## Mid term - second line of business
 
