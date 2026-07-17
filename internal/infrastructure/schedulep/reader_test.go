@@ -8,6 +8,7 @@ import (
 	"testing/fstest"
 
 	refdata "github.com/le-marais/claimsgen/data/reference"
+	"github.com/le-marais/claimsgen/internal/domain/triangle"
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
 )
 
@@ -52,16 +53,20 @@ func TestLoadKnownCompany(t *testing.T) {
 }
 
 func TestLoadFSEmbeddedMatchesDisk(t *testing.T) {
-	embedded, err := schedulep.LoadFS(refdata.Files, "schedule p/dec2025/ppauto_pos98-07")
+	embedded, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDirs...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(embedded) != 143 {
-		t.Fatalf("embedded reference sets = %d, want 143", len(embedded))
+	if len(embedded) != 289 {
+		t.Fatalf("embedded reference sets = %d, want 289", len(embedded))
 	}
-	disk, err := schedulep.LoadDir(refDir)
-	if err != nil {
-		t.Fatal(err)
+	var disk []triangle.ReferenceSet
+	for _, dir := range refdata.PersonalMotorDirs {
+		refs, err := schedulep.LoadDir(filepath.Join("../../../data/reference", dir))
+		if err != nil {
+			t.Fatal(err)
+		}
+		disk = append(disk, refs...)
 	}
 	if !reflect.DeepEqual(embedded, disk) {
 		t.Fatal("embedded reference sets differ from disk")
