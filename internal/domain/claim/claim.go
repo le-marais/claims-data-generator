@@ -24,6 +24,9 @@ type Claim struct {
 	InitialEstimate shared.Money
 	// RiskFactor is carried from the policy for downstream stages.
 	RiskFactor float64
+	// Nil is true when the claim closes without any payment. It is carried
+	// to the runoff stage but never written to CSV.
+	Nil bool
 }
 
 // ClaimSimulator generates claim events for a policy book.
@@ -91,6 +94,8 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 
 	close := report.AddDays(int(math.Round(s.drawCloseLag(src, estimate, pol.RiskFactor))))
 
+	isNil := s.params.NilProbability > 0 && src.Bernoulli(s.params.NilProbability)
+
 	return Claim{
 		PolicyID:        pol.ID,
 		OccurrenceDate:  occurrence,
@@ -98,6 +103,7 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 		CloseDate:       close,
 		InitialEstimate: shared.FromDollars(estimate),
 		RiskFactor:      pol.RiskFactor,
+		Nil:             isNil,
 	}, true
 }
 

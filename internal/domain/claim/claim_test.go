@@ -242,3 +242,35 @@ func TestNoInflationMatchesIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestNilProbabilityZeroFlagsNoClaims(t *testing.T) {
+	p := params()
+	p.NilProbability = 0
+	claims := claim.NewClaimSimulator(p).Simulate(random.NewSource(21), fixedBook(30000, 20000, 0, 1.0))
+	if len(claims) == 0 {
+		t.Fatal("expected claims")
+	}
+	for _, c := range claims {
+		if c.Nil {
+			t.Fatalf("claim %d flagged nil with probability 0", c.ID)
+		}
+	}
+}
+
+func TestNilProbabilityHighFlagsMostClaims(t *testing.T) {
+	p := params()
+	p.NilProbability = 0.9
+	claims := claim.NewClaimSimulator(p).Simulate(random.NewSource(22), fixedBook(30000, 20000, 0, 1.0))
+	if len(claims) < 20 {
+		t.Fatalf("expected a meaningful number of claims, got %d", len(claims))
+	}
+	nils := 0
+	for _, c := range claims {
+		if c.Nil {
+			nils++
+		}
+	}
+	if frac := float64(nils) / float64(len(claims)); frac < 0.7 {
+		t.Fatalf("nil fraction %v, want most claims nil at probability 0.9", frac)
+	}
+}
