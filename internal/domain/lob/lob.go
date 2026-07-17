@@ -48,6 +48,23 @@ type ClaimParams struct {
 	ReportLagSigma float64
 	Severity       SeverityParams
 	CloseLag       CloseLagParams
+	// Inflation is the stochastic claims-inflation path applied by
+	// occurrence year to every claim's ground-up loss.
+	Inflation InflationParams
+	// NilProbability is the chance a reported claim closes without payment;
+	// 0 switches nil claims off.
+	NilProbability float64
+}
+
+// InflationParams is the stochastic annual claims-inflation path: each
+// calendar year's factor is Mean times mean-1 lognormal noise of sigma
+// Volatility, compounded from an index of 1.0 in the start year.
+type InflationParams struct {
+	// Mean is the average annual claims inflation factor (1.0 = flat prices).
+	Mean float64
+	// Volatility is the sigma of the mean-1 lognormal noise on each year's
+	// factor.
+	Volatility float64
 }
 
 // SeverityParams is the ground-up loss mixture: own damage (lognormal
@@ -168,7 +185,23 @@ func (c ClaimParams) validate() error {
 	if err := c.Severity.validate(); err != nil {
 		return err
 	}
+	if err := c.Inflation.validate(); err != nil {
+		return err
+	}
+	if c.NilProbability < 0 || c.NilProbability >= 1 {
+		return fmt.Errorf("claims.nil_probability: must be in [0, 1), got %v", c.NilProbability)
+	}
 	return c.CloseLag.validate()
+}
+
+func (i InflationParams) validate() error {
+	if i.Mean <= 0 {
+		return fmt.Errorf("claims.inflation.mean: must be positive, got %v", i.Mean)
+	}
+	if i.Volatility < 0 {
+		return fmt.Errorf("claims.inflation.volatility: must not be negative, got %v", i.Volatility)
+	}
+	return nil
 }
 
 func (s SeverityParams) validate() error {

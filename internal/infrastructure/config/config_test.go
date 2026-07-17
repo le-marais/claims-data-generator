@@ -36,6 +36,10 @@ claims:
     size_threshold: 20000
     size_multiplier: 4
     risk_loading: 0.5
+  inflation:
+    mean: 1.0
+    volatility: 0.0
+  nil_probability: 0.0
 runoff:
   case_adequacy_mean: 1.0
   case_adequacy_sigma: 0.3

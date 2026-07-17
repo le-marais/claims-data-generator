@@ -42,6 +42,7 @@ func validMotor() LineOfBusiness {
 				SizeMultiplier: 4,
 				RiskLoading:    0.5,
 			},
+			Inflation: InflationParams{Mean: 1.0, Volatility: 0.0},
 		},
 		Runoff: RunoffParams{
 			CaseAdequacyMean:  1.0,
@@ -119,5 +120,40 @@ func TestExcessWeightsMustSumPositive(t *testing.T) {
 	}
 	if err := l.Validate(); err == nil {
 		t.Error("expected error for all-zero excess weights")
+	}
+}
+
+func TestValidateRejectsNonPositiveInflationMean(t *testing.T) {
+	l := validMotor()
+	l.Claims.Inflation.Mean = 0
+	if err := l.Validate(); err == nil {
+		t.Fatal("inflation mean 0: want error, got nil")
+	}
+}
+
+func TestValidateRejectsNegativeInflationVolatility(t *testing.T) {
+	l := validMotor()
+	l.Claims.Inflation.Volatility = -0.1
+	if err := l.Validate(); err == nil {
+		t.Fatal("negative inflation volatility: want error, got nil")
+	}
+}
+
+func TestValidateRejectsNilProbabilityOutOfRange(t *testing.T) {
+	for _, p := range []float64{-0.01, 1.0, 1.5} {
+		l := validMotor()
+		l.Claims.NilProbability = p
+		if err := l.Validate(); err == nil {
+			t.Fatalf("nil_probability %v: want error, got nil", p)
+		}
+	}
+}
+
+func TestValidateAcceptsIdentityInflationAndZeroNil(t *testing.T) {
+	l := validMotor()
+	l.Claims.Inflation = InflationParams{Mean: 1.0, Volatility: 0.0}
+	l.Claims.NilProbability = 0
+	if err := l.Validate(); err != nil {
+		t.Fatalf("identity inflation and zero nil: want nil, got %v", err)
 	}
 }

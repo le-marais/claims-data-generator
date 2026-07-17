@@ -45,11 +45,18 @@ type ExcessChoiceParams struct {
 }
 
 type ClaimsParams struct {
-	BaseFrequency   float64        `yaml:"base_frequency" json:"base_frequency"`
-	ReportLagMedian float64        `yaml:"report_lag_median" json:"report_lag_median"`
-	ReportLagSigma  float64        `yaml:"report_lag_sigma" json:"report_lag_sigma"`
-	Severity        SeverityParams `yaml:"severity" json:"severity"`
-	CloseLag        CloseLagParams `yaml:"close_lag" json:"close_lag"`
+	BaseFrequency   float64         `yaml:"base_frequency" json:"base_frequency"`
+	ReportLagMedian float64         `yaml:"report_lag_median" json:"report_lag_median"`
+	ReportLagSigma  float64         `yaml:"report_lag_sigma" json:"report_lag_sigma"`
+	Severity        SeverityParams  `yaml:"severity" json:"severity"`
+	CloseLag        CloseLagParams  `yaml:"close_lag" json:"close_lag"`
+	Inflation       InflationParams `yaml:"inflation" json:"inflation"`
+	NilProbability  float64         `yaml:"nil_probability" json:"nil_probability"`
+}
+
+type InflationParams struct {
+	Mean       float64 `yaml:"mean" json:"mean"`
+	Volatility float64 `yaml:"volatility" json:"volatility"`
 }
 
 type SeverityParams struct {
@@ -189,6 +196,11 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 				SizeMultiplier: d.Claims.CloseLag.SizeMultiplier,
 				RiskLoading:    d.Claims.CloseLag.RiskLoading,
 			},
+			Inflation: lob.InflationParams{
+				Mean:       d.Claims.Inflation.Mean,
+				Volatility: d.Claims.Inflation.Volatility,
+			},
+			NilProbability: d.Claims.NilProbability,
 		},
 		Runoff: lob.RunoffParams{
 			CaseAdequacyMean:  d.Runoff.CaseAdequacyMean,
