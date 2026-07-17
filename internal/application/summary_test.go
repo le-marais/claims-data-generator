@@ -57,3 +57,31 @@ func TestYearSummaryLossRatio(t *testing.T) {
 		t.Fatal("LossRatio with zero premium: want ok=false")
 	}
 }
+
+func TestSummarizeCountsNilClaims(t *testing.T) {
+	ds := application.Dataset{
+		Policies: []policy.Policy{
+			{ID: 1, CoverStart: shared.NewDate(1998, time.January, 1), CoverEnd: shared.NewDate(1998, time.December, 31), Premium: shared.FromDollars(365)},
+		},
+		Claims: []claim.Claim{
+			{ID: 1, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1), ReportDate: shared.NewDate(1998, time.March, 11), CloseDate: shared.NewDate(1998, time.June, 1)},
+			{ID: 2, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.April, 1), ReportDate: shared.NewDate(1998, time.April, 11), CloseDate: shared.NewDate(1998, time.July, 1), Nil: true},
+		},
+		Transactions: []transaction.Transaction{
+			{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.March, 11), Type: transaction.Estimate, Amount: shared.FromDollars(1000)},
+			{ID: 2, ClaimID: 1, Date: shared.NewDate(1998, time.June, 1), Type: transaction.Payment, Amount: shared.FromDollars(1000)},
+			{ID: 3, ClaimID: 2, Date: shared.NewDate(1998, time.April, 11), Type: transaction.Estimate, Amount: shared.FromDollars(800)},
+			{ID: 4, ClaimID: 2, Date: shared.NewDate(1998, time.July, 1), Type: transaction.Estimate, Amount: shared.FromDollars(-800)},
+		},
+	}
+	got := application.Summarize(ds, 1998, 1)
+	if got.Years[0].Claims != 2 {
+		t.Fatalf("claims = %d, want 2", got.Years[0].Claims)
+	}
+	if got.Years[0].NilClaims != 1 {
+		t.Fatalf("nil claims = %d, want 1", got.Years[0].NilClaims)
+	}
+	if got.Total.NilClaims != 1 {
+		t.Fatalf("total nil claims = %d, want 1", got.Total.NilClaims)
+	}
+}

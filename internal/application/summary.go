@@ -12,6 +12,7 @@ type YearSummary struct {
 	Year          int
 	Policies      int
 	Claims        int
+	NilClaims     int
 	EarnedPremium float64
 	Paid          float64
 }
@@ -50,6 +51,9 @@ func Summarize(ds Dataset, startYear, years int) SummaryReport {
 		occurrenceYear[c.ID] = c.OccurrenceDate.Year()
 		if i := c.OccurrenceDate.Year() - startYear; i >= 0 && i < years {
 			rows[i].Claims++
+			if c.Nil {
+				rows[i].NilClaims++
+			}
 		}
 	}
 	for _, tx := range ds.Transactions {
@@ -64,6 +68,7 @@ func Summarize(ds Dataset, startYear, years int) SummaryReport {
 	for _, r := range rows {
 		total.Policies += r.Policies
 		total.Claims += r.Claims
+		total.NilClaims += r.NilClaims
 		total.EarnedPremium += r.EarnedPremium
 		total.Paid += r.Paid
 	}
