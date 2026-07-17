@@ -61,9 +61,11 @@ func (s *RecoverySimulator) Apply(src shared.RandomSource, claims []claim.Claim,
 	for i, tx := range txs {
 		merged = append(merged, tx)
 		// The runoff emits each claim's rows as one contiguous block; append
-		// the claim's recoveries at the end of its block.
+		// the claim's recoveries at the end of its block. Deleting after append
+		// guards against double insertion if claims are ever interleaved.
 		if i+1 == len(txs) || txs[i+1].ClaimID != tx.ClaimID {
 			merged = append(merged, recoveries[tx.ClaimID]...)
+			delete(recoveries, tx.ClaimID)
 		}
 	}
 	for i := range merged {
