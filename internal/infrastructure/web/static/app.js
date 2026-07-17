@@ -32,6 +32,8 @@ const FIELD_GROUPS = [
       { path: ["claims", "close_lag", "size_threshold"], label: "Close lag size threshold", tip: "Initial estimate above which the lag stretches." },
       { path: ["claims", "close_lag", "size_multiplier"], label: "Close lag size multiplier", tip: "Stretch factor for large claims." },
       { path: ["claims", "close_lag", "risk_loading"], label: "Close lag risk loading", tip: "Exponent on the policy risk factor." },
+      { path: ["claims", "inflation", "mean"], label: "Claims inflation", tip: "Average annual claims inflation factor, applied by occurrence year (1.0 = flat)." },
+      { path: ["claims", "nil_probability"], label: "Nil claim probability", tip: "Probability a claim closes without payment; 0 switches nil claims off." },
     ],
   },
   {
@@ -217,7 +219,7 @@ function renderSummary(summary) {
   const table = document.createElement("table");
   table.className = "data-table";
   const head = table.createTHead().insertRow();
-  for (const label of ["Year", "Policies", "Claims", "Earned premium", "Ultimate (paid)", "Loss ratio"]) {
+  for (const label of ["Year", "Policies", "Claims", "Nil claims", "Earned premium", "Ultimate (paid)", "Loss ratio"]) {
     head.append(th(label));
   }
   const body = table.createTBody();
@@ -232,6 +234,7 @@ function summaryRow(row, label) {
   const cells = [
     fmtInt.format(row.policies),
     fmtInt.format(row.claims),
+    fmtInt.format(row.nil_claims),
     fmtMoney.format(row.earned_premium),
     fmtMoney.format(row.paid),
     row.loss_ratio == null ? "n/a" : row.loss_ratio.toFixed(3),

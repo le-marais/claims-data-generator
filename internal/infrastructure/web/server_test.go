@@ -206,6 +206,36 @@ func TestGenerateRoundTrip(t *testing.T) {
 	}
 }
 
+func TestGenerateResponseIncludesNilCount(t *testing.T) {
+	outDir := t.TempDir()
+	rec := do(t, newTestServer(t), "POST", "/api/generate", generateBody(t, outDir))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Summary struct {
+			Years []struct {
+				Claims    int `json:"claims"`
+				NilClaims int `json:"nil_claims"`
+			} `json:"years"`
+			Total struct {
+				NilClaims int `json:"nil_claims"`
+			} `json:"total"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Summary.Years) == 0 {
+		t.Fatal("no summary years")
+	}
+	// The default preset generates nils at ~8%, so the total should be positive
+	// and never exceed total claims.
+	if resp.Summary.Total.NilClaims <= 0 {
+		t.Fatalf("total nil claims = %d, want positive with the default preset", resp.Summary.Total.NilClaims)
+	}
+}
+
 func TestGenerateValidationError(t *testing.T) {
 	body := generateBody(t, t.TempDir())
 	body["years"] = 0
