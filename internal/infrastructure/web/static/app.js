@@ -37,6 +37,15 @@ const FIELD_GROUPS = [
     ],
   },
   {
+    label: "Recoveries",
+    fields: [
+      { path: ["claims", "recoveries", "salvage", "probability"], label: "Salvage probability", tip: "Chance an own-damage claim yields salvage; 0 switches salvage off." },
+      { path: ["claims", "recoveries", "salvage", "mean_share"], label: "Salvage mean share", tip: "Average salvage recovery as a share of the claim's gross paid." },
+      { path: ["claims", "recoveries", "subrogation", "probability"], label: "Subrogation probability", tip: "Chance an own-damage claim is subrogated; 0 switches subrogation off." },
+      { path: ["claims", "recoveries", "subrogation", "mean_share"], label: "Subrogation mean share", tip: "Average subrogation recovery as a share of the claim's gross paid." },
+    ],
+  },
+  {
     label: "Runoff",
     fields: [
       { path: ["runoff", "case_adequacy_mean"], label: "Case adequacy mean", tip: "Mean of ultimate over initial estimate." },
@@ -219,7 +228,7 @@ function renderSummary(summary) {
   const table = document.createElement("table");
   table.className = "data-table";
   const head = table.createTHead().insertRow();
-  for (const label of ["Year", "Policies", "Claims", "Nil claims", "Earned premium", "Ultimate (paid)", "Loss ratio"]) {
+  for (const label of ["Year", "Policies", "Claims", "Nil claims", "Earned premium", "Ultimate (paid)", "Recovered", "Loss ratio"]) {
     head.append(th(label));
   }
   const body = table.createTBody();
@@ -237,6 +246,7 @@ function summaryRow(row, label) {
     fmtInt.format(row.nil_claims),
     fmtMoney.format(row.earned_premium),
     fmtMoney.format(row.paid),
+    fmtMoney.format(row.recovered),
     row.loss_ratio == null ? "n/a" : row.loss_ratio.toFixed(3),
   ];
   for (const text of cells) {
@@ -306,10 +316,11 @@ function renderTriangles(triangles) {
   const toggle = document.createElement("div");
   toggle.className = "toggle";
   let table = triangleTable(triangles.paid);
-  for (const kind of ["paid", "incurred"]) {
+  const kinds = [["paid", "Paid (gross)"], ["net_paid", "Paid (net)"], ["incurred", "Incurred"]];
+  for (const [kind, label] of kinds) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.textContent = kind === "paid" ? "Paid" : "Incurred";
+    btn.textContent = label;
     if (kind === "paid") btn.classList.add("active");
     btn.addEventListener("click", () => {
       for (const b of toggle.children) b.classList.toggle("active", b === btn);

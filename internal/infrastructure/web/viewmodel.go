@@ -48,11 +48,13 @@ type summaryRowJSON struct {
 	NilClaims     int      `json:"nil_claims"`
 	EarnedPremium float64  `json:"earned_premium"`
 	Paid          float64  `json:"paid"`
+	Recovered     float64  `json:"recovered"`
 	LossRatio     *float64 `json:"loss_ratio"`
 }
 
 type trianglesJSON struct {
 	Paid     triangleJSON `json:"paid"`
+	NetPaid  triangleJSON `json:"net_paid"`
 	Incurred triangleJSON `json:"incurred"`
 }
 
@@ -103,6 +105,7 @@ type checkJSON struct {
 func buildResponse(req generateRequest, ds application.Dataset, refs []triangle.ReferenceSet) generateResponseJSON {
 	paid := triangle.PaidTriangle(ds.Claims, ds.Transactions, req.StartYear, req.Years, developmentYears)
 	incurred := triangle.IncurredTriangle(ds.Claims, ds.Transactions, req.StartYear, req.Years, developmentYears)
+	netPaid := triangle.NetPaidTriangle(ds.Claims, ds.Transactions, req.StartYear, req.Years, developmentYears)
 	return generateResponseJSON{
 		Run: runInfoJSON{
 			LOB:             req.Params.Name,
@@ -116,7 +119,7 @@ func buildResponse(req generateRequest, ds application.Dataset, refs []triangle.
 			Transactions:    len(ds.Transactions),
 		},
 		Summary:       summaryView(application.Summarize(ds, req.StartYear, req.Years)),
-		Triangles:     trianglesJSON{Paid: triangleView(paid), Incurred: triangleView(incurred)},
+		Triangles:     trianglesJSON{Paid: triangleView(paid), NetPaid: triangleView(netPaid), Incurred: triangleView(incurred)},
 		Distributions: distributionsView(application.ComputeDistributions(ds)),
 		Realism:       realismView(application.EvaluateRealism(ds, refs, req.StartYear, req.Years)),
 	}
@@ -138,6 +141,7 @@ func summaryRowView(s application.YearSummary) summaryRowJSON {
 		NilClaims:     s.NilClaims,
 		EarnedPremium: s.EarnedPremium,
 		Paid:          s.Paid,
+		Recovered:     s.Recovered,
 	}
 	if lr, ok := s.LossRatio(); ok {
 		row.LossRatio = &lr
