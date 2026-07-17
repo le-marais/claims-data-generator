@@ -52,5 +52,7 @@ func GenerateDataset(src shared.RandomSource, req GenerateRequest) (Dataset, err
 		Simulate(src.Split("claims"), book)
 	txs := transaction.NewRunoffSimulator(req.LOB.Runoff).
 		Simulate(src.Split("runoff"), claims)
+	txs = transaction.NewRecoverySimulator(req.LOB.Claims.Recoveries).
+		Apply(src.Split("recovery"), claims, txs)
 	return Dataset{Policies: book, Claims: claims, Transactions: txs}, nil
 }

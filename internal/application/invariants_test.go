@@ -31,9 +31,11 @@ func TestDatasetInvariants(t *testing.T) {
 		}{p.CoverStart, p.CoverEnd, p.Excess}
 	}
 
-	claims := map[int]struct {
+	type claimInfo struct {
 		report, close shared.Date
-	}{}
+		isNil, ownDmg bool
+	}
+	claims := map[int]claimInfo{}
 	for _, c := range ds.Claims {
 		pol, ok := policies[c.PolicyID]
 		if !ok {
@@ -51,17 +53,17 @@ func TestDatasetInvariants(t *testing.T) {
 		if c.InitialEstimate <= 0 {
 			t.Fatalf("claim %d initial estimate %v not positive", c.ID, c.InitialEstimate)
 		}
-		claims[c.ID] = struct {
-			report, close shared.Date
-		}{c.ReportDate, c.CloseDate}
+		claims[c.ID] = claimInfo{c.ReportDate, c.CloseDate, c.Nil, c.OwnDamage}
 	}
 
 	type state struct {
 		outstanding shared.Money
 		paid        shared.Money
+		recovered   shared.Money
 		rows        int
 		first       transaction.Transaction
 		last        transaction.Transaction
+		lastCase    transaction.Transaction // last non-recovery row
 	}
 	perClaim := map[int]*state{}
 	for _, tx := range ds.Transactions {
@@ -69,7 +71,12 @@ func TestDatasetInvariants(t *testing.T) {
 		if !ok {
 			t.Fatalf("transaction %d references missing claim %d", tx.ID, tx.ClaimID)
 		}
-		if tx.Date.Before(c.report) || tx.Date.After(c.close) {
+		if tx.Type.IsRecovery() {
+			// Recoveries are the only post-close activity, strictly after close.
+			if !c.close.Before(tx.Date) {
+				t.Fatalf("recovery %d on %s not strictly after close %s", tx.ID, tx.Date, c.close)
+			}
+		} else if tx.Date.Before(c.report) || tx.Date.After(c.close) {
 			t.Fatalf("transaction %d on %s outside claim window %s..%s", tx.ID, tx.Date, c.report, c.close)
 		}
 		s := perClaim[tx.ClaimID]
@@ -88,6 +95,14 @@ func TestDatasetInvariants(t *testing.T) {
 				t.Fatalf("transaction %d payment amount %v not positive", tx.ID, tx.Amount)
 			}
 			s.paid += tx.Amount
+		case transaction.Salvage, transaction.Subrogation:
+			if tx.Amount <= 0 {
+				t.Fatalf("transaction %d recovery amount %v not positive", tx.ID, tx.Amount)
+			}
+			if !c.ownDmg || c.isNil {
+				t.Fatalf("recovery %d on ineligible claim %d (own damage %v, nil %v)", tx.ID, tx.ClaimID, c.ownDmg, c.isNil)
+			}
+			s.recovered += tx.Amount
 		default:
 			t.Fatalf("transaction %d has unknown type %q", tx.ID, tx.Type)
 		}
@@ -96,6 +111,9 @@ func TestDatasetInvariants(t *testing.T) {
 		}
 		s.rows++
 		s.last = tx
+		if !tx.Type.IsRecovery() {
+			s.lastCase = tx
+		}
 	}
 
 	for _, c := range ds.Claims {
@@ -116,8 +134,11 @@ func TestDatasetInvariants(t *testing.T) {
 		} else if s.paid <= 0 {
 			t.Fatalf("claim %d total paid %v not positive", c.ID, s.paid)
 		}
-		if s.last.Date != c.CloseDate {
-			t.Fatalf("claim %d last transaction on %s, want close date %s", c.ID, s.last.Date, c.CloseDate)
+		if s.recovered > 0 && s.recovered >= s.paid {
+			t.Fatalf("claim %d recovered %v >= gross paid %v", c.ID, s.recovered, s.paid)
+		}
+		if s.lastCase.Date != c.CloseDate {
+			t.Fatalf("claim %d last case activity on %s, want close date %s", c.ID, s.lastCase.Date, c.CloseDate)
 		}
 	}
 }
