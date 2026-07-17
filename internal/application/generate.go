@@ -46,7 +46,9 @@ func GenerateDataset(src shared.RandomSource, req GenerateRequest) (Dataset, err
 	}
 	book := policy.NewBookSimulator(req.LOB.Book).
 		Simulate(src.Split("book"), req.StartYear, req.Years, req.InitialBookSize)
+	inflation := claim.NewInflationIndex(src.Split("inflation"), req.LOB.Claims.Inflation, req.StartYear, req.Years)
 	claims := claim.NewClaimSimulator(req.LOB.Claims).
+		WithInflation(inflation).
 		Simulate(src.Split("claims"), book)
 	txs := transaction.NewRunoffSimulator(req.LOB.Runoff).
 		Simulate(src.Split("runoff"), claims)

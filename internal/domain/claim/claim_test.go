@@ -198,3 +198,47 @@ func TestSimulateClaimsIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestInflationScalesGroundUpLoss(t *testing.T) {
+	// A homogeneous book with no report/close randomness knobs still yields a
+	// higher total initial estimate once inflation is applied, because every
+	// claim's ground-up loss is multiplied by its occurrence-year factor.
+	book := fixedBook(30000, 20000, 0, 1.0)
+
+	base := claim.NewClaimSimulator(params()).
+		Simulate(random.NewSource(11), book)
+
+	inflated := claim.NewClaimSimulator(params()).
+		WithInflation(claim.NewInflationIndex(random.NewSource(11), lob.InflationParams{Mean: 2.0, Volatility: 0.0}, book[0].CoverStart.Year(), 3)).
+		Simulate(random.NewSource(11), book)
+
+	if len(base) == 0 || len(inflated) == 0 {
+		t.Fatal("expected claims in both runs")
+	}
+	var baseTotal, inflatedTotal int64
+	for _, c := range base {
+		baseTotal += int64(c.InitialEstimate)
+	}
+	for _, c := range inflated {
+		inflatedTotal += int64(c.InitialEstimate)
+	}
+	if inflatedTotal <= baseTotal {
+		t.Fatalf("inflated total estimate %d not greater than base %d", inflatedTotal, baseTotal)
+	}
+}
+
+func TestNoInflationMatchesIdentity(t *testing.T) {
+	book := fixedBook(30000, 20000, 0, 1.0)
+	withoutCall := claim.NewClaimSimulator(params()).Simulate(random.NewSource(12), book)
+	withIdentity := claim.NewClaimSimulator(params()).
+		WithInflation(claim.NewInflationIndex(random.NewSource(99), lob.InflationParams{Mean: 1.0, Volatility: 0.0}, book[0].CoverStart.Year(), 3)).
+		Simulate(random.NewSource(12), book)
+	if len(withoutCall) != len(withIdentity) {
+		t.Fatalf("identity inflation changed claim count: %d vs %d", len(withoutCall), len(withIdentity))
+	}
+	for i := range withoutCall {
+		if withoutCall[i] != withIdentity[i] {
+			t.Fatalf("identity inflation changed claim %d", i)
+		}
+	}
+}

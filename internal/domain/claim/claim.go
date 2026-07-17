@@ -28,11 +28,20 @@ type Claim struct {
 
 // ClaimSimulator generates claim events for a policy book.
 type ClaimSimulator struct {
-	params lob.ClaimParams
+	params    lob.ClaimParams
+	inflation InflationIndex
 }
 
 func NewClaimSimulator(p lob.ClaimParams) *ClaimSimulator {
 	return &ClaimSimulator{params: p}
+}
+
+// WithInflation sets the occurrence-year inflation index. The zero-value
+// index (the default) is the identity, so a simulator built without this
+// call applies no inflation.
+func (s *ClaimSimulator) WithInflation(x InflationIndex) *ClaimSimulator {
+	s.inflation = x
+	return s
 }
 
 // Simulate draws claim events for every policy. Claims are returned sorted
@@ -74,6 +83,7 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	report := occurrence.AddDays(int(math.Round(lag)))
 
 	loss := s.drawGroundUpLoss(src, pol)
+	loss *= s.inflation.For(occurrence.Year())
 	estimate := loss - pol.Excess.Dollars()
 	if estimate <= 0 {
 		return Claim{}, false
