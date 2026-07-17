@@ -222,3 +222,45 @@ func TestLongClaimsReviseMoreThanShortClaims(t *testing.T) {
 			longSum/longN, shortSum/shortN)
 	}
 }
+
+func TestNilClaimHasNoPaymentsAndClosesToZero(t *testing.T) {
+	c := claim.Claim{
+		ID:              1,
+		PolicyID:        1,
+		OccurrenceDate:  shared.NewDate(2000, time.January, 1),
+		ReportDate:      shared.NewDate(2000, time.January, 10),
+		CloseDate:       shared.NewDate(2001, time.June, 1),
+		InitialEstimate: shared.FromDollars(5000),
+		RiskFactor:      1.0,
+		Nil:             true,
+	}
+	sim := transaction.NewRunoffSimulator(params())
+	txs := sim.Simulate(random.NewSource(1), []claim.Claim{c})
+
+	if len(txs) == 0 {
+		t.Fatal("expected transactions for the nil claim")
+	}
+	outstanding := shared.Money(0)
+	paid := shared.Money(0)
+	for _, tx := range txs {
+		switch tx.Type {
+		case transaction.Payment:
+			paid += tx.Amount
+		case transaction.Estimate:
+			outstanding += tx.Amount
+		}
+	}
+	if paid != 0 {
+		t.Fatalf("nil claim paid %v, want 0", paid)
+	}
+	if outstanding != 0 {
+		t.Fatalf("nil claim outstanding at close %v, want 0", outstanding)
+	}
+	first := txs[0]
+	if first.Type != transaction.Estimate || first.Amount != c.InitialEstimate || first.Date != c.ReportDate {
+		t.Fatalf("first row %+v is not the initial estimate on the report date", first)
+	}
+	if last := txs[len(txs)-1]; last.Date != c.CloseDate {
+		t.Fatalf("last row on %s, want close date %s", last.Date, c.CloseDate)
+	}
+}

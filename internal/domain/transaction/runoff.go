@@ -67,6 +67,9 @@ type event struct {
 }
 
 func (s *RunoffSimulator) simulateClaim(src shared.RandomSource, c claim.Claim) []Transaction {
+	if c.Nil {
+		return s.simulateNilClaim(src, c)
+	}
 	duration := shared.DaysBetween(c.ReportDate, c.CloseDate)
 	years := float64(duration) / 365
 
@@ -99,6 +102,32 @@ func (s *RunoffSimulator) simulateClaim(src shared.RandomSource, c claim.Claim) 
 	// Final settlement clears the remaining ultimate, then the case snaps
 	// to exactly zero.
 	emitter.pay(duration, ultimate-paid)
+	emitter.reviseTo(duration, 0)
+	return emitter.txs
+}
+
+// simulateNilClaim runs off a claim that closes without payment: the initial
+// case estimate, interim pure revisions as noise around the outstanding
+// reserve, then a single release to zero at close. No payments are emitted.
+func (s *RunoffSimulator) simulateNilClaim(src shared.RandomSource, c claim.Claim) []Transaction {
+	duration := shared.DaysBetween(c.ReportDate, c.CloseDate)
+	years := float64(duration) / 365
+
+	revisions := s.drawRevisions(src, duration, years)
+	sort.SliceStable(revisions, func(i, j int) bool {
+		return revisions[i].offset < revisions[j].offset
+	})
+
+	emitter := &emitter{claimID: c.ID, report: c.ReportDate}
+	emitter.estimate(0, c.InitialEstimate)
+
+	for _, e := range revisions {
+		remaining := emitter.outstanding.Dollars()
+		sigma := s.params.RevisionSigma * (1 - float64(e.offset)/float64(duration))
+		target := shared.FromDollars(remaining * shared.MeanOneLogNormal(src, sigma))
+		emitter.reviseTo(e.offset, target)
+	}
+
 	emitter.reviseTo(duration, 0)
 	return emitter.txs
 }
