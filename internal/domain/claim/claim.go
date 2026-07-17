@@ -31,6 +31,19 @@ type Claim struct {
 	// component. Carried to the recovery stage (only own-damage claims
 	// yield salvage or subrogation) but never written to CSV.
 	OwnDamage bool
+	// FirstCloseDate, ReopenDate and ReopenEstimate describe the single
+	// optional reopen episode: the claim closed once, the case was re-raised
+	// after a lag, and CloseDate above is the final close. Zero values mean
+	// the claim never reopens. Carried to the runoff stage but never written
+	// to CSV.
+	FirstCloseDate shared.Date
+	ReopenDate     shared.Date
+	ReopenEstimate shared.Money
+}
+
+// Reopened reports whether the claim has a reopen episode.
+func (c Claim) Reopened() bool {
+	return c.ReopenDate != (shared.Date{})
 }
 
 // ClaimSimulator generates claim events for a policy book.
@@ -96,7 +109,7 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 		return Claim{}, false
 	}
 
-	close := report.AddDays(int(math.Round(s.drawCloseLag(src, estimate, pol.RiskFactor))))
+	close := report.AddDays(int(math.Round(drawCloseLag(src, s.params.CloseLag, estimate, pol.RiskFactor))))
 
 	isNil := s.params.NilProbability > 0 && src.Bernoulli(s.params.NilProbability)
 
@@ -124,10 +137,10 @@ func (s *ClaimSimulator) drawGroundUpLoss(src shared.RandomSource, pol policy.Po
 	return pol.SumInsured.Dollars() * fraction, true
 }
 
-// drawCloseLag draws the report-to-close delay in days: gamma distributed,
-// with the mean stretched for large claims and risky policyholders.
-func (s *ClaimSimulator) drawCloseLag(src shared.RandomSource, estimate, riskFactor float64) float64 {
-	cl := s.params.CloseLag
+// drawCloseLag draws a report-to-close (or reopen-to-second-close) delay in
+// days: gamma distributed, with the mean stretched for large claims and
+// risky policyholders.
+func drawCloseLag(src shared.RandomSource, cl lob.CloseLagParams, estimate, riskFactor float64) float64 {
 	mean := cl.MeanDays
 	if estimate > cl.SizeThreshold {
 		mean *= cl.SizeMultiplier
