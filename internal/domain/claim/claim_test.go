@@ -274,3 +274,29 @@ func TestNilProbabilityHighFlagsMostClaims(t *testing.T) {
 		t.Fatalf("nil fraction %v, want most claims nil at probability 0.9", frac)
 	}
 }
+
+func TestOwnDamageFlagFollowsSeverityMixture(t *testing.T) {
+	allOwn := params()
+	allOwn.Severity.ThirdPartyWeight = 0
+	claims := claim.NewClaimSimulator(allOwn).Simulate(random.NewSource(31), fixedBook(2000, 20000, 0, 1.0))
+	if len(claims) == 0 {
+		t.Fatal("expected claims")
+	}
+	for _, c := range claims {
+		if !c.OwnDamage {
+			t.Fatalf("claim %d not flagged own-damage with third_party_weight 0", c.ID)
+		}
+	}
+
+	allThird := params()
+	allThird.Severity.ThirdPartyWeight = 1
+	claims = claim.NewClaimSimulator(allThird).Simulate(random.NewSource(32), fixedBook(2000, 20000, 0, 1.0))
+	if len(claims) == 0 {
+		t.Fatal("expected claims")
+	}
+	for _, c := range claims {
+		if c.OwnDamage {
+			t.Fatalf("claim %d flagged own-damage with third_party_weight 1", c.ID)
+		}
+	}
+}

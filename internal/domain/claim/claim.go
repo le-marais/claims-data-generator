@@ -27,6 +27,10 @@ type Claim struct {
 	// Nil is true when the claim closes without any payment. It is carried
 	// to the runoff stage but never written to CSV.
 	Nil bool
+	// OwnDamage is true when the severity mixture picked the own-damage
+	// component. Carried to the recovery stage (only own-damage claims
+	// yield salvage or subrogation) but never written to CSV.
+	OwnDamage bool
 }
 
 // ClaimSimulator generates claim events for a policy book.
@@ -85,7 +89,7 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	lag := src.LogNormal(math.Log(s.params.ReportLagMedian), s.params.ReportLagSigma)
 	report := occurrence.AddDays(int(math.Round(lag)))
 
-	loss := s.drawGroundUpLoss(src, pol)
+	loss, ownDamage := s.drawGroundUpLoss(src, pol)
 	loss *= s.inflation.For(occurrence.Year())
 	estimate := loss - pol.Excess.Dollars()
 	if estimate <= 0 {
@@ -104,18 +108,20 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 		InitialEstimate: shared.FromDollars(estimate),
 		RiskFactor:      pol.RiskFactor,
 		Nil:             isNil,
+		OwnDamage:       ownDamage,
 	}, true
 }
 
 // drawGroundUpLoss mixes own-damage losses (lognormal, scaled by sum
-// insured) with third party liability losses (Pareto, uncapped).
-func (s *ClaimSimulator) drawGroundUpLoss(src shared.RandomSource, pol policy.Policy) float64 {
+// insured) with third party liability losses (Pareto, uncapped), reporting
+// which component fired.
+func (s *ClaimSimulator) drawGroundUpLoss(src shared.RandomSource, pol policy.Policy) (loss float64, ownDamage bool) {
 	sev := s.params.Severity
 	if src.Bernoulli(sev.ThirdPartyWeight) {
-		return src.Pareto(sev.ThirdPartyScale, sev.ThirdPartyAlpha)
+		return src.Pareto(sev.ThirdPartyScale, sev.ThirdPartyAlpha), false
 	}
 	fraction := src.LogNormal(math.Log(sev.OwnDamageMedianFraction), sev.OwnDamageSigma)
-	return pol.SumInsured.Dollars() * fraction
+	return pol.SumInsured.Dollars() * fraction, true
 }
 
 // drawCloseLag draws the report-to-close delay in days: gamma distributed,
