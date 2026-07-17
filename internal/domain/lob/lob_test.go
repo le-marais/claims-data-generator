@@ -43,6 +43,10 @@ func validMotor() LineOfBusiness {
 				RiskLoading:    0.5,
 			},
 			Inflation: InflationParams{Mean: 1.0, Volatility: 0.0},
+			Recoveries: RecoveryParams{
+				Salvage:     RecoveryTypeParams{Probability: 0.1, MeanShare: 0.15, Concentration: 10, LagMedianDays: 21, LagSigma: 0.5},
+				Subrogation: RecoveryTypeParams{Probability: 0.2, MeanShare: 0.8, Concentration: 10, LagMedianDays: 180, LagSigma: 0.7},
+			},
 		},
 		Runoff: RunoffParams{
 			CaseAdequacyMean:  1.0,
@@ -98,6 +102,15 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"runoff.concentration", func(l *LineOfBusiness) { l.Runoff.Concentration = 0 }},
 		{"runoff.revisions_per_year", func(l *LineOfBusiness) { l.Runoff.RevisionsPerYear = -1 }},
 		{"runoff.revision_sigma", func(l *LineOfBusiness) { l.Runoff.RevisionSigma = -1 }},
+		{"claims.recoveries.salvage.probability", func(l *LineOfBusiness) { l.Claims.Recoveries.Salvage.Probability = 1.0 }},
+		{"claims.recoveries.salvage.probability", func(l *LineOfBusiness) { l.Claims.Recoveries.Salvage.Probability = -0.1 }},
+		{"claims.recoveries.salvage.mean_share", func(l *LineOfBusiness) { l.Claims.Recoveries.Salvage.MeanShare = 0 }},
+		{"claims.recoveries.salvage.mean_share", func(l *LineOfBusiness) { l.Claims.Recoveries.Salvage.MeanShare = 1.0 }},
+		{"claims.recoveries.salvage.concentration", func(l *LineOfBusiness) { l.Claims.Recoveries.Salvage.Concentration = 0 }},
+		{"claims.recoveries.salvage.lag_median_days", func(l *LineOfBusiness) { l.Claims.Recoveries.Salvage.LagMedianDays = 0 }},
+		{"claims.recoveries.salvage.lag_sigma", func(l *LineOfBusiness) { l.Claims.Recoveries.Salvage.LagSigma = -0.1 }},
+		{"claims.recoveries.subrogation.probability", func(l *LineOfBusiness) { l.Claims.Recoveries.Subrogation.Probability = 1.5 }},
+		{"claims.recoveries.subrogation.mean_share", func(l *LineOfBusiness) { l.Claims.Recoveries.Subrogation.MeanShare = -0.2 }},
 	}
 	for _, c := range cases {
 		l := validMotor()
@@ -155,5 +168,14 @@ func TestValidateAcceptsIdentityInflationAndZeroNil(t *testing.T) {
 	l.Claims.NilProbability = 0
 	if err := l.Validate(); err != nil {
 		t.Fatalf("identity inflation and zero nil: want nil, got %v", err)
+	}
+}
+
+func TestValidateAcceptsZeroRecoveryProbabilities(t *testing.T) {
+	l := validMotor()
+	l.Claims.Recoveries.Salvage.Probability = 0
+	l.Claims.Recoveries.Subrogation.Probability = 0
+	if err := l.Validate(); err != nil {
+		t.Fatalf("zero recovery probabilities (the off switch): want nil, got %v", err)
 	}
 }

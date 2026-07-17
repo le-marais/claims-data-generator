@@ -41,6 +41,24 @@ claims:
   # Probability a reported claim closes without payment. 0 switches nil
   # claims off.
   nil_probability: 0.08
+  # Recoveries: money coming back on own-damage claims after they close.
+  # Salvage sells the insured vehicle's wreck; subrogation recovers the
+  # payout from an at-fault third party. Each recovery is a Beta-distributed
+  # share of the claim's gross paid, received a lognormal lag after close.
+  # probability 0 switches a recovery type off.
+  recoveries:
+    salvage:
+      probability: 0.10
+      mean_share: 0.15
+      concentration: 10
+      lag_median_days: 21
+      lag_sigma: 0.5
+    subrogation:
+      probability: 0.20
+      mean_share: 0.80
+      concentration: 10
+      lag_median_days: 180
+      lag_sigma: 0.7
 runoff:
   case_adequacy_mean: 1.0
   case_adequacy_sigma: 0.35

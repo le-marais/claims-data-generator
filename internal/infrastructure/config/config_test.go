@@ -40,6 +40,19 @@ claims:
     mean: 1.04
     volatility: 0.02
   nil_probability: 0.05
+  recoveries:
+    salvage:
+      probability: 0.1
+      mean_share: 0.15
+      concentration: 10
+      lag_median_days: 21
+      lag_sigma: 0.5
+    subrogation:
+      probability: 0.2
+      mean_share: 0.8
+      concentration: 10
+      lag_median_days: 180
+      lag_sigma: 0.7
 runoff:
   case_adequacy_mean: 1.0
   case_adequacy_sigma: 0.3
@@ -78,6 +91,19 @@ func TestLoadValidYAML(t *testing.T) {
 	}
 	if l.Claims.NilProbability != 0.05 {
 		t.Errorf("nil_probability = %v, want 0.05", l.Claims.NilProbability)
+	}
+	if l.Claims.Recoveries.Salvage.MeanShare != 0.15 {
+		t.Errorf("salvage mean_share = %v, want 0.15", l.Claims.Recoveries.Salvage.MeanShare)
+	}
+	if l.Claims.Recoveries.Subrogation.LagMedianDays != 180 {
+		t.Errorf("subrogation lag_median_days = %v, want 180", l.Claims.Recoveries.Subrogation.LagMedianDays)
+	}
+}
+
+func TestLoadRejectsMissingRecoveriesBlock(t *testing.T) {
+	bad := strings.Replace(validYAML, "  recoveries:", "  recoveries_gone:", 1)
+	if _, err := Load(strings.NewReader(bad)); err == nil {
+		t.Fatal("config without a recoveries block: want error, got nil")
 	}
 }
 

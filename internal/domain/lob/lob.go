@@ -54,6 +54,9 @@ type ClaimParams struct {
 	// NilProbability is the chance a reported claim closes without payment;
 	// 0 switches nil claims off.
 	NilProbability float64
+	// Recoveries drives salvage and subrogation: money coming back on
+	// own-damage claims after they close.
+	Recoveries RecoveryParams
 }
 
 // InflationParams is the stochastic annual claims-inflation path: each
@@ -65,6 +68,31 @@ type InflationParams struct {
 	// Volatility is the sigma of the mean-1 lognormal noise on each year's
 	// factor.
 	Volatility float64
+}
+
+// RecoveryParams drives salvage (selling the insured vehicle's wreck) and
+// subrogation (recovering the payout from an at-fault third party). Both
+// attach only to own-damage claims that paid something, as money-in
+// transactions dated after the close.
+type RecoveryParams struct {
+	Salvage     RecoveryTypeParams
+	Subrogation RecoveryTypeParams
+}
+
+// RecoveryTypeParams parameterizes one recovery type.
+type RecoveryTypeParams struct {
+	// Probability is the chance an own-damage claim yields this recovery;
+	// 0 switches the type off.
+	Probability float64
+	// MeanShare is the average recovery as a share of the claim's gross paid.
+	MeanShare float64
+	// Concentration is the Beta concentration of the share draw; higher
+	// means shares cluster tighter around MeanShare.
+	Concentration float64
+	// LagMedianDays is the median days from close to receiving the money.
+	LagMedianDays float64
+	// LagSigma is the sigma of the lognormal close-to-receipt lag.
+	LagSigma float64
 }
 
 // SeverityParams is the ground-up loss mixture: own damage (lognormal
@@ -191,6 +219,12 @@ func (c ClaimParams) validate() error {
 	if c.NilProbability < 0 || c.NilProbability >= 1 {
 		return fmt.Errorf("claims.nil_probability: must be in [0, 1), got %v", c.NilProbability)
 	}
+	if err := c.Recoveries.Salvage.validate("claims.recoveries.salvage"); err != nil {
+		return err
+	}
+	if err := c.Recoveries.Subrogation.validate("claims.recoveries.subrogation"); err != nil {
+		return err
+	}
 	return c.CloseLag.validate()
 }
 
@@ -200,6 +234,25 @@ func (i InflationParams) validate() error {
 	}
 	if i.Volatility < 0 {
 		return fmt.Errorf("claims.inflation.volatility: must not be negative, got %v", i.Volatility)
+	}
+	return nil
+}
+
+func (r RecoveryTypeParams) validate(prefix string) error {
+	if r.Probability < 0 || r.Probability >= 1 {
+		return fmt.Errorf("%s.probability: must be in [0, 1), got %v", prefix, r.Probability)
+	}
+	if r.MeanShare <= 0 || r.MeanShare >= 1 {
+		return fmt.Errorf("%s.mean_share: must be in (0, 1), got %v", prefix, r.MeanShare)
+	}
+	if r.Concentration <= 0 {
+		return fmt.Errorf("%s.concentration: must be positive, got %v", prefix, r.Concentration)
+	}
+	if r.LagMedianDays <= 0 {
+		return fmt.Errorf("%s.lag_median_days: must be positive, got %v", prefix, r.LagMedianDays)
+	}
+	if r.LagSigma < 0 {
+		return fmt.Errorf("%s.lag_sigma: must not be negative, got %v", prefix, r.LagSigma)
 	}
 	return nil
 }

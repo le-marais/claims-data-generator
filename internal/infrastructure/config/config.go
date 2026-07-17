@@ -45,18 +45,32 @@ type ExcessChoiceParams struct {
 }
 
 type ClaimsParams struct {
-	BaseFrequency   float64         `yaml:"base_frequency" json:"base_frequency"`
-	ReportLagMedian float64         `yaml:"report_lag_median" json:"report_lag_median"`
-	ReportLagSigma  float64         `yaml:"report_lag_sigma" json:"report_lag_sigma"`
-	Severity        SeverityParams  `yaml:"severity" json:"severity"`
-	CloseLag        CloseLagParams  `yaml:"close_lag" json:"close_lag"`
-	Inflation       InflationParams `yaml:"inflation" json:"inflation"`
-	NilProbability  float64         `yaml:"nil_probability" json:"nil_probability"`
+	BaseFrequency   float64          `yaml:"base_frequency" json:"base_frequency"`
+	ReportLagMedian float64          `yaml:"report_lag_median" json:"report_lag_median"`
+	ReportLagSigma  float64          `yaml:"report_lag_sigma" json:"report_lag_sigma"`
+	Severity        SeverityParams   `yaml:"severity" json:"severity"`
+	CloseLag        CloseLagParams   `yaml:"close_lag" json:"close_lag"`
+	Inflation       InflationParams  `yaml:"inflation" json:"inflation"`
+	NilProbability  float64          `yaml:"nil_probability" json:"nil_probability"`
+	Recoveries      RecoveriesParams `yaml:"recoveries" json:"recoveries"`
 }
 
 type InflationParams struct {
 	Mean       float64 `yaml:"mean" json:"mean"`
 	Volatility float64 `yaml:"volatility" json:"volatility"`
+}
+
+type RecoveriesParams struct {
+	Salvage     RecoveryTypeParams `yaml:"salvage" json:"salvage"`
+	Subrogation RecoveryTypeParams `yaml:"subrogation" json:"subrogation"`
+}
+
+type RecoveryTypeParams struct {
+	Probability   float64 `yaml:"probability" json:"probability"`
+	MeanShare     float64 `yaml:"mean_share" json:"mean_share"`
+	Concentration float64 `yaml:"concentration" json:"concentration"`
+	LagMedianDays float64 `yaml:"lag_median_days" json:"lag_median_days"`
+	LagSigma      float64 `yaml:"lag_sigma" json:"lag_sigma"`
 }
 
 type SeverityParams struct {
@@ -201,6 +215,10 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 				Volatility: d.Claims.Inflation.Volatility,
 			},
 			NilProbability: d.Claims.NilProbability,
+			Recoveries: lob.RecoveryParams{
+				Salvage:     d.Claims.Recoveries.Salvage.toDomain(),
+				Subrogation: d.Claims.Recoveries.Subrogation.toDomain(),
+			},
 		},
 		Runoff: lob.RunoffParams{
 			CaseAdequacyMean:  d.Runoff.CaseAdequacyMean,
@@ -211,5 +229,15 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			RevisionsPerYear:  d.Runoff.RevisionsPerYear,
 			RevisionSigma:     d.Runoff.RevisionSigma,
 		},
+	}
+}
+
+func (r RecoveryTypeParams) toDomain() lob.RecoveryTypeParams {
+	return lob.RecoveryTypeParams{
+		Probability:   r.Probability,
+		MeanShare:     r.MeanShare,
+		Concentration: r.Concentration,
+		LagMedianDays: r.LagMedianDays,
+		LagSigma:      r.LagSigma,
 	}
 }
