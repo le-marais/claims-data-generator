@@ -8,7 +8,8 @@ import (
 // YearSummary aggregates one calendar year of the run: policies by cover
 // start year, claims and paid amounts by occurrence year. Every claim runs
 // to closure, so Paid is the ultimate and equals final incurred (gross of
-// recoveries).
+// recoveries). NilClaims counts claims closed without payment at their first
+// close.
 type YearSummary struct {
 	Year          int
 	Policies      int
@@ -18,6 +19,8 @@ type YearSummary struct {
 	Paid          float64
 	// Recovered is salvage plus subrogation received, by occurrence year.
 	Recovered float64
+	// Reopened counts claims with a reopen episode, by occurrence year.
+	Reopened int
 }
 
 // LossRatio is Paid over EarnedPremium; ok is false when there is no premium.
@@ -57,6 +60,9 @@ func Summarize(ds Dataset, startYear, years int) SummaryReport {
 			if c.Nil {
 				rows[i].NilClaims++
 			}
+			if c.Reopened() {
+				rows[i].Reopened++
+			}
 		}
 	}
 	for _, tx := range ds.Transactions {
@@ -79,6 +85,7 @@ func Summarize(ds Dataset, startYear, years int) SummaryReport {
 		total.EarnedPremium += r.EarnedPremium
 		total.Paid += r.Paid
 		total.Recovered += r.Recovered
+		total.Reopened += r.Reopened
 	}
 	return SummaryReport{Years: rows, Total: total}
 }

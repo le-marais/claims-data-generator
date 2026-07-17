@@ -108,3 +108,22 @@ func TestSummarizeCountsRecoveredByOccurrenceYear(t *testing.T) {
 		t.Errorf("1998 paid = %v, want 1000 (gross)", got.Years[0].Paid)
 	}
 }
+
+func TestSummarizeCountsReopenedByOccurrenceYear(t *testing.T) {
+	ds := tinyDataset()
+	// Mark claim 1 (occurred 1998) as reopened.
+	ds.Claims[0].FirstCloseDate = ds.Claims[0].CloseDate
+	ds.Claims[0].ReopenDate = shared.NewDate(1999, time.February, 1)
+	ds.Claims[0].ReopenEstimate = shared.FromDollars(500)
+	ds.Claims[0].CloseDate = shared.NewDate(1999, time.June, 1)
+	got := application.Summarize(ds, 1998, 2)
+	if got.Years[0].Reopened != 1 {
+		t.Errorf("1998 reopened = %d, want 1", got.Years[0].Reopened)
+	}
+	if got.Years[1].Reopened != 0 {
+		t.Errorf("1999 reopened = %d, want 0 (booked by occurrence year)", got.Years[1].Reopened)
+	}
+	if got.Total.Reopened != 1 {
+		t.Errorf("total reopened = %d, want 1", got.Total.Reopened)
+	}
+}
