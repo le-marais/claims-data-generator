@@ -1,6 +1,7 @@
 package application_test
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
@@ -59,13 +60,8 @@ func TestGenerateDatasetIsDeterministic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(a.Policies) != len(b.Policies) || len(a.Claims) != len(b.Claims) || len(a.Transactions) != len(b.Transactions) {
-		t.Fatal("dataset sizes differ between identical runs")
-	}
-	for i := range a.Transactions {
-		if a.Transactions[i] != b.Transactions[i] {
-			t.Fatalf("transaction %d differs between identical runs", i)
-		}
+	if !reflect.DeepEqual(a, b) {
+		t.Fatal("datasets differ between identical runs")
 	}
 }
 

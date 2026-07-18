@@ -43,6 +43,7 @@ type RunoffSimulator struct {
 	params lob.RunoffParams
 }
 
+// NewRunoffSimulator builds a runoff simulator from the runoff parameters.
 func NewRunoffSimulator(p lob.RunoffParams) *RunoffSimulator {
 	return &RunoffSimulator{params: p}
 }
@@ -60,8 +61,13 @@ func (s *RunoffSimulator) Simulate(src shared.RandomSource, claims []claim.Claim
 	return txs
 }
 
+const (
+	kindRevision = 0
+	kindPayment  = 1
+)
+
 // event is an interim payment or case revision strictly between report and
-// close. kind 0 (revision) sorts before kind 1 (payment) on the same day.
+// close. kindRevision sorts before kindPayment on the same day.
 type event struct {
 	offset int
 	kind   int
@@ -107,8 +113,8 @@ func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, start,
 			remaining := e.outstanding.Dollars()
 			sigma := s.params.RevisionSigma * (1 - float64(ev.offset)/float64(duration))
 			target := shared.FromDollars(remaining * shared.MeanOneLogNormal(src, sigma))
-			if target < 1 {
-				target = 1 // keep the case open so the terminal release lands on the close date
+			if target < shared.OneCent {
+				target = shared.OneCent // keep the case open so the terminal release lands on the close date
 			}
 			e.reviseTo(base+ev.offset, target)
 		}
@@ -128,16 +134,19 @@ func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, start,
 
 	paid := shared.Money(0)
 	for _, ev := range events {
-		if ev.kind == 1 {
+		if ev.kind == kindPayment {
 			e.pay(base+ev.offset, ev.amount)
 			paid += ev.amount
 			continue
 		}
+		// The first revision re-centres the case on (ultimate - paid), so
+		// case-adequacy bias vanishes after it and incurred development carries
+		// little systematic IBNER signal thereafter.
 		remaining := (ultimate - paid).Dollars()
 		sigma := s.params.RevisionSigma * (1 - float64(ev.offset)/float64(duration))
 		target := shared.FromDollars(remaining * shared.MeanOneLogNormal(src, sigma))
-		if floorRevisions && target < 1 {
-			target = 1
+		if floorRevisions && target < shared.OneCent {
+			target = shared.OneCent
 		}
 		e.reviseTo(base+ev.offset, target)
 	}
@@ -152,8 +161,8 @@ func (s *RunoffSimulator) drawUltimate(src shared.RandomSource, initial shared.M
 	sigma := s.params.CaseAdequacySigma
 	mu := math.Log(s.params.CaseAdequacyMean) - sigma*sigma/2
 	ultimate := initial.MulFloat(src.LogNormal(mu, sigma))
-	if ultimate < 1 {
-		ultimate = 1
+	if ultimate < shared.OneCent {
+		ultimate = shared.OneCent
 	}
 	return ultimate
 }
@@ -175,6 +184,10 @@ func (s *RunoffSimulator) drawInterimPayments(src shared.RandomSource, ultimate 
 		weights[i] = src.Gamma(s.params.Concentration, 1)
 		total += weights[i]
 	}
+	if total <= 0 {
+		// Degenerate Dirichlet draw (all weights underflowed): settle at close.
+		return nil
+	}
 	pool := ultimate.MulFloat(1 - s.params.SettlementShare).Dollars()
 	events := make([]event, 0, n)
 	paid := shared.Money(0)
@@ -183,7 +196,7 @@ func (s *RunoffSimulator) drawInterimPayments(src shared.RandomSource, ultimate 
 		if amount <= 0 {
 			continue
 		}
-		events = append(events, event{offset: s.interiorOffset(src, duration), kind: 1, amount: amount})
+		events = append(events, event{offset: s.interiorOffset(src, duration), kind: kindPayment, amount: amount})
 		paid += amount
 	}
 	if paid >= ultimate {
@@ -200,7 +213,7 @@ func (s *RunoffSimulator) drawRevisions(src shared.RandomSource, duration int, y
 	n := src.Poisson(s.params.RevisionsPerYear * years)
 	events := make([]event, n)
 	for i := range events {
-		events[i] = event{offset: s.interiorOffset(src, duration), kind: 0}
+		events[i] = event{offset: s.interiorOffset(src, duration), kind: kindRevision}
 	}
 	return events
 }

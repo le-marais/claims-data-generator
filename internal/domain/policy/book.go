@@ -27,6 +27,7 @@ type BookSimulator struct {
 	params lob.BookParams
 }
 
+// NewBookSimulator builds a book simulator from the book parameters.
 func NewBookSimulator(p lob.BookParams) *BookSimulator {
 	return &BookSimulator{params: p}
 }
@@ -42,7 +43,7 @@ func (s *BookSimulator) Simulate(src shared.RandomSource, startYear, years, init
 	id := 1
 	for y := 0; y < years; y++ {
 		if y > 0 {
-			noise := meanOneLogNormal(sizeSrc, s.params.SizeVolatility)
+			noise := shared.MeanOneLogNormal(sizeSrc, s.params.SizeVolatility)
 			size = int(math.Round(float64(size) * s.params.GrowthFactor * noise))
 			if size < 1 {
 				size = 1
@@ -93,13 +94,4 @@ func (s *BookSimulator) drawExcess(src shared.RandomSource) float64 {
 		}
 	}
 	return s.params.ExcessChoices[len(s.params.ExcessChoices)-1].Value
-}
-
-// meanOneLogNormal draws from a lognormal with mean exactly 1; sigma 0
-// degenerates to the constant 1.
-func meanOneLogNormal(src shared.RandomSource, sigma float64) float64 {
-	if sigma == 0 {
-		return 1
-	}
-	return src.LogNormal(-sigma*sigma/2, sigma)
 }

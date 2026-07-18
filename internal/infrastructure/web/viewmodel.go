@@ -26,7 +26,7 @@ type generateResponseJSON struct {
 
 type runInfoJSON struct {
 	LOB             string `json:"lob"`
-	Seed            uint64 `json:"seed"`
+	Seed            string `json:"seed"`
 	StartYear       int    `json:"start_year"`
 	Years           int    `json:"years"`
 	InitialBookSize int    `json:"initial_book_size"`
@@ -181,15 +181,24 @@ func histogramView(h application.Histogram) histogramJSON {
 	return histogramJSON{Bins: bins}
 }
 
+// finite replaces NaN/±Inf (reachable when no reference band exists) with 0 so
+// the response stays valid JSON.
+func finite(f float64) float64 {
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0
+	}
+	return f
+}
+
 func realismView(r triangle.Report) realismJSON {
 	return realismJSON{
 		Pass:        r.Pass(),
 		PaidATA:     ageChecksView(r.PaidATA),
 		IncurredATA: ageChecksView(r.IncurredATA),
 		LossRatio: checkJSON{
-			Value:  r.LossRatio.Value,
-			Min:    r.LossRatio.Band.Min,
-			Max:    r.LossRatio.Band.Max,
+			Value:  finite(r.LossRatio.Value),
+			Min:    finite(r.LossRatio.Band.Min),
+			Max:    finite(r.LossRatio.Band.Max),
 			Within: r.LossRatio.Within,
 		},
 	}
@@ -198,7 +207,7 @@ func realismView(r triangle.Report) realismJSON {
 func ageChecksView(checks []triangle.AgeCheck) []ageCheckJSON {
 	out := make([]ageCheckJSON, len(checks))
 	for i, c := range checks {
-		out[i] = ageCheckJSON{Age: c.Age, Value: c.Value, Min: c.Band.Min, Max: c.Band.Max, Within: c.Within}
+		out[i] = ageCheckJSON{Age: c.Age, Value: finite(c.Value), Min: finite(c.Band.Min), Max: finite(c.Band.Max), Within: c.Within}
 	}
 	return out
 }

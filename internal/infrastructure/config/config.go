@@ -29,6 +29,7 @@ type LOBParams struct {
 	Runoff RunoffParams `yaml:"runoff" json:"runoff"`
 }
 
+// BookParams mirrors lob.BookParams for YAML/JSON.
 type BookParams struct {
 	GrowthFactor        float64              `yaml:"growth_factor" json:"growth_factor"`
 	SizeVolatility      float64              `yaml:"size_volatility" json:"size_volatility"`
@@ -39,11 +40,13 @@ type BookParams struct {
 	PremiumRateFactor   float64              `yaml:"premium_rate_factor" json:"premium_rate_factor"`
 }
 
+// ExcessChoiceParams mirrors lob.ExcessChoice for YAML/JSON.
 type ExcessChoiceParams struct {
 	Value  float64 `yaml:"value" json:"value"`
 	Weight float64 `yaml:"weight" json:"weight"`
 }
 
+// ClaimsParams mirrors lob.ClaimParams for YAML/JSON.
 type ClaimsParams struct {
 	BaseFrequency   float64          `yaml:"base_frequency" json:"base_frequency"`
 	ReportLagMedian float64          `yaml:"report_lag_median" json:"report_lag_median"`
@@ -56,16 +59,19 @@ type ClaimsParams struct {
 	Reopening       ReopeningParams  `yaml:"reopening" json:"reopening"`
 }
 
+// InflationParams mirrors lob.InflationParams for YAML/JSON.
 type InflationParams struct {
 	Mean       float64 `yaml:"mean" json:"mean"`
 	Volatility float64 `yaml:"volatility" json:"volatility"`
 }
 
+// RecoveriesParams mirrors lob.RecoveryParams for YAML/JSON.
 type RecoveriesParams struct {
 	Salvage     RecoveryTypeParams `yaml:"salvage" json:"salvage"`
 	Subrogation RecoveryTypeParams `yaml:"subrogation" json:"subrogation"`
 }
 
+// RecoveryTypeParams mirrors lob.RecoveryTypeParams for YAML/JSON.
 type RecoveryTypeParams struct {
 	Probability   float64 `yaml:"probability" json:"probability"`
 	MeanShare     float64 `yaml:"mean_share" json:"mean_share"`
@@ -74,6 +80,7 @@ type RecoveryTypeParams struct {
 	LagSigma      float64 `yaml:"lag_sigma" json:"lag_sigma"`
 }
 
+// ReopeningParams mirrors lob.ReopeningParams for YAML/JSON.
 type ReopeningParams struct {
 	Probability    float64 `yaml:"probability" json:"probability"`
 	EstimateFactor float64 `yaml:"estimate_factor" json:"estimate_factor"`
@@ -82,6 +89,7 @@ type ReopeningParams struct {
 	LagSigma       float64 `yaml:"lag_sigma" json:"lag_sigma"`
 }
 
+// SeverityParams mirrors lob.SeverityParams for YAML/JSON.
 type SeverityParams struct {
 	ThirdPartyWeight        float64 `yaml:"third_party_weight" json:"third_party_weight"`
 	OwnDamageMedianFraction float64 `yaml:"own_damage_median_fraction" json:"own_damage_median_fraction"`
@@ -90,6 +98,7 @@ type SeverityParams struct {
 	ThirdPartyAlpha         float64 `yaml:"third_party_alpha" json:"third_party_alpha"`
 }
 
+// CloseLagParams mirrors lob.CloseLagParams for YAML/JSON.
 type CloseLagParams struct {
 	Shape          float64 `yaml:"shape" json:"shape"`
 	MeanDays       float64 `yaml:"mean_days" json:"mean_days"`
@@ -98,6 +107,7 @@ type CloseLagParams struct {
 	RiskLoading    float64 `yaml:"risk_loading" json:"risk_loading"`
 }
 
+// RunoffParams mirrors lob.RunoffParams for YAML/JSON.
 type RunoffParams struct {
 	CaseAdequacyMean  float64 `yaml:"case_adequacy_mean" json:"case_adequacy_mean"`
 	CaseAdequacySigma float64 `yaml:"case_adequacy_sigma" json:"case_adequacy_sigma"`

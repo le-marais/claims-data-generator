@@ -84,10 +84,18 @@ func parse(name string, b []byte) (triangle.ReferenceSet, error) {
 	for _, p := range f.EarnedPremium {
 		ep = append(ep, p.Amount)
 	}
+	paid, err := toTriangle(f.Paid)
+	if err != nil {
+		return triangle.ReferenceSet{}, fmt.Errorf("paid triangle: %w", err)
+	}
+	incurred, err := toTriangle(f.Incurred)
+	if err != nil {
+		return triangle.ReferenceSet{}, fmt.Errorf("incurred triangle: %w", err)
+	}
 	return triangle.ReferenceSet{
 		Name:          strings.TrimSuffix(name, ".json"),
-		Paid:          toTriangle(f.Paid),
-		Incurred:      toTriangle(f.Incurred),
+		Paid:          paid,
+		Incurred:      incurred,
 		EarnedPremium: ep,
 	}, nil
 }
@@ -149,7 +157,7 @@ func loadDirFS(fsys fs.FS, dir, vintage string) ([]triangle.ReferenceSet, error)
 	return refs, nil
 }
 
-func toTriangle(t triangleJSON) triangle.Triangle {
+func toTriangle(t triangleJSON) (triangle.Triangle, error) {
 	rows := t.TriangleValues
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Year < rows[j].Year })
 	tri := triangle.Triangle{Cells: make([][]float64, len(rows))}
@@ -157,7 +165,10 @@ func toTriangle(t triangleJSON) triangle.Triangle {
 		tri.StartYear = rows[0].Year
 	}
 	for i, r := range rows {
+		if r.Year != rows[0].Year+i {
+			return triangle.Triangle{}, fmt.Errorf("non-contiguous origin years: expected %d, got %d", rows[0].Year+i, r.Year)
+		}
 		tri.Cells[i] = r.Values
 	}
-	return tri
+	return tri, nil
 }

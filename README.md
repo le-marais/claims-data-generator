@@ -60,13 +60,26 @@ Configure a run in the sidebar and hit Generate - the summary tab shows per-year
 
 Gross paid is the sum of a claim's `PAYMENT` rows; net paid subtracts its `SALVAGE` and `SUBROGATION` rows.
 
+transactions.csv is emitted in claim-registration order, not date order: all of a claim's rows are written together, and because recovery rows can post-date a claim's close date, a later claim's rows can carry earlier dates. Sort by date yourself if your reserving tool expects a date-ordered ledger.
+
 Claims inflation is a stochastic path: each calendar year's factor is a mean level (a per-line-of-business knob) times lognormal noise, compounding from the start year and drawn from its own labelled sub-stream so it stays reproducible and independent of the other stages.
 
 There is no valuation date: every claim runs to closure, which supports out-of-sample testing of reserving methods.
 
 ## Parameters per line of business
 
-All behavior is driven by a YAML file mapped to the `LineOfBusiness` domain object - see `internal/infrastructure/config/motor-personal.yaml` for the annotated motor preset. New short-tail classes are added by writing a new YAML file, no code changes.
+All behavior is driven by a YAML file mapped to the `LineOfBusiness` domain object - see `internal/infrastructure/config/motor-personal.yaml` for the annotated motor preset. A new short-tail class is a YAML file for the CLI (`generate --config my-lob.yaml` is pure YAML, no code changes); surfacing it as a UI preset also needs one registration line in the preset registry. See `docs/roadmap.md` for the second-line-of-business plan.
+
+## Assumptions and known simplifications
+
+The model deliberately trades some realism for a clean, reproducible engine. The main simplifications a reviewer should know about:
+
+- **Own-damage severity trend is the product of two knobs.** Own-damage losses scale with a sum insured that already drifts by `sum_insured_inflation` per underwriting year and are then multiplied again by the occurrence-year claims-inflation index, so the effective own-damage trend is the product of the two. Third-party losses carry only the claims-inflation index. Anyone reading a single "claims inflation" figure off the YAML should keep this in mind.
+- **Case estimates re-centre on the true ultimate at the first revision**, so incurred development carries little systematic IBNER signal - incurred is close to unbiased at every age, and incurred-based methods will look flattering on this data.
+- **Nil claims draw severity and probability independently of claim size**; real withdrawn or nil claims skew small.
+- **No seasonality, catastrophe, or event clustering.** Occurrences are uniform within each cover period and claims are independent across policies (the only cross-policy link is the shared inflation path).
+- **Each year's book is an independent cohort** - no policy renews, so per-policy claim histories never correlate across years.
+- **The insurer prices risk perfectly** - premium uses the exact risk factor that drives claim frequency, with no pricing error, so loss ratios are more stable across cohorts than a real book's.
 
 ## Realism
 

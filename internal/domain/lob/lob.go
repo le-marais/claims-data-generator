@@ -3,7 +3,10 @@
 // of business.
 package lob
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 type LineOfBusiness struct {
 	Name   string
@@ -39,8 +42,9 @@ type ExcessChoice struct {
 
 // ClaimParams drives step 2, claim event simulation.
 type ClaimParams struct {
-	// BaseFrequency is expected reported claims per policy-year (risk
-	// factor 1).
+	// BaseFrequency is the ground-up occurrence frequency per policy-year at
+	// risk factor 1. With a non-zero excess the realized reported frequency is
+	// lower, because sub-excess claims are discarded rather than reported.
 	BaseFrequency float64
 	// ReportLagMedian is the median occurrence-to-report lag in days.
 	ReportLagMedian float64
@@ -168,6 +172,22 @@ type RunoffParams struct {
 	RevisionSigma float64
 }
 
+type namedFloat struct {
+	name string
+	v    float64
+}
+
+// checkFinite rejects NaN and infinite values, which slip past ordinary range
+// comparisons because every comparison with NaN is false.
+func checkFinite(fields ...namedFloat) error {
+	for _, f := range fields {
+		if math.IsNaN(f.v) || math.IsInf(f.v, 0) {
+			return fmt.Errorf("%s: must be a finite number, got %v", f.name, f.v)
+		}
+	}
+	return nil
+}
+
 // Validate checks every parameter and names the offending field in errors.
 func (l LineOfBusiness) Validate() error {
 	if l.Name == "" {
@@ -183,6 +203,16 @@ func (l LineOfBusiness) Validate() error {
 }
 
 func (b BookParams) validate() error {
+	if err := checkFinite(
+		namedFloat{"book.growth_factor", b.GrowthFactor},
+		namedFloat{"book.size_volatility", b.SizeVolatility},
+		namedFloat{"book.spread", b.Spread},
+		namedFloat{"book.sum_insured_median", b.SumInsuredMedian},
+		namedFloat{"book.sum_insured_inflation", b.SumInsuredInflation},
+		namedFloat{"book.premium_rate_factor", b.PremiumRateFactor},
+	); err != nil {
+		return err
+	}
 	if b.GrowthFactor <= 0 {
 		return fmt.Errorf("book.growth_factor: must be positive, got %v", b.GrowthFactor)
 	}
@@ -203,6 +233,12 @@ func (b BookParams) validate() error {
 	}
 	totalWeight := 0.0
 	for i, c := range b.ExcessChoices {
+		if err := checkFinite(
+			namedFloat{fmt.Sprintf("book.excess_choices[%d].value", i), c.Value},
+			namedFloat{fmt.Sprintf("book.excess_choices[%d].weight", i), c.Weight},
+		); err != nil {
+			return err
+		}
 		if c.Value < 0 {
 			return fmt.Errorf("book.excess_choices[%d].value: must not be negative, got %v", i, c.Value)
 		}
@@ -221,6 +257,14 @@ func (b BookParams) validate() error {
 }
 
 func (c ClaimParams) validate() error {
+	if err := checkFinite(
+		namedFloat{"claims.base_frequency", c.BaseFrequency},
+		namedFloat{"claims.report_lag_median", c.ReportLagMedian},
+		namedFloat{"claims.report_lag_sigma", c.ReportLagSigma},
+		namedFloat{"claims.nil_probability", c.NilProbability},
+	); err != nil {
+		return err
+	}
 	if c.BaseFrequency <= 0 {
 		return fmt.Errorf("claims.base_frequency: must be positive, got %v", c.BaseFrequency)
 	}
@@ -252,6 +296,12 @@ func (c ClaimParams) validate() error {
 }
 
 func (i InflationParams) validate() error {
+	if err := checkFinite(
+		namedFloat{"claims.inflation.mean", i.Mean},
+		namedFloat{"claims.inflation.volatility", i.Volatility},
+	); err != nil {
+		return err
+	}
 	if i.Mean <= 0 {
 		return fmt.Errorf("claims.inflation.mean: must be positive, got %v", i.Mean)
 	}
@@ -262,6 +312,15 @@ func (i InflationParams) validate() error {
 }
 
 func (r RecoveryTypeParams) validate(prefix string) error {
+	if err := checkFinite(
+		namedFloat{prefix + ".probability", r.Probability},
+		namedFloat{prefix + ".mean_share", r.MeanShare},
+		namedFloat{prefix + ".concentration", r.Concentration},
+		namedFloat{prefix + ".lag_median_days", r.LagMedianDays},
+		namedFloat{prefix + ".lag_sigma", r.LagSigma},
+	); err != nil {
+		return err
+	}
 	if r.Probability < 0 || r.Probability >= 1 {
 		return fmt.Errorf("%s.probability: must be in [0, 1), got %v", prefix, r.Probability)
 	}
@@ -281,6 +340,15 @@ func (r RecoveryTypeParams) validate(prefix string) error {
 }
 
 func (r ReopeningParams) validate() error {
+	if err := checkFinite(
+		namedFloat{"claims.reopening.probability", r.Probability},
+		namedFloat{"claims.reopening.estimate_factor", r.EstimateFactor},
+		namedFloat{"claims.reopening.estimate_sigma", r.EstimateSigma},
+		namedFloat{"claims.reopening.lag_median_days", r.LagMedianDays},
+		namedFloat{"claims.reopening.lag_sigma", r.LagSigma},
+	); err != nil {
+		return err
+	}
 	if r.Probability < 0 || r.Probability >= 1 {
 		return fmt.Errorf("claims.reopening.probability: must be in [0, 1), got %v", r.Probability)
 	}
@@ -300,44 +368,73 @@ func (r ReopeningParams) validate() error {
 }
 
 func (s SeverityParams) validate() error {
+	if err := checkFinite(
+		namedFloat{"claims.severity.third_party_weight", s.ThirdPartyWeight},
+		namedFloat{"claims.severity.own_damage_median_fraction", s.OwnDamageMedianFraction},
+		namedFloat{"claims.severity.own_damage_sigma", s.OwnDamageSigma},
+		namedFloat{"claims.severity.third_party_scale", s.ThirdPartyScale},
+		namedFloat{"claims.severity.third_party_alpha", s.ThirdPartyAlpha},
+	); err != nil {
+		return err
+	}
 	if s.ThirdPartyWeight < 0 || s.ThirdPartyWeight > 1 {
-		return fmt.Errorf("severity.third_party_weight: must be in [0, 1], got %v", s.ThirdPartyWeight)
+		return fmt.Errorf("claims.severity.third_party_weight: must be in [0, 1], got %v", s.ThirdPartyWeight)
 	}
 	if s.OwnDamageMedianFraction <= 0 {
-		return fmt.Errorf("severity.own_damage_median_fraction: must be positive, got %v", s.OwnDamageMedianFraction)
+		return fmt.Errorf("claims.severity.own_damage_median_fraction: must be positive, got %v", s.OwnDamageMedianFraction)
 	}
 	if s.OwnDamageSigma <= 0 {
-		return fmt.Errorf("severity.own_damage_sigma: must be positive, got %v", s.OwnDamageSigma)
+		return fmt.Errorf("claims.severity.own_damage_sigma: must be positive, got %v", s.OwnDamageSigma)
 	}
 	if s.ThirdPartyScale <= 0 {
-		return fmt.Errorf("severity.third_party_scale: must be positive, got %v", s.ThirdPartyScale)
+		return fmt.Errorf("claims.severity.third_party_scale: must be positive, got %v", s.ThirdPartyScale)
 	}
 	if s.ThirdPartyAlpha <= 1 {
-		return fmt.Errorf("severity.third_party_alpha: must exceed 1 for a finite mean, got %v", s.ThirdPartyAlpha)
+		return fmt.Errorf("claims.severity.third_party_alpha: must exceed 1 for a finite mean, got %v", s.ThirdPartyAlpha)
 	}
 	return nil
 }
 
 func (c CloseLagParams) validate() error {
+	if err := checkFinite(
+		namedFloat{"claims.close_lag.shape", c.Shape},
+		namedFloat{"claims.close_lag.mean_days", c.MeanDays},
+		namedFloat{"claims.close_lag.size_threshold", c.SizeThreshold},
+		namedFloat{"claims.close_lag.size_multiplier", c.SizeMultiplier},
+		namedFloat{"claims.close_lag.risk_loading", c.RiskLoading},
+	); err != nil {
+		return err
+	}
 	if c.Shape <= 0 {
-		return fmt.Errorf("close_lag.shape: must be positive, got %v", c.Shape)
+		return fmt.Errorf("claims.close_lag.shape: must be positive, got %v", c.Shape)
 	}
 	if c.MeanDays <= 0 {
-		return fmt.Errorf("close_lag.mean_days: must be positive, got %v", c.MeanDays)
+		return fmt.Errorf("claims.close_lag.mean_days: must be positive, got %v", c.MeanDays)
 	}
 	if c.SizeThreshold < 0 {
-		return fmt.Errorf("close_lag.size_threshold: must not be negative, got %v", c.SizeThreshold)
+		return fmt.Errorf("claims.close_lag.size_threshold: must not be negative, got %v", c.SizeThreshold)
 	}
 	if c.SizeMultiplier < 1 {
-		return fmt.Errorf("close_lag.size_multiplier: must be at least 1, got %v", c.SizeMultiplier)
+		return fmt.Errorf("claims.close_lag.size_multiplier: must be at least 1, got %v", c.SizeMultiplier)
 	}
 	if c.RiskLoading < 0 {
-		return fmt.Errorf("close_lag.risk_loading: must not be negative, got %v", c.RiskLoading)
+		return fmt.Errorf("claims.close_lag.risk_loading: must not be negative, got %v", c.RiskLoading)
 	}
 	return nil
 }
 
 func (r RunoffParams) validate() error {
+	if err := checkFinite(
+		namedFloat{"runoff.case_adequacy_mean", r.CaseAdequacyMean},
+		namedFloat{"runoff.case_adequacy_sigma", r.CaseAdequacySigma},
+		namedFloat{"runoff.payments_per_year", r.PaymentsPerYear},
+		namedFloat{"runoff.settlement_share", r.SettlementShare},
+		namedFloat{"runoff.concentration", r.Concentration},
+		namedFloat{"runoff.revisions_per_year", r.RevisionsPerYear},
+		namedFloat{"runoff.revision_sigma", r.RevisionSigma},
+	); err != nil {
+		return err
+	}
 	if r.CaseAdequacyMean <= 0 {
 		return fmt.Errorf("runoff.case_adequacy_mean: must be positive, got %v", r.CaseAdequacyMean)
 	}

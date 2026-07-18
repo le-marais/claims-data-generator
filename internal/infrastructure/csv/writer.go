@@ -18,6 +18,10 @@ func WriteDataset(dir string, ds application.Dataset) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating output directory: %w", err)
 	}
+	// Every field below is numeric, an ISO-8601 date, or a fixed enum - none can
+	// contain a comma or newline - so the rows need no CSV quoting and plain
+	// fmt.Sprintf is safe. If a free-text column is ever added, switch to
+	// encoding/csv.
 	if err := writeFile(dir, "policies.csv",
 		"policy_id,cover_start,cover_end,sum_insured,excess,risk_factor,premium",
 		len(ds.Policies), func(i int) string {
@@ -51,22 +55,23 @@ func FormatRiskFactor(r float64) string {
 	return strconv.FormatFloat(r, 'f', 6, 64)
 }
 
-func writeFile(dir, name, header string, rows int, row func(int) string) error {
+func writeFile(dir, name, header string, rows int, row func(int) string) (err error) {
 	f, err := os.Create(filepath.Join(dir, name))
 	if err != nil {
 		return fmt.Errorf("creating %s: %w", name, err)
 	}
+	defer func() {
+		if cerr := f.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("closing %s: %w", name, cerr)
+		}
+	}()
 	w := bufio.NewWriter(f)
 	fmt.Fprintln(w, header)
 	for i := 0; i < rows; i++ {
 		fmt.Fprintln(w, row(i))
 	}
 	if err := w.Flush(); err != nil {
-		f.Close()
 		return fmt.Errorf("writing %s: %w", name, err)
-	}
-	if err := f.Close(); err != nil {
-		return fmt.Errorf("closing %s: %w", name, err)
 	}
 	return nil
 }

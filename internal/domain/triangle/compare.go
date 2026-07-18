@@ -129,8 +129,8 @@ func CompareToReference(c Comparison, refs []ReferenceSet) Report {
 			lrBand.Max = lr
 		}
 	}
-	value, _ := lossRatio(c.Incurred, c.EarnedPremium)
-	report.LossRatio = Check{Value: value, Band: lrBand, Within: lrBand.contains(value)}
+	value, ok := lossRatio(c.Incurred, c.EarnedPremium)
+	report.LossRatio = Check{Value: value, Band: lrBand, Within: ok && lrBand.contains(value)}
 	return report
 }
 

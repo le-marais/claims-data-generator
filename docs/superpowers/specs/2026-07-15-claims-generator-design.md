@@ -1,7 +1,7 @@
 # Claims data generator - MVP design
 
 Date: 2026-07-15
-Status: approved pending review
+Status: shipped
 
 ## Summary
 

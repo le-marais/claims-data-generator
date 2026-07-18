@@ -27,6 +27,12 @@ func (d Date) Year() int {
 	return d.t.Year()
 }
 
+// IsZero reports whether the date is the zero value.
+func (d Date) IsZero() bool { return d.t.IsZero() }
+
+// Equal reports whether two dates fall on the same instant.
+func (d Date) Equal(other Date) bool { return d.t.Equal(other.t) }
+
 // DaysBetween returns the number of days from a to b (negative if b is earlier).
 func DaysBetween(a, b Date) int {
 	return int(b.t.Sub(a.t) / (24 * time.Hour))

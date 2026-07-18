@@ -16,6 +16,7 @@ type ReopenSimulator struct {
 	params lob.ClaimParams
 }
 
+// NewReopenSimulator builds a reopen simulator from the claim parameters.
 func NewReopenSimulator(p lob.ClaimParams) *ReopenSimulator {
 	return &ReopenSimulator{params: p}
 }
@@ -39,8 +40,8 @@ func (s *ReopenSimulator) Apply(src shared.RandomSource, claims []Claim) []Claim
 			lag = 1 // the reopen is strictly after the first close
 		}
 		estimate := c.InitialEstimate.MulFloat(r.EstimateFactor * shared.MeanOneLogNormal(stream, r.EstimateSigma))
-		if estimate < 1 {
-			estimate = 1
+		if estimate < shared.OneCent {
+			estimate = shared.OneCent
 		}
 		closeLag := int(math.Round(drawCloseLag(stream, s.params.CloseLag, estimate.Dollars(), c.RiskFactor)))
 		if closeLag < 1 {

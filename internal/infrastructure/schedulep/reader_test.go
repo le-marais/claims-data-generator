@@ -13,6 +13,7 @@ import (
 )
 
 const refDir = "../../../data/reference/schedule p/dec2025/ppauto_pos98-07"
+const refDirSep2011 = "../../../data/reference/schedule p/sep2011/auto_personal"
 
 func TestLoadDirReadsAllCompanies(t *testing.T) {
 	refs, err := schedulep.LoadDir(refDir)
@@ -49,6 +50,34 @@ func TestLoadKnownCompany(t *testing.T) {
 	}
 	if len(ref.EarnedPremium) != 10 || ref.EarnedPremium[0] != 9347 {
 		t.Errorf("EarnedPremium = %v, want 10 entries starting 9347", ref.EarnedPremium)
+	}
+}
+
+func TestLoadKnownCompanySep2011(t *testing.T) {
+	ref, err := schedulep.LoadFile(filepath.Join(refDirSep2011, "1066.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref.Name != "1066" {
+		t.Errorf("Name = %q, want 1066", ref.Name)
+	}
+	if ref.Paid.StartYear != 1988 {
+		t.Errorf("Paid.StartYear = %d, want 1988", ref.Paid.StartYear)
+	}
+	if got := ref.Paid.Cells[0][0]; got != 5135 {
+		t.Errorf("paid 1988 dev 0 = %v, want 5135", got)
+	}
+	if got := ref.Paid.Cells[0][9]; got != 20813 {
+		t.Errorf("paid 1988 dev 9 = %v, want 20813", got)
+	}
+	if got := ref.Incurred.Cells[0][0]; got != 20897 {
+		t.Errorf("incurred 1988 dev 0 = %v, want 20897", got)
+	}
+	if len(ref.Paid.Cells[9]) != 1 || ref.Paid.Cells[9][0] != 4301 {
+		t.Errorf("paid 1997 = %v, want [4301]", ref.Paid.Cells[9])
+	}
+	if len(ref.EarnedPremium) != 10 || ref.EarnedPremium[0] != 26674 {
+		t.Errorf("EarnedPremium = %v, want 10 entries starting 26674", ref.EarnedPremium)
 	}
 }
 

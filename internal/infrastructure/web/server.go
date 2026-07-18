@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"path/filepath"
+	"strconv"
 
 	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
@@ -94,8 +96,7 @@ func (s *Server) handlePreset(w http.ResponseWriter, r *http.Request) {
 }
 
 type generateRequest struct {
-	LOBID           string           `json:"lob_id"`
-	Seed            uint64           `json:"seed"`
+	Seed            string           `json:"seed"`
 	StartYear       int              `json:"start_year"`
 	Years           int              `json:"years"`
 	InitialBookSize int              `json:"initial_book_size"`
@@ -105,16 +106,29 @@ type generateRequest struct {
 
 func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
 	var req generateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := dec.Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("parsing request: %v", err))
+		return
+	}
+	seed, err := strconv.ParseUint(req.Seed, 10, 64)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "seed: must be a base-10 unsigned integer")
 		return
 	}
 	if req.OutDir == "" {
 		writeError(w, http.StatusBadRequest, "out_dir: must not be empty")
 		return
 	}
-	ds, err := application.GenerateDataset(random.NewSource(req.Seed), application.GenerateRequest{
+	absOut, err := filepath.Abs(req.OutDir)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("out_dir: %v", err))
+		return
+	}
+	req.OutDir = absOut
+	ds, err := application.GenerateDataset(random.NewSource(seed), application.GenerateRequest{
 		LOB:             req.Params.ToDomain(),
 		StartYear:       req.StartYear,
 		Years:           req.Years,
@@ -132,9 +146,14 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
+	buf, err := json.Marshal(v)
+	if err != nil {
+		http.Error(w, `{"error":"encoding response"}`, http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(v)
+	w.Write(buf)
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {
