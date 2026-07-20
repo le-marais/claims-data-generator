@@ -1114,6 +1114,83 @@ EOF
 
 ---
 
+## Task 6: Fix the over-asserting reopening-off test (added after Task 5)
+
+Task 5's recalibration shifted seed 17 and exposed that `TestReopeningProbabilityZeroMeansOneRelease` asserts an invariant the model never guaranteed: it treated "cumulative outstanding touched zero" as "claim released forever," but `pay()` legitimately drives outstanding to a transient zero mid-episode whenever a payment exceeds the running case. Verified on the pre-branch base commit: the test passed on seed 17 but the invariant failed on 171/200 seeds - a coincidental pass. The correct reopening-off property is that no non-recovery transaction is dated after a claim's final close. This changes only the test, not any generated data.
+
+Execution order: runs after Task 5, before Tasks 2-4.
+
+**Files:**
+- Modify: `internal/application/reopening_test.go:12-43` (`TestReopeningProbabilityZeroMeansOneRelease`)
+
+- [ ] **Step 1: Rewrite the test to assert the real property**
+
+Replace `TestReopeningProbabilityZeroMeansOneRelease` with:
+
+```go
+// TestReopeningProbabilityZeroMeansOneRelease is the spec's output-level
+// off-switch check: with reopening off, a claim's case is never re-raised
+// after its final close - no non-recovery transaction is dated after the
+// claim's CloseDate. (Outstanding may legitimately touch zero mid-episode
+// when a payment exceeds the running case; that transient zero is not a
+// close and does not end the claim.)
+func TestReopeningProbabilityZeroMeansOneRelease(t *testing.T) {
+	req := request(t)
+	req.LOB.Claims.Reopening.Probability = 0
+	ds, err := application.GenerateDataset(random.NewSource(17), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeDate := map[int]shared.Date{}
+	for _, c := range ds.Claims {
+		closeDate[c.ID] = c.CloseDate
+		if c.Reopened() {
+			t.Fatalf("claim %d reopened with probability 0", c.ID)
+		}
+	}
+	for _, tx := range ds.Transactions {
+		if tx.Type.IsRecovery() {
+			continue
+		}
+		if tx.Date.After(closeDate[tx.ClaimID]) {
+			t.Fatalf("claim %d has %v activity on %v, after its final close %v, with reopening off",
+				tx.ClaimID, tx.Type, tx.Date, closeDate[tx.ClaimID])
+		}
+	}
+}
+```
+
+- [ ] **Step 2: Verify it passes (and is not seed-fragile)**
+
+Run: `go test ./internal/application/ -run TestReopeningProbabilityZeroMeansOneRelease -v -count=1`
+Expected: PASS. The property holds by construction (recoveries are the only post-close rows), so it is robust across seeds, unlike the old heuristic.
+
+- [ ] **Step 3: Run the application package and vet**
+
+Run: `go test ./internal/application/ && go vet ./...`
+Expected: PASS (realism gate still green from Task 5; the pre-existing `TestLoadDirReadsAllCompanies` in schedulep is Task 3's fix).
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add internal/application/reopening_test.go
+git commit -m "$(cat <<'EOF'
+Assert the real reopening-off property in the release test
+
+The test treated a cumulative outstanding of zero as a permanent release, but
+pay() legitimately drives outstanding to a transient zero mid-episode when a
+payment exceeds the running case, so the invariant held only by luck (passed
+seed 17, failed 171/200 seeds on the base commit). Assert the genuine property
+instead: with reopening off, no non-recovery transaction is dated after a
+claim's final close. No generated data changes.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
 ## Self-review notes
 
 - **Spec coverage:** Task 1 covers spec sections 1 (bands + filter + SL-8) and 5 (multi-seed gate, new unit tests); Task 5 (added) covers the spec Addendum (component-linked close lag) and completes section 3 (recalibration), which Task 1 could not because no existing knob could move the failing ages; Task 2 covers section 2 (UI band surfacing); Task 3 covers section 4 (simplify loader) and the broken-test fix in section 5; Task 4 covers section 6 (docs). Section 7 (verification) is the final step of Tasks 5, 3, and 4.
