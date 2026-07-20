@@ -9,13 +9,13 @@ import (
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 )
 
-// TestReopeningProbabilityZeroMeansOneRelease is the spec's output-level
+// TestReopeningOffLeavesNoPostCloseActivity is the spec's output-level
 // off-switch check: with reopening off, a claim's case is never re-raised
 // after its final close - no non-recovery transaction is dated after the
 // claim's CloseDate. (Outstanding may legitimately touch zero mid-episode
 // when a payment exceeds the running case; that transient zero is not a
 // close and does not end the claim.)
-func TestReopeningProbabilityZeroMeansOneRelease(t *testing.T) {
+func TestReopeningOffLeavesNoPostCloseActivity(t *testing.T) {
 	req := request(t)
 	req.LOB.Claims.Reopening.Probability = 0
 	ds, err := application.GenerateDataset(random.NewSource(17), req)

@@ -149,7 +149,7 @@ func TestIncurredTriangleSubtractsRecoveries(t *testing.T) {
 }
 
 func TestPercentileInterpolates(t *testing.T) {
-	// Values 10..50; Percentile sorts in place, so pass a fresh slice each call.
+	// Values 10..50; Percentile does not mutate its argument.
 	cases := []struct {
 		p    float64
 		want float64
@@ -218,6 +218,33 @@ func TestCompareFiltersDegenerateReferences(t *testing.T) {
 	}
 	if report.PaidATA[0].Band.Max > 2.0 {
 		t.Errorf("paid band max = %v; zero-premium company was not filtered out", report.PaidATA[0].Band.Max)
+	}
+}
+
+func TestCompareFiltersZeroIncurredReferences(t *testing.T) {
+	// Two healthy companies plus one with positive earned premium but an
+	// all-zero incurred latest diagonal, carrying an extreme incurred factor
+	// via a nonzero paid triangle. The zero-incurred company must not widen
+	// the band.
+	refs := []triangle.ReferenceSet{
+		{Name: "good1", Paid: triangle.Triangle{Cells: [][]float64{{100, 150}}},
+			Incurred: triangle.Triangle{Cells: [][]float64{{140, 150}}}, EarnedPremium: []float64{200}},
+		{Name: "good2", Paid: triangle.Triangle{Cells: [][]float64{{100, 160}}},
+			Incurred: triangle.Triangle{Cells: [][]float64{{150, 160}}}, EarnedPremium: []float64{250}},
+		{Name: "zeroIncurred", Paid: triangle.Triangle{Cells: [][]float64{{100, 500}}}, // extreme paid ATA 5.0
+			Incurred: triangle.Triangle{Cells: [][]float64{{0, 0}}}, EarnedPremium: []float64{200}},
+	}
+	c := triangle.Comparison{
+		Paid:          triangle.Triangle{Cells: [][]float64{{100, 155}}},
+		Incurred:      triangle.Triangle{Cells: [][]float64{{145, 155}}},
+		EarnedPremium: []float64{220},
+	}
+	report := triangle.CompareToReference(c, refs)
+	if len(report.PaidATA) == 0 {
+		t.Fatal("no paid ATA checks")
+	}
+	if report.PaidATA[0].Band.Max > 2.0 {
+		t.Errorf("paid band max = %v; zero-incurred company was not filtered out", report.PaidATA[0].Band.Max)
 	}
 }
 

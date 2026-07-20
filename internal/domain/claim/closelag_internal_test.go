@@ -1,6 +1,7 @@
 package claim
 
 import (
+	"math"
 	"testing"
 
 	"github.com/le-marais/claimsgen/internal/domain/lob"
@@ -24,5 +25,13 @@ func TestCloseLagRegimeSelectsByComponent(t *testing.T) {
 	// Third party: long-tail params, no size stretch even when large.
 	if s, m := closeLagRegime(cl, 50000, 1, false); !approxf(s, 1.0) || !approxf(m, 1200) {
 		t.Errorf("third-party = (%v, %v), want (1.0, 1200)", s, m)
+	}
+	// Third party with risk loading: mean stretches by riskFactor^RiskLoading.
+	clRisk := lob.CloseLagParams{
+		Shape: 1.2, MeanDays: 120, SizeThreshold: 20000, SizeMultiplier: 6,
+		RiskLoading: 0.5, ThirdPartyShape: 1.0, ThirdPartyMeanDays: 1200,
+	}
+	if s, m := closeLagRegime(clRisk, 50000, 2, false); !approxf(s, 1.0) || !approxf(m, 1200*math.Sqrt(2)) {
+		t.Errorf("third-party risk-loaded = (%v, %v), want (1.0, %v)", s, m, 1200*math.Sqrt(2))
 	}
 }

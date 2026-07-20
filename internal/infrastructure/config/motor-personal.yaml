@@ -31,7 +31,9 @@ claims:
   # govern own-damage claims, which settle fast; third_party_shape and
   # third_party_mean_days give third-party (bodily-injury) claims a much
   # slower tail, so paid development continues into later ages as in the
-  # Schedule P reference companies.
+  # Schedule P reference companies. Paid ATA age 2-3 is the tightest-margin
+  # metric in the realism gate - re-check it after any change to paid
+  # development.
   close_lag:
     shape: 1.2
     mean_days: 120

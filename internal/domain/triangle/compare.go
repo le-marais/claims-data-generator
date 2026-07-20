@@ -42,20 +42,21 @@ const (
 )
 
 // Percentile returns the linearly-interpolated p-th percentile (p in [0,100])
-// of xs, where p=0 is the minimum and p=100 the maximum. xs is sorted in place.
-// Returns NaN for empty xs.
+// of xs, where p=0 is the minimum and p=100 the maximum. It does not modify
+// xs. Returns NaN for empty xs.
 func Percentile(xs []float64, p float64) float64 {
 	if len(xs) == 0 {
 		return math.NaN()
 	}
-	sort.Float64s(xs)
-	if len(xs) == 1 {
-		return xs[0]
+	sorted := append([]float64(nil), xs...)
+	sort.Float64s(sorted)
+	if len(sorted) == 1 {
+		return sorted[0]
 	}
-	rank := p / 100 * float64(len(xs)-1)
+	rank := p / 100 * float64(len(sorted)-1)
 	lo := int(math.Floor(rank))
 	hi := int(math.Ceil(rank))
-	return xs[lo] + (rank-float64(lo))*(xs[hi]-xs[lo])
+	return sorted[lo] + (rank-float64(lo))*(sorted[hi]-sorted[lo])
 }
 
 // bandFromValues builds a Band from the values observed for one metric: the
