@@ -3,6 +3,7 @@ package triangle
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strings"
 )
 
@@ -21,34 +22,81 @@ type Comparison struct {
 	EarnedPremium []float64
 }
 
-// Band is the min-max range observed across reference companies.
+// Band is the range of an age-to-age factor or loss ratio observed across
+// reference companies. Lo and Hi are the scored percentile bounds (P5-P95);
+// Min and Max are the full observed extremes, kept for display context.
 type Band struct {
+	Lo, Hi   float64
 	Min, Max float64
 }
 
 func (b Band) contains(v float64) bool {
-	return v >= b.Min && v <= b.Max
+	return v >= b.Lo && v <= b.Hi
+}
+
+// bandLoPercentile and bandHiPercentile define the scored band. Widening them
+// (towards 0 and 100) loosens the realism gate.
+const (
+	bandLoPercentile = 5.0
+	bandHiPercentile = 95.0
+)
+
+// Percentile returns the linearly-interpolated p-th percentile (p in [0,100])
+// of xs, where p=0 is the minimum and p=100 the maximum. xs is sorted in place.
+// Returns NaN for empty xs.
+func Percentile(xs []float64, p float64) float64 {
+	if len(xs) == 0 {
+		return math.NaN()
+	}
+	sort.Float64s(xs)
+	if len(xs) == 1 {
+		return xs[0]
+	}
+	rank := p / 100 * float64(len(xs)-1)
+	lo := int(math.Floor(rank))
+	hi := int(math.Ceil(rank))
+	return xs[lo] + (rank-float64(lo))*(xs[hi]-xs[lo])
+}
+
+// bandFromValues builds a Band from the values observed for one metric: the
+// scored P5-P95 range plus the full min/max. Values with fewer than one entry
+// yield a NaN scored band that contains nothing.
+func bandFromValues(xs []float64) Band {
+	min, max := math.Inf(1), math.Inf(-1)
+	for _, v := range xs {
+		if v < min {
+			min = v
+		}
+		if v > max {
+			max = v
+		}
+	}
+	return Band{
+		Lo:  Percentile(xs, bandLoPercentile),
+		Hi:  Percentile(xs, bandHiPercentile),
+		Min: min,
+		Max: max,
+	}
 }
 
 // ATABands returns, per development age, the band of volume-weighted
 // age-to-age factors observed across the given triangles.
 func ATABands(triangles []Triangle) []Band {
-	var bands []Band
+	var perAge [][]float64
 	for _, t := range triangles {
 		for age, f := range t.ATAFactors() {
 			if math.IsNaN(f) {
 				continue
 			}
-			for age >= len(bands) {
-				bands = append(bands, Band{Min: math.Inf(1), Max: math.Inf(-1)})
+			for age >= len(perAge) {
+				perAge = append(perAge, nil)
 			}
-			if f < bands[age].Min {
-				bands[age].Min = f
-			}
-			if f > bands[age].Max {
-				bands[age].Max = f
-			}
+			perAge[age] = append(perAge[age], f)
 		}
+	}
+	bands := make([]Band, len(perAge))
+	for age, xs := range perAge {
+		bands[age] = bandFromValues(xs)
 	}
 	return bands
 }
@@ -90,21 +138,48 @@ func (r Report) String() string {
 	writeChecks := func(name string, checks []AgeCheck) {
 		for _, c := range checks {
 			fmt.Fprintf(&b, "%s ATA age %d-%d: %.4f in [%.4f, %.4f] = %v\n",
-				name, c.Age+1, c.Age+2, c.Value, c.Band.Min, c.Band.Max, c.Within)
+				name, c.Age+1, c.Age+2, c.Value, c.Band.Lo, c.Band.Hi, c.Within)
 		}
 	}
 	writeChecks("paid", r.PaidATA)
 	writeChecks("incurred", r.IncurredATA)
 	fmt.Fprintf(&b, "ultimate loss ratio: %.4f in [%.4f, %.4f] = %v\n",
-		r.LossRatio.Value, r.LossRatio.Band.Min, r.LossRatio.Band.Max, r.LossRatio.Within)
+		r.LossRatio.Value, r.LossRatio.Band.Lo, r.LossRatio.Band.Hi, r.LossRatio.Within)
 	return b.String()
 }
 
-// CompareToReference scores the generated aggregates against the bands
-// observed across the reference companies: volume-weighted age-to-age
-// factors for paid and incurred, and the overall ultimate loss ratio.
-// Only ages present in both generated and reference data are checked.
+// usableRefs drops reference companies that carry no scorable signal: no
+// earned premium, or an all-zero incurred triangle. Percentile bands handle
+// ordinary outliers; this is a backstop for degenerate data (for example
+// future un-curated per-line-of-business references).
+func usableRefs(refs []ReferenceSet) []ReferenceSet {
+	out := make([]ReferenceSet, 0, len(refs))
+	for _, r := range refs {
+		totalEP := 0.0
+		for _, ep := range r.EarnedPremium {
+			totalEP += ep
+		}
+		if totalEP <= 0 {
+			continue
+		}
+		latest := 0.0
+		for _, v := range r.Incurred.latestDiagonal() {
+			latest += v
+		}
+		if latest <= 0 {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// CompareToReference scores the generated aggregates against the P5-P95 bands
+// observed across the usable reference companies: volume-weighted age-to-age
+// factors for paid and incurred, and the overall ultimate loss ratio. Only
+// ages present in both generated and reference data are checked.
 func CompareToReference(c Comparison, refs []ReferenceSet) Report {
+	refs = usableRefs(refs)
 	paidRef := make([]Triangle, len(refs))
 	incRef := make([]Triangle, len(refs))
 	for i, r := range refs {
@@ -116,21 +191,15 @@ func CompareToReference(c Comparison, refs []ReferenceSet) Report {
 		IncurredATA: checkAges(c.Incurred.ATAFactors(), ATABands(incRef)),
 	}
 
-	lrBand := Band{Min: math.Inf(1), Max: math.Inf(-1)}
+	var lrs []float64
 	for _, r := range refs {
-		lr, ok := lossRatio(r.Incurred, r.EarnedPremium)
-		if !ok {
-			continue
-		}
-		if lr < lrBand.Min {
-			lrBand.Min = lr
-		}
-		if lr > lrBand.Max {
-			lrBand.Max = lr
+		if lr, ok := lossRatio(r.Incurred, r.EarnedPremium); ok {
+			lrs = append(lrs, lr)
 		}
 	}
-	value, _ := lossRatio(c.Incurred, c.EarnedPremium)
-	report.LossRatio = Check{Value: value, Band: lrBand, Within: lrBand.contains(value)}
+	lrBand := bandFromValues(lrs)
+	value, ok := lossRatio(c.Incurred, c.EarnedPremium)
+	report.LossRatio = Check{Value: value, Band: lrBand, Within: ok && lrBand.contains(value)}
 	return report
 }
 

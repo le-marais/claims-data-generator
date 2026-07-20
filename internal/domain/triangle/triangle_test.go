@@ -148,6 +148,29 @@ func TestIncurredTriangleSubtractsRecoveries(t *testing.T) {
 	}
 }
 
+func TestPercentileInterpolates(t *testing.T) {
+	// Values 10..50; Percentile sorts in place, so pass a fresh slice each call.
+	cases := []struct {
+		p    float64
+		want float64
+	}{
+		{5, 12},  // rank 0.2 -> 10 + 0.2*(20-10)
+		{50, 30}, // rank 2.0 -> xs[2]
+		{95, 48}, // rank 3.8 -> 40 + 0.8*(50-40)
+	}
+	for _, c := range cases {
+		if got := triangle.Percentile([]float64{50, 10, 30, 20, 40}, c.p); !approx(got, c.want) {
+			t.Errorf("Percentile(p=%v) = %v, want %v", c.p, got, c.want)
+		}
+	}
+	if got := triangle.Percentile([]float64{7}, 5); !approx(got, 7) {
+		t.Errorf("Percentile single = %v, want 7", got)
+	}
+	if got := triangle.Percentile(nil, 5); !math.IsNaN(got) {
+		t.Errorf("Percentile(nil) = %v, want NaN", got)
+	}
+}
+
 func TestBandsAcrossReferenceSets(t *testing.T) {
 	refs := []triangle.ReferenceSet{
 		{Paid: triangle.Triangle{Cells: [][]float64{{100, 150, 165}}}},
@@ -161,11 +184,55 @@ func TestBandsAcrossReferenceSets(t *testing.T) {
 	if len(bands) != 2 {
 		t.Fatalf("got %d bands, want 2", len(bands))
 	}
+	// Full range is the min/max; the scored band is P5-P95 (interpolated).
 	if !approx(bands[0].Min, 1.5) || !approx(bands[0].Max, 2.0) {
-		t.Errorf("age 0 band = %+v, want [1.5, 2.0]", bands[0])
+		t.Errorf("age 0 min/max = %+v, want [1.5, 2.0]", bands[0])
+	}
+	if !approx(bands[0].Lo, 1.525) || !approx(bands[0].Hi, 1.975) {
+		t.Errorf("age 0 scored = [%v, %v], want [1.525, 1.975]", bands[0].Lo, bands[0].Hi)
 	}
 	if !approx(bands[1].Min, 1.05) || !approx(bands[1].Max, 1.1) {
-		t.Errorf("age 1 band = %+v, want [1.05, 1.1]", bands[1])
+		t.Errorf("age 1 min/max = %+v, want [1.05, 1.1]", bands[1])
+	}
+}
+
+func TestCompareFiltersDegenerateReferences(t *testing.T) {
+	// Two healthy companies plus one with zero earned premium carrying an
+	// extreme paid factor. The zero-premium company must not widen the band.
+	refs := []triangle.ReferenceSet{
+		{Name: "good1", Paid: triangle.Triangle{Cells: [][]float64{{100, 150}}},
+			Incurred: triangle.Triangle{Cells: [][]float64{{140, 150}}}, EarnedPremium: []float64{200}},
+		{Name: "good2", Paid: triangle.Triangle{Cells: [][]float64{{100, 160}}},
+			Incurred: triangle.Triangle{Cells: [][]float64{{150, 160}}}, EarnedPremium: []float64{250}},
+		{Name: "zeroEP", Paid: triangle.Triangle{Cells: [][]float64{{100, 500}}}, // ATA 5.0
+			Incurred: triangle.Triangle{Cells: [][]float64{{100, 500}}}, EarnedPremium: []float64{0}},
+	}
+	c := triangle.Comparison{
+		Paid:          triangle.Triangle{Cells: [][]float64{{100, 155}}},
+		Incurred:      triangle.Triangle{Cells: [][]float64{{145, 155}}},
+		EarnedPremium: []float64{220},
+	}
+	report := triangle.CompareToReference(c, refs)
+	if len(report.PaidATA) == 0 {
+		t.Fatal("no paid ATA checks")
+	}
+	if report.PaidATA[0].Band.Max > 2.0 {
+		t.Errorf("paid band max = %v; zero-premium company was not filtered out", report.PaidATA[0].Band.Max)
+	}
+}
+
+func TestCompareFailsWhenGeneratedHasNoPremium(t *testing.T) {
+	refs := []triangle.ReferenceSet{
+		{Name: "a", Incurred: triangle.Triangle{Cells: [][]float64{{140, 150}}}, EarnedPremium: []float64{200}},
+		{Name: "b", Incurred: triangle.Triangle{Cells: [][]float64{{210, 200}}}, EarnedPremium: []float64{250}},
+	}
+	c := triangle.Comparison{
+		Incurred:      triangle.Triangle{Cells: [][]float64{{180, 180}}},
+		EarnedPremium: []float64{0}, // no premium -> loss ratio undefined
+	}
+	report := triangle.CompareToReference(c, refs)
+	if report.LossRatio.Within {
+		t.Error("loss ratio scored as within despite zero generated premium")
 	}
 }
 

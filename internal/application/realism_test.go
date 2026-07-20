@@ -17,17 +17,19 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	req := request(t)
-	req.StartYear = 1998
-	req.Years = 10
-	req.InitialBookSize = 10000
-	ds, err := application.GenerateDataset(random.NewSource(42), req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	report := application.EvaluateRealism(ds, refs, req.StartYear, req.Years)
-	if !report.Pass() {
-		t.Errorf("generated data outside Schedule P bands:\n%s", report)
+	for _, seed := range []uint64{1, 42, 7} {
+		req := request(t)
+		req.StartYear = 1998
+		req.Years = 10
+		req.InitialBookSize = 10000
+		ds, err := application.GenerateDataset(random.NewSource(seed), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		report := application.EvaluateRealism(ds, refs, req.StartYear, req.Years)
+		if !report.Pass() {
+			t.Errorf("seed %d: generated data outside Schedule P bands:\n%s", seed, report)
+		}
 	}
 }
 

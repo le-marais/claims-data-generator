@@ -1,7 +1,8 @@
 # Personal motor insurance preset.
 # Values are calibrated so that generated development triangles fall within
-# the bands observed across the Schedule P private passenger auto reference
-# data (data/reference/schedule p, dec2025 personal motor).
+# the P5-P95 bands observed across the curated Schedule P private passenger
+# auto reference data (data/reference/schedule p/dec2025, 96 hand-curated
+# companies).
 name: motor-personal
 book:
   growth_factor: 1.03
