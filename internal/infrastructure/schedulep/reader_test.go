@@ -11,7 +11,7 @@ import (
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
 )
 
-const refDir = "../../../data/reference/schedule p/dec2025/ppauto_pos98-07"
+const refDir = "../../../data/reference/schedule p/ppauto_pos98-07"
 
 func TestLoadDirReadsAllCompanies(t *testing.T) {
 	refs, err := schedulep.LoadDir(refDir)
@@ -80,7 +80,7 @@ func TestLoadDirEmptyNamesDirectory(t *testing.T) {
 }
 
 func TestLoadFSErrorsOnEmptyDir(t *testing.T) {
-	_, err := schedulep.LoadFS(fstest.MapFS{}, "schedule p/dec2025/ppauto_pos98-07")
+	_, err := schedulep.LoadFS(fstest.MapFS{}, "schedule p/ppauto_pos98-07")
 	if err == nil {
 		t.Fatal("LoadFS on an empty FS: want error, got nil")
 	}
