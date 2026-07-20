@@ -7,16 +7,32 @@ const path = require("path");
 
 const OUT = path.join(__dirname, "..", "..", "docs", "screenshots");
 const URL = process.env.CLAIMSGEN_URL || "http://127.0.0.1:8093";
-const CHROME = process.env.CHROME_PATH || "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+
+function defaultChrome() {
+  switch (process.platform) {
+    case "win32": return "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe";
+    case "darwin": return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+    default: return "/usr/bin/google-chrome";
+  }
+}
+const CHROME = process.env.CHROME_PATH || defaultChrome();
 
 async function generateAndWait(page) {
   await page.click("#generate-btn");
-  await page.waitForFunction(
-    () => !document.querySelector("#generate-btn").disabled &&
-          !document.querySelector("#results").hidden &&
-          document.querySelector("#error-banner").hidden,
+  // Resolve on either a finished run or a visible error banner, so a failed
+  // generation rejects immediately instead of hanging the full timeout.
+  const handle = await page.waitForFunction(
+    () => {
+      const err = document.querySelector("#error-banner");
+      if (err && !err.hidden) return { error: err.textContent };
+      const btn = document.querySelector("#generate-btn");
+      if (!btn.disabled && !document.querySelector("#results").hidden) return { ok: true };
+      return false;
+    },
     { timeout: 120000 }
   );
+  const outcome = await handle.jsonValue();
+  if (outcome.error) throw new Error(`generation failed: ${outcome.error}`);
 }
 
 async function shootResults(page, file) {

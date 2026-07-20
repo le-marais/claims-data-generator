@@ -52,6 +52,7 @@ type ClaimSimulator struct {
 	inflation InflationIndex
 }
 
+// NewClaimSimulator builds a claim simulator from the claim parameters.
 func NewClaimSimulator(p lob.ClaimParams) *ClaimSimulator {
 	return &ClaimSimulator{params: p}
 }
@@ -103,21 +104,27 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	report := occurrence.AddDays(int(math.Round(lag)))
 
 	loss, ownDamage := s.drawGroundUpLoss(src, pol)
+	// The own-damage component scales with a sum insured that already drifts by
+	// sum_insured_inflation, so its effective severity trend is the product of
+	// sum_insured_inflation and claims inflation; third-party (Pareto) losses
+	// carry only the claims index applied here.
 	loss *= s.inflation.For(occurrence.Year())
 	estimate := loss - pol.Excess.Dollars()
 	if estimate <= 0 {
 		return Claim{}, false
 	}
 
-	close := report.AddDays(int(math.Round(drawCloseLag(src, s.params.CloseLag, estimate, pol.RiskFactor, ownDamage))))
+	closeDate := report.AddDays(int(math.Round(drawCloseLag(src, s.params.CloseLag, estimate, pol.RiskFactor, ownDamage))))
 
+	// Nil claims draw their severity and probability independently of claim
+	// size; real withdrawn claims skew small, so this is a known simplification.
 	isNil := s.params.NilProbability > 0 && src.Bernoulli(s.params.NilProbability)
 
 	return Claim{
 		PolicyID:        pol.ID,
 		OccurrenceDate:  occurrence,
 		ReportDate:      report,
-		CloseDate:       close,
+		CloseDate:       closeDate,
 		InitialEstimate: shared.FromDollars(estimate),
 		RiskFactor:      pol.RiskFactor,
 		Nil:             isNil,

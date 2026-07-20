@@ -178,13 +178,13 @@ function collectParams() {
 async function generate(event) {
   event.preventDefault();
   clearError();
+  if (!preset) { showError("Preset failed to load — reload the page."); return; }
   const btn = $("#generate-btn");
   btn.disabled = true;
   btn.textContent = "Generating…";
   try {
     const body = {
-      lob_id: $("#lob-select").value,
-      seed: Number($("#seed").value),
+      seed: $("#seed").value,
       start_year: Number($("#start-year").value),
       years: Number($("#years").value),
       initial_book_size: Number($("#initial-book-size").value),
@@ -232,7 +232,7 @@ function renderSummary(summary) {
   const table = document.createElement("table");
   table.className = "data-table";
   const head = table.createTHead().insertRow();
-  for (const label of ["Year", "Policies", "Claims", "Nil claims", "Reopened", "Earned premium", "Ultimate (paid)", "Recovered", "Loss ratio"]) {
+  for (const label of ["Year", "Policies", "Claims", "Nil claims", "Reopened", "Earned premium", "Ultimate (paid)", "Recovered", "Loss ratio (gross)"]) {
     head.append(th(label));
   }
   const body = table.createTBody();
@@ -347,7 +347,7 @@ function triangleTable(tri) {
   const maxVal = Math.max(1, ...tri.cells.flat());
   const head = table.createTHead().insertRow();
   head.append(th("Origin"));
-  for (let d = 0; d < devs; d++) head.append(th(`Dev ${d + 1}`));
+  for (let d = 0; d < devs; d++) head.append(th(d === devs - 1 ? `Dev ${d + 1}+` : `Dev ${d + 1}`));
   const body = table.createTBody();
   tri.cells.forEach((row, i) => {
     const tr = body.insertRow();
@@ -359,7 +359,7 @@ function triangleTable(tri) {
       td.style.background = SEQ_RAMP[step];
       // Ink flips to white where the fixed ramp hex turns dark, independent of theme.
       td.style.color = step >= 6 ? "#ffffff" : "#0b0b0b";
-      attachTooltip(td, [`$${fmtMoney.format(v)}`, `origin ${tri.start_year + i}, cumulative to dev year ${d + 1}`]);
+      attachTooltip(td, [`$${fmtMoney.format(v)}`, `origin ${tri.start_year + i}, cumulative to dev year ${d + 1}${d === devs - 1 ? "+" : ""}`]);
     });
   });
   // ATA footer: the factor under dev column d develops d to d+1.
@@ -378,7 +378,7 @@ function triangleTable(tri) {
 
 function renderDistributions(d) {
   $("#tab-distributions").replaceChildren(
-    histogramCard("Claim severity (ultimate paid, log-spaced bins)", d.severity, (v) => `$${compact(v)}`),
+    histogramCard("Claim severity (ultimate paid, log-spaced bins) · paying claims only", d.severity, (v) => `$${compact(v)}`),
     histogramCard("Report lag (days)", d.report_lag_days, compact),
     histogramCard("Close lag (days)", d.close_lag_days, compact),
   );
@@ -441,7 +441,7 @@ function renderRealism(r) {
     banner,
     bandCard("Paid age-to-age factors vs reference P5-P95 (min/max faint)", r.paid_ata || []),
     bandCard("Incurred age-to-age factors vs reference P5-P95 (min/max faint)", r.incurred_ata || []),
-    bandCard("Ultimate loss ratio vs reference P5-P95 (min/max faint)", [{ ...r.loss_ratio, label: "ULR" }]),
+    bandCard("Net loss ratio vs Schedule P P5-P95 (min/max faint)", [{ ...r.loss_ratio, label: "Net LR" }]),
   );
 }
 
@@ -502,6 +502,9 @@ function initTabs() {
 }
 
 $("#config-form").addEventListener("submit", generate);
-$("#reset-params").addEventListener("click", buildParamsForm);
+$("#reset-params").addEventListener("click", () => {
+  if (!preset) { showError("Preset failed to load — reload the page."); return; }
+  try { buildParamsForm(); } catch (e) { showError(e.message); }
+});
 initTabs();
 loadLOBs().catch((e) => showError(e.message));

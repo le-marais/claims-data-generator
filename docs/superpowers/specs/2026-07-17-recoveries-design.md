@@ -1,7 +1,7 @@
 # Recoveries (salvage and subrogation) design
 
 Date: 2026-07-17
-Status: approved pending review
+Status: shipped
 
 ## Summary
 

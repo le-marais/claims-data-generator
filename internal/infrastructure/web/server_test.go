@@ -100,8 +100,7 @@ func generateBody(t *testing.T, outDir string) map[string]any {
 		t.Fatal(err)
 	}
 	return map[string]any{
-		"lob_id":            "motor-personal",
-		"seed":              7,
+		"seed":              "7",
 		"start_year":        1998,
 		"years":             2,
 		"initial_book_size": 300,

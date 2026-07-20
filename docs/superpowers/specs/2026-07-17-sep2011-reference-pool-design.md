@@ -3,7 +3,7 @@
 # Merge the sep2011 personal motor reference data into the app's reference pool
 
 Date: 2026-07-17
-Status: approved
+Status: shipped
 
 ## Goal
 

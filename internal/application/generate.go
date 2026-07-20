@@ -46,7 +46,12 @@ func GenerateDataset(src shared.RandomSource, req GenerateRequest) (Dataset, err
 	}
 	book := policy.NewBookSimulator(req.LOB.Book).
 		Simulate(src.Split("book"), req.StartYear, req.Years, req.InitialBookSize)
-	inflation := claim.NewInflationIndex(src.Split("inflation"), req.LOB.Claims.Inflation, req.StartYear, req.Years)
+	// Build the index one year past the window: policies written late in the
+	// final underwriting year produce occurrences in startYear+years (cover
+	// spills into the next calendar year), and this gives those tail
+	// occurrences their own compounded factor instead of clamping to the last
+	// year. InflationIndex.For keeps its clamp as a defensive fallback.
+	inflation := claim.NewInflationIndex(src.Split("inflation"), req.LOB.Claims.Inflation, req.StartYear, req.Years+1)
 	claims := claim.NewClaimSimulator(req.LOB.Claims).
 		WithInflation(inflation).
 		Simulate(src.Split("claims"), book)

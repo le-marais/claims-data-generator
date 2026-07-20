@@ -1,6 +1,7 @@
 package application_test
 
 import (
+	"fmt"
 	"testing"
 
 	refdata "github.com/le-marais/claimsgen/data/reference"
@@ -17,19 +18,24 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	req := request(t)
+	req.StartYear = 1998
+	req.Years = 10
+	req.InitialBookSize = 10000
+	// Run the gate on several seeds so a calibration that only happens to
+	// pass on one seed is caught here.
 	for _, seed := range []uint64{1, 42, 7} {
-		req := request(t)
-		req.StartYear = 1998
-		req.Years = 10
-		req.InitialBookSize = 10000
-		ds, err := application.GenerateDataset(random.NewSource(seed), req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		report := application.EvaluateRealism(ds, refs, req.StartYear, req.Years)
-		if !report.Pass() {
-			t.Errorf("seed %d: generated data outside Schedule P bands:\n%s", seed, report)
-		}
+		seed := seed
+		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
+			ds, err := application.GenerateDataset(random.NewSource(seed), req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			report := application.EvaluateRealism(ds, refs, req.StartYear, req.Years)
+			if !report.Pass() {
+				t.Errorf("generated data outside Schedule P bands:\n%s", report)
+			}
+		})
 	}
 }
 

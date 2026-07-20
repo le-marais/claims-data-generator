@@ -1,7 +1,7 @@
 # Claims inflation and nil claims design
 
 Date: 2026-07-16
-Status: approved pending review
+Status: shipped
 
 ## Summary
 

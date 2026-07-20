@@ -30,6 +30,7 @@ type RecoverySimulator struct {
 	params lob.RecoveryParams
 }
 
+// NewRecoverySimulator builds a recovery simulator from the recovery parameters.
 func NewRecoverySimulator(p lob.RecoveryParams) *RecoverySimulator {
 	return &RecoverySimulator{params: p}
 }
@@ -104,9 +105,9 @@ func (s *RecoverySimulator) simulateClaim(src shared.RandomSource, c claim.Claim
 			lag = 1 // recoveries land strictly after close
 		}
 		if recovered+amount >= paid {
-			amount = paid - recovered - 1 // keep total recovered strictly below gross paid
+			amount = paid - recovered - shared.OneCent // keep total recovered strictly below gross paid
 		}
-		if amount < 1 {
+		if amount < shared.OneCent {
 			continue // sub-cent recovery: emit no row
 		}
 		rows = append(rows, Transaction{

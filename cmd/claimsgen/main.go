@@ -123,7 +123,7 @@ func runUI(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "claimsgen: cannot listen on port %d (%v); try --port\n", *port, err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "claimsgen ui: http://127.0.0.1:%d\n", *port)
+	fmt.Fprintf(stdout, "claimsgen ui: http://%s\n", ln.Addr())
 	if err := http.Serve(ln, web.NewServer(refs)); err != nil {
 		fmt.Fprintf(stderr, "claimsgen: %v\n", err)
 		return 1
