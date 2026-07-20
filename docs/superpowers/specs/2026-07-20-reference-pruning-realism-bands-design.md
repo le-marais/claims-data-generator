@@ -147,6 +147,47 @@ which no longer happens.
 - `go test ./...` and `go vet ./...` green.
 - The realism gate is green across every tested seed.
 
+## Addendum (2026-07-20): component-linked close lag
+
+Implementing section 1 (P5-P95 bands) surfaced a real model gap, not a tuning
+problem: the default preset's *paid* development at ages 2-3, 3-4, 4-5 is
+structurally faster than the curated Schedule P companies (preset ~3.5-4.5%
+growth at age 2-3 versus a P5 floor of 6.6%), on all three gate seeds. Loss
+ratio and incurred development pass comfortably. The cause is the single
+close-lag gamma (shape 1.2, mean ~120 days): almost every claim closes within a
+year, so paid development is nearly complete by age 2. Reserving reality is that
+the slow paid tail is the third-party bodily-injury component, which already
+exists in the model (20% severity weight, Pareto) but currently closes on the
+same fast clock as own damage.
+
+**Decision (chosen over widening the band or a generic mixture): give
+third-party claims their own slower close-lag regime.** This expands the branch
+from cleanup into a model change.
+
+Design:
+
+- `lob.CloseLagParams` gains `ThirdPartyShape` and `ThirdPartyMeanDays`. The
+  existing `Shape`/`MeanDays` (and the size stretch) now govern own-damage
+  (fast-settling) claims; the new fields govern third-party (long-tail) claims.
+- `drawCloseLag` takes the claim's `ownDamage` flag and selects the regime:
+  own damage keeps the current logic (including the `SizeThreshold`/
+  `SizeMultiplier` stretch); third party uses `ThirdPartyShape`/
+  `ThirdPartyMeanDays`. `RiskLoading` still applies to both. The size stretch
+  becomes own-damage-only.
+- Both callers pass the component: `claim.go` from the value returned by
+  `drawGroundUpLoss`, `reopen.go` from `Claim.OwnDamage`.
+- **Reproducibility:** the function still draws exactly one gamma on either
+  branch, and `ownDamage` is already determined before the close-lag draw, so no
+  new draw is introduced and no downstream stream shifts. The knob-isolation
+  contract holds.
+- Fan-out (the RF-13 pattern): domain struct + validation (`lob.go`), config DTO
+  + `ToDomain` (`config.go`), preset YAML (`motor-personal.yaml`), and UI form
+  metadata (`app.js`).
+- The preset is then calibrated: `ThirdPartyMeanDays` raised and
+  `ThirdPartyShape` chosen so third-party payments extend into ages 2-5 and the
+  multi-seed gate passes P5-P95. This knob can move the failing ages, unlike the
+  close-lag knobs tried before.
+
 ## Testing strategy
 
 Unit tests cover the new percentile and filter logic in isolation (domain layer). The

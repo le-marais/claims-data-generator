@@ -792,6 +792,14 @@ across several seeds).
 
 In `README.md`, confirm line ~36 ("The Schedule P reference data is embedded in the binary.") and line ~49 ("bands observed across the Schedule P reference companies") are still accurate - they are (no vintage or count claim). No change unless a "two vintages"/"289" phrase is present; if found, delete the vintage/count clause. Do not edit otherwise.
 
+- [ ] **Step 2b: Update the how-it-works close-lag description**
+
+In `README.md`, the "How the simulation works" step 2 currently reads "Close delays are gamma distributed, stretched for large claims and risky policyholders." Replace that sentence to reflect the component split:
+
+```markdown
+Close delays are gamma distributed: own-damage claims settle fast (stretched for large claims and risky policyholders), while third-party (bodily-injury) claims draw from a slower long-tail regime, so paid losses keep developing at later ages.
+```
+
 - [ ] **Step 3: Fix the roadmap count**
 
 In `docs/roadmap.md:10`, replace the realism-gate bullet:
@@ -863,8 +871,252 @@ EOF
 
 ---
 
+## Task 5: Component-linked close lag (added after Task 1 revealed the model gap)
+
+Execution order: this task runs **after Task 1 and before Tasks 2-4** - it makes the multi-seed gate green again, which every later task's `go test ./...` depends on.
+
+**Files:**
+- Modify: `internal/domain/lob/lob.go:134-145` (`CloseLagParams` fields), `:321-338` (`validate`)
+- Modify: `internal/domain/claim/claim.go:112` (caller), `:143-150` (`drawCloseLag`)
+- Modify: `internal/domain/claim/reopen.go:45` (caller)
+- Create: `internal/domain/claim/closelag_internal_test.go` (internal `package claim` test)
+- Modify: `internal/infrastructure/config/config.go:93-98` (DTO), `:215-220` (`ToDomain`)
+- Modify: `internal/infrastructure/config/config_test.go:33-38` (inline `validYAML` close_lag)
+- Modify: `internal/infrastructure/config/motor-personal.yaml:30-35` (new params + calibration)
+- Modify: `internal/infrastructure/web/static/app.js:34` (form metadata)
+
+**Interfaces:**
+- Consumes: `Claim.OwnDamage bool` (already carried), `drawGroundUpLoss` returning `(loss float64, ownDamage bool)`.
+- Produces:
+  - `lob.CloseLagParams` with two new fields: `ThirdPartyShape float64`, `ThirdPartyMeanDays float64`. Existing `Shape`/`MeanDays`/`SizeThreshold`/`SizeMultiplier` now govern own-damage; the new fields govern third-party claims.
+  - `closeLagRegime(cl lob.CloseLagParams, estimate, riskFactor float64, ownDamage bool) (shape, mean float64)` (unexported, `package claim`) - selects the gamma parameters.
+  - `drawCloseLag(src shared.RandomSource, cl lob.CloseLagParams, estimate, riskFactor float64, ownDamage bool) float64` - signature gains the trailing `ownDamage bool`.
+
+- [ ] **Step 1: Write the failing regime-selector test**
+
+Create `internal/domain/claim/closelag_internal_test.go`:
+
+```go
+package claim
+
+import (
+	"testing"
+
+	"github.com/le-marais/claimsgen/internal/domain/lob"
+)
+
+func approxf(a, b float64) bool { return a-b < 1e-9 && b-a < 1e-9 }
+
+func TestCloseLagRegimeSelectsByComponent(t *testing.T) {
+	cl := lob.CloseLagParams{
+		Shape: 1.2, MeanDays: 120, SizeThreshold: 20000, SizeMultiplier: 6,
+		RiskLoading: 0, ThirdPartyShape: 1.0, ThirdPartyMeanDays: 1200,
+	}
+	// Own damage, small: base params, no stretch.
+	if s, m := closeLagRegime(cl, 5000, 1, true); !approxf(s, 1.2) || !approxf(m, 120) {
+		t.Errorf("own-damage small = (%v, %v), want (1.2, 120)", s, m)
+	}
+	// Own damage, large: base shape, stretched mean.
+	if s, m := closeLagRegime(cl, 50000, 1, true); !approxf(s, 1.2) || !approxf(m, 720) {
+		t.Errorf("own-damage large = (%v, %v), want (1.2, 720)", s, m)
+	}
+	// Third party: long-tail params, no size stretch even when large.
+	if s, m := closeLagRegime(cl, 50000, 1, false); !approxf(s, 1.0) || !approxf(m, 1200) {
+		t.Errorf("third-party = (%v, %v), want (1.0, 1200)", s, m)
+	}
+}
+```
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `go test ./internal/domain/claim/ -run TestCloseLagRegimeSelectsByComponent -v`
+Expected: FAIL - `closeLagRegime` undefined and `CloseLagParams` has no `ThirdPartyShape`/`ThirdPartyMeanDays` (build error).
+
+- [ ] **Step 3: Add the domain fields and validation**
+
+In `internal/domain/lob/lob.go`, add to `CloseLagParams` (after `RiskLoading`):
+
+```go
+	// RiskLoading is the exponent applied to the policy risk factor.
+	RiskLoading float64
+	// ThirdPartyShape and ThirdPartyMeanDays are the gamma parameters for
+	// third-party (bodily-injury) claims, which settle far slower than own
+	// damage; the size stretch does not apply to them.
+	ThirdPartyShape    float64
+	ThirdPartyMeanDays float64
+```
+
+In `validate()` (before `return nil`):
+
+```go
+	if c.ThirdPartyShape <= 0 {
+		return fmt.Errorf("close_lag.third_party_shape: must be positive, got %v", c.ThirdPartyShape)
+	}
+	if c.ThirdPartyMeanDays <= 0 {
+		return fmt.Errorf("close_lag.third_party_mean_days: must be positive, got %v", c.ThirdPartyMeanDays)
+	}
+	return nil
+```
+
+- [ ] **Step 4: Implement the regime selector and update drawCloseLag**
+
+In `internal/domain/claim/claim.go`, replace `drawCloseLag`:
+
+```go
+// closeLagRegime selects the (shape, mean) close-lag gamma parameters for a
+// claim: own-damage claims use the base parameters with the size stretch for
+// large claims; third-party claims use the long-tail parameters. Risk loading
+// applies to both.
+func closeLagRegime(cl lob.CloseLagParams, estimate, riskFactor float64, ownDamage bool) (shape, mean float64) {
+	if ownDamage {
+		shape, mean = cl.Shape, cl.MeanDays
+		if estimate > cl.SizeThreshold {
+			mean *= cl.SizeMultiplier
+		}
+	} else {
+		shape, mean = cl.ThirdPartyShape, cl.ThirdPartyMeanDays
+	}
+	mean *= math.Pow(riskFactor, cl.RiskLoading)
+	return shape, mean
+}
+
+// drawCloseLag draws a report-to-close (or reopen-to-second-close) delay in
+// days: gamma distributed, with own-damage and third-party claims drawing from
+// separate regimes (see closeLagRegime).
+func drawCloseLag(src shared.RandomSource, cl lob.CloseLagParams, estimate, riskFactor float64, ownDamage bool) float64 {
+	shape, mean := closeLagRegime(cl, estimate, riskFactor, ownDamage)
+	return src.Gamma(shape, mean/shape)
+}
+```
+
+- [ ] **Step 5: Update the two callers**
+
+In `internal/domain/claim/claim.go:112`, pass `ownDamage` (already in scope from `loss, ownDamage := s.drawGroundUpLoss(...)`):
+
+```go
+	close := report.AddDays(int(math.Round(drawCloseLag(src, s.params.CloseLag, estimate, pol.RiskFactor, ownDamage))))
+```
+
+In `internal/domain/claim/reopen.go:45`, pass the claim's component:
+
+```go
+		closeLag := int(math.Round(drawCloseLag(stream, s.params.CloseLag, estimate.Dollars(), c.RiskFactor, c.OwnDamage)))
+```
+
+- [ ] **Step 6: Run the regime test and the claim package**
+
+Run: `go test ./internal/domain/claim/ -v`
+Expected: PASS - the regime test passes and the existing claim/reopen tests still compile and pass (draw count per claim is unchanged, so seeded outputs that existed before only shift if they used third-party close lags, which is the intended model change; if a claim test pins a specific close-lag-derived date, update its expected value to the new draw and note it in the report).
+
+- [ ] **Step 7: Add the config DTO fields and mapping**
+
+In `internal/infrastructure/config/config.go`, add to the `CloseLagParams` DTO (after `RiskLoading`):
+
+```go
+	RiskLoading        float64 `yaml:"risk_loading" json:"risk_loading"`
+	ThirdPartyShape    float64 `yaml:"third_party_shape" json:"third_party_shape"`
+	ThirdPartyMeanDays float64 `yaml:"third_party_mean_days" json:"third_party_mean_days"`
+```
+
+In `ToDomain` (the `CloseLag: lob.CloseLagParams{...}` block), add:
+
+```go
+				RiskLoading:        d.Claims.CloseLag.RiskLoading,
+				ThirdPartyShape:    d.Claims.CloseLag.ThirdPartyShape,
+				ThirdPartyMeanDays: d.Claims.CloseLag.ThirdPartyMeanDays,
+```
+
+- [ ] **Step 8: Add the fields to the inline test YAML**
+
+`config.Load` validates, so the inline `validYAML` in `internal/infrastructure/config/config_test.go` must carry the new required fields. In its `close_lag:` block (after `risk_loading: 0.5`):
+
+```yaml
+  close_lag:
+    shape: 1.5
+    mean_days: 60
+    size_threshold: 20000
+    size_multiplier: 4
+    risk_loading: 0.5
+    third_party_shape: 1.0
+    third_party_mean_days: 900
+```
+
+- [ ] **Step 9: Add the preset params and calibrate**
+
+In `internal/infrastructure/config/motor-personal.yaml`, add the new fields to `close_lag` with starting values:
+
+```yaml
+  close_lag:
+    shape: 1.2
+    mean_days: 120
+    size_threshold: 20000
+    size_multiplier: 6
+    risk_loading: 0.3
+    third_party_shape: 1.0
+    third_party_mean_days: 1200
+```
+
+Then calibrate against the multi-seed gate:
+
+Run: `go test ./internal/application/ -run TestDefaultPresetIsRealistic -v`
+
+The failing metrics before this task were paid ATA ages 2-3, 3-4, 4-5 sitting *below* their P5 floors. Raising `third_party_mean_days` pushes third-party payments later, lifting those factors; `third_party_shape` (lower = heavier tail) spreads them. This is the dedicated calibration task, so tune these two knobs freely (no 15% cap - that guardrail was for Task 1, where no knob could move these ages). Tune, re-run, and repeat until the gate passes on all three seeds. Keep own-damage and other knobs unchanged unless a previously-passing metric (loss ratio, incurred ATA, late paid ages) drifts out - then nudge minimally and report it.
+
+If the gate cannot be made to pass across all three seeds with any reasonable `third_party_*` values (mean up to ~5 years, shape 0.7-1.5), stop and report BLOCKED with the residual failing ages and the values tried - do not force it.
+
+- [ ] **Step 10: Update the preset close-lag comment**
+
+In `internal/infrastructure/config/motor-personal.yaml`, add a comment above `close_lag` noting the split (adjust wording to the final values):
+
+```yaml
+  # Report-to-close lag. The base shape/mean_days (with the size stretch)
+  # govern own-damage claims, which settle fast; third_party_shape and
+  # third_party_mean_days give third-party (bodily-injury) claims a much
+  # slower tail, so paid development continues into later ages as in the
+  # Schedule P reference companies.
+  close_lag:
+```
+
+- [ ] **Step 11: Expose the new params in the UI form**
+
+In `internal/infrastructure/web/static/app.js`, after the `close_lag`, `risk_loading` entry (line ~34), add:
+
+```js
+      { path: ["claims", "close_lag", "third_party_shape"], label: "Third-party close lag shape", tip: "Gamma shape of the close lag for third-party (long-tail) claims." },
+      { path: ["claims", "close_lag", "third_party_mean_days"], label: "Third-party close lag mean days", tip: "Mean report-to-close lag for third-party (long-tail) claims." },
+```
+
+Verify the file still parses: `node --check internal/infrastructure/web/static/app.js` (if `node` is unavailable, skip and note it).
+
+- [ ] **Step 12: Run the full suite and vet**
+
+Run: `go test ./... && go vet ./...`
+Expected: PASS everywhere except the pre-existing `TestLoadDirReadsAllCompanies` (schedulep wants >=100 vs 96), which Task 3 fixes. Note that one known failure in the report; everything else, including the now-green realism gate, must pass.
+
+- [ ] **Step 13: Commit**
+
+```bash
+git add internal/domain/lob/lob.go internal/domain/claim/claim.go internal/domain/claim/reopen.go internal/domain/claim/closelag_internal_test.go internal/infrastructure/config/config.go internal/infrastructure/config/config_test.go internal/infrastructure/config/motor-personal.yaml internal/infrastructure/web/static/app.js
+git commit -m "$(cat <<'EOF'
+Give third-party claims a slower close-lag regime
+
+Paid development under the P5-P95 gate was structurally too fast: every claim
+closed on one fast clock. Split the close lag so own-damage keeps the fast
+gamma (with the size stretch) and third-party (bodily-injury) claims draw from
+new long-tail parameters, extending paid development into ages 2-5 to match the
+Schedule P references. One gamma draw either way, so the reproducibility
+contract holds. Recalibrated the motor preset to pass the multi-seed gate.
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
 ## Self-review notes
 
-- **Spec coverage:** Task 1 covers spec sections 1 (bands + filter + SL-8) and 3 (recalibration) and 5 (multi-seed gate, new unit tests); Task 2 covers section 2 (UI); Task 3 covers section 4 (simplify loader) and the broken-test fix in section 5; Task 4 covers section 6 (docs). Section 7 (verification) is the final step of Tasks 1, 3, and 4.
+- **Spec coverage:** Task 1 covers spec sections 1 (bands + filter + SL-8) and 5 (multi-seed gate, new unit tests); Task 5 (added) covers the spec Addendum (component-linked close lag) and completes section 3 (recalibration), which Task 1 could not because no existing knob could move the failing ages; Task 2 covers section 2 (UI band surfacing); Task 3 covers section 4 (simplify loader) and the broken-test fix in section 5; Task 4 covers section 6 (docs). Section 7 (verification) is the final step of Tasks 5, 3, and 4.
+- **Revised execution order:** Task 1 (done) -> Task 5 (model + calibration, restores green gate) -> Task 2 -> Task 3 -> Task 4. Task 5 must precede 2-4 because their `go test ./...` checks depend on the gate being green.
 - **Ordering rationale:** Task 1 keeps `Band.Min`/`Band.Max`, so the web viewmodel compiles unchanged and every package stays green before Task 2 wires the new `lo`/`hi` fields. Task 3's loader signature change touches `realism_test.go`, which Task 1 already rewrote for multi-seed - sequential edits, no conflict.
 - **Recalibration is empirical, not a placeholder:** Step 12 gives the exact command, the failure-diagnostic source, the knob-to-metric mapping, and a stop-and-report threshold. The specific YAML values cannot be pre-computed; the loop and guardrail are the deliverable.
