@@ -57,8 +57,8 @@ func TestLoadFSEmbeddedMatchesDisk(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(embedded) != 289 {
-		t.Fatalf("embedded reference sets = %d, want 289", len(embedded))
+	if len(embedded) != 96 {
+		t.Fatalf("embedded reference sets = %d, want 96", len(embedded))
 	}
 	var disk []triangle.ReferenceSet
 	for _, dir := range refdata.PersonalMotorDirs {
