@@ -91,6 +91,8 @@ type realismJSON struct {
 type ageCheckJSON struct {
 	Age    int     `json:"age"`
 	Value  float64 `json:"value"`
+	Lo     float64 `json:"lo"`
+	Hi     float64 `json:"hi"`
 	Min    float64 `json:"min"`
 	Max    float64 `json:"max"`
 	Within bool    `json:"within"`
@@ -98,6 +100,8 @@ type ageCheckJSON struct {
 
 type checkJSON struct {
 	Value  float64 `json:"value"`
+	Lo     float64 `json:"lo"`
+	Hi     float64 `json:"hi"`
 	Min    float64 `json:"min"`
 	Max    float64 `json:"max"`
 	Within bool    `json:"within"`
@@ -188,6 +192,8 @@ func realismView(r triangle.Report) realismJSON {
 		IncurredATA: ageChecksView(r.IncurredATA),
 		LossRatio: checkJSON{
 			Value:  r.LossRatio.Value,
+			Lo:     r.LossRatio.Band.Lo,
+			Hi:     r.LossRatio.Band.Hi,
 			Min:    r.LossRatio.Band.Min,
 			Max:    r.LossRatio.Band.Max,
 			Within: r.LossRatio.Within,
@@ -198,7 +204,11 @@ func realismView(r triangle.Report) realismJSON {
 func ageChecksView(checks []triangle.AgeCheck) []ageCheckJSON {
 	out := make([]ageCheckJSON, len(checks))
 	for i, c := range checks {
-		out[i] = ageCheckJSON{Age: c.Age, Value: c.Value, Min: c.Band.Min, Max: c.Band.Max, Within: c.Within}
+		out[i] = ageCheckJSON{
+			Age: c.Age, Value: c.Value,
+			Lo: c.Band.Lo, Hi: c.Band.Hi, Min: c.Band.Min, Max: c.Band.Max,
+			Within: c.Within,
+		}
 	}
 	return out
 }

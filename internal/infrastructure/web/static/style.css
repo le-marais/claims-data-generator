@@ -158,6 +158,7 @@ summary { cursor: pointer; }
 .axis-label { fill: var(--muted); font-size: 10px; }
 .bar { fill: var(--series-1); }
 .bar:hover { opacity: 0.85; }
+.band-outer { fill: var(--grid); opacity: 0.4; }
 .band { fill: var(--grid); }
 .dot { fill: var(--series-1); stroke: var(--surface-1); stroke-width: 2; }
 .dot-out { fill: var(--status-critical); }

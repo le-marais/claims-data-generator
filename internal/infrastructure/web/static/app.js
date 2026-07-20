@@ -435,13 +435,13 @@ function renderRealism(r) {
   const banner = document.createElement("div");
   banner.className = `banner ${r.pass ? "banner-pass" : "banner-fail"}`;
   banner.textContent = r.pass
-    ? "✓ Pass - every metric inside the Schedule P reference bands"
-    : "✗ Fail - some metrics fall outside the Schedule P reference bands";
+    ? "✓ Pass - every metric inside the Schedule P P5-P95 reference band"
+    : "✗ Fail - some metrics fall outside the Schedule P P5-P95 reference band";
   panel.append(
     banner,
-    bandCard("Paid age-to-age factors vs reference band", r.paid_ata || []),
-    bandCard("Incurred age-to-age factors vs reference band", r.incurred_ata || []),
-    bandCard("Ultimate loss ratio vs reference band", [{ ...r.loss_ratio, label: "ULR" }]),
+    bandCard("Paid age-to-age factors vs reference P5-P95 (min/max faint)", r.paid_ata || []),
+    bandCard("Incurred age-to-age factors vs reference P5-P95 (min/max faint)", r.incurred_ata || []),
+    bandCard("Ultimate loss ratio vs reference P5-P95 (min/max faint)", [{ ...r.loss_ratio, label: "ULR" }]),
   );
 }
 
@@ -469,17 +469,24 @@ function bandCard(title, checks) {
     const cy = i * rowH + rowH / 2 + 4;
     const label = svgEl("text", { x: padLeft - 8, y: cy + 3, class: "axis-label", "text-anchor": "end" });
     label.textContent = c.label ?? `${c.age + 1}→${c.age + 2}`;
+    const outer = svgEl("rect", {
+      x: x(c.min), y: cy - 5, width: Math.max(x(c.max) - x(c.min), 1), height: 10, rx: 5, class: "band-outer",
+    });
     const band = svgEl("rect", {
-      x: x(c.min), y: cy - 5, width: Math.max(x(c.max) - x(c.min), 1), height: 10, rx: 5, class: "band",
+      x: x(c.lo), y: cy - 4, width: Math.max(x(c.hi) - x(c.lo), 1), height: 8, rx: 4, class: "band",
     });
     const dot = svgEl("circle", { cx: x(c.value), cy, r: 5, class: c.within ? "dot" : "dot dot-out" });
-    attachTooltip(dot, [c.value.toFixed(4), `band ${c.min.toFixed(4)} to ${c.max.toFixed(4)}`]);
+    attachTooltip(dot, [
+      c.value.toFixed(4),
+      `P5-P95 ${c.lo.toFixed(4)} to ${c.hi.toFixed(4)}`,
+      `min/max ${c.min.toFixed(4)} to ${c.max.toFixed(4)}`,
+    ]);
     const status = svgEl("text", {
       x: W - padRight + 8, y: cy + 3,
       class: `status-label ${c.within ? "status-ok" : "status-out"}`,
     });
     status.textContent = c.within ? "✓ within" : "✗ outside";
-    svg.append(label, band, dot, status);
+    svg.append(label, outer, band, dot, status);
   });
   card.append(svg);
   return card;
