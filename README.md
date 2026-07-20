@@ -52,7 +52,7 @@ Configure a run in the sidebar and hit Generate - the summary tab shows per-year
 ## How the simulation works
 
 1. **Policy book** - each year's book size is the previous year's size times a growth factor times random noise, so the book trends upward but can shrink in individual years. Per policy: sum insured (lognormal with calendar-year inflation), a mean-1 risk factor loading claim frequency, an excess from a discrete choice set, and premium proportional to sum insured and risk.
-2. **Claim events** - Poisson claim counts per policy scaled by the risk factor; short lognormal report lags; ground-up losses mixing own damage (lognormal, scaled by sum insured) and third party liability (Pareto, not capped at sum insured), then scaled by a claims-inflation index at the claim's occurrence year; losses below the excess are not reportable. Close delays are gamma distributed, stretched for large claims and risky policyholders. A share of reported claims are nil - they close without any payment at their first close.
+2. **Claim events** - Poisson claim counts per policy scaled by the risk factor; short lognormal report lags; ground-up losses mixing own damage (lognormal, scaled by sum insured) and third party liability (Pareto, not capped at sum insured), then scaled by a claims-inflation index at the claim's occurrence year; losses below the excess are not reportable. Close delays are gamma distributed: own-damage claims settle fast (stretched for large claims and risky policyholders), while third-party (bodily-injury) claims draw from a slower long-tail regime, so paid losses keep developing at later ages. A share of reported claims are nil - they close without any payment at their first close.
 3. **Case estimate runoff** - each claim's true ultimate cost is drawn around the initial estimate, payments split it over the claim's life, and the case estimate is a noisy view of the remaining cost that settles as the claim ages. A nil claim instead carries its case estimate through revisions and releases it to zero at close, paying nothing.
 4. **Transactions** - the first row of every claim is its initial case estimate on the report date, so the outstanding case at any time is the running sum of `ESTIMATE` amounts. Every payment carries a matching case reduction. At close the outstanding case is exactly zero and total paid equals the ultimate (zero for a nil claim). Recovery rows are the only transactions dated after a claim's final close date.
 5. **Recoveries** - own-damage claims can yield salvage (the wreck is sold) and subrogation (the payout is recovered from an at-fault third party). Each is a Beta-distributed share of the claim's gross paid, received a lognormal lag after the close date - subrogation typically much later than salvage. Recoveries are pure cash events: the case estimate stays gross, and a claim's total recovered is always below its gross paid. Setting a recovery type's probability to 0 switches it off.
@@ -70,7 +70,17 @@ All behavior is driven by a YAML file mapped to the `LineOfBusiness` domain obje
 
 ## Realism
 
-Generated data is checked against 289 Schedule P private passenger auto reference datasets from two vintages - `data/reference/schedule p/dec2025/ppauto_pos98-07/` (accident years 1998-2007) and `data/reference/schedule p/sep2011/auto_personal/` (accident years 1988-1997): paid and incurred age-to-age development factors and the ultimate loss ratio must fall inside the bands observed across the reference companies. The paid comparison is net of recoveries, matching how Schedule P reports paid losses. This runs as a test gate (`TestDefaultPresetIsRealistic`).
+Generated data is checked against 96 hand-curated Schedule P private passenger
+auto reference companies (`data/reference/schedule p/dec2025/ppauto_pos98-07/`,
+accident years 1998-2007). The companies were curated from the full Schedule P
+extract via `data/reference/gr-code-list.md` and `tools/prune-dec2025.ps1` to
+remove low-volume and degenerate companies. Paid and incurred age-to-age
+development factors and the ultimate loss ratio must fall inside the P5-P95
+bands observed across those companies, with a backstop filter that drops any
+company carrying no scorable signal; the full min/max range is shown for
+context. The paid comparison is net of recoveries, matching how Schedule P
+reports paid losses. This runs as a test gate (`TestDefaultPresetIsRealistic`,
+across several seeds).
 
 ## Development
 

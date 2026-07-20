@@ -1,3 +1,5 @@
+> **Superseded (2026-07-20):** the sep2011 vintage was removed and the reference pool is now single-vintage (dec2025, hand-curated). See `docs/superpowers/specs/2026-07-20-reference-pruning-realism-bands-design.md`. Kept for historical context.
+
 # Merge the sep2011 personal motor reference data into the app's reference pool
 
 Date: 2026-07-17

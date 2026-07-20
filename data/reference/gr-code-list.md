@@ -1,3 +1,13 @@
+<!--
+Hand-curated keep-list for the Schedule P dec2025 reference data. One
+"<lob>: <grcode>" entry per line, across all six Schedule P lines of business.
+Low-volume and degenerate companies were removed by judgement so the realism
+bands reflect typical experience. Only the ppauto entries are embedded and used
+by the realism gate today; the other lines are kept for future per-line-of-
+business calibration. Apply the list with `tools/prune-dec2025.ps1` (dry-run by
+default; pass -Apply to delete).
+-->
+
 comauto: 10022
 comauto: 10100
 comauto: 10308

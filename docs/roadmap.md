@@ -7,7 +7,7 @@ A living view of where claimsgen is and what comes next. Grounded in `mission.md
 - **Generation engine** - policy book, claim events, case estimate runoff, and transactions for a class of business, reproducible from a seed and a line-of-business YAML.
 - **CLI** - `claimsgen generate` writes the three linked CSVs (policies, claims, transactions).
 - **Browser UI** - `claimsgen ui`: configure a run (flags plus every line-of-business parameter), generate, and explore the result across summary, development triangles, distributions, and a realism check. Self-contained single binary, embedded reference data.
-- **Realism gate** - generated motor data is scored against the ~143 Schedule P private passenger auto reference datasets; the shipped preset must land inside the observed bands (`TestDefaultPresetIsRealistic`).
+- **Realism gate** - generated motor data is scored against the 96 hand-curated Schedule P private passenger auto reference companies; the shipped preset must land inside the observed P5-P95 bands (`TestDefaultPresetIsRealistic`).
 - **Claims inflation** - stochastic occurrence-year inflation index, one user-facing mean knob per line of business, applied to every claim's ground-up loss.
 - **Nil claims** - a share of reported claims close without payment, with a dedicated no-payment runoff path and a `nil_probability` off switch.
 - **Recoveries (salvage and subrogation)** - money coming back on own-damage claims after close, as SALVAGE and SUBROGATION transaction types; triangles and the realism gate go net of recoveries, and the triangle tab gains a gross/net toggle.

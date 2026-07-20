@@ -1,3 +1,5 @@
+> **Superseded (2026-07-20):** the sep2011 vintage was removed; this plan is historical. See `docs/superpowers/plans/2026-07-20-reference-pruning-realism-bands.md`.
+
 # Sep2011 Reference Pool Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
