@@ -91,11 +91,13 @@ type SeverityParams struct {
 }
 
 type CloseLagParams struct {
-	Shape          float64 `yaml:"shape" json:"shape"`
-	MeanDays       float64 `yaml:"mean_days" json:"mean_days"`
-	SizeThreshold  float64 `yaml:"size_threshold" json:"size_threshold"`
-	SizeMultiplier float64 `yaml:"size_multiplier" json:"size_multiplier"`
-	RiskLoading    float64 `yaml:"risk_loading" json:"risk_loading"`
+	Shape              float64 `yaml:"shape" json:"shape"`
+	MeanDays           float64 `yaml:"mean_days" json:"mean_days"`
+	SizeThreshold      float64 `yaml:"size_threshold" json:"size_threshold"`
+	SizeMultiplier     float64 `yaml:"size_multiplier" json:"size_multiplier"`
+	RiskLoading        float64 `yaml:"risk_loading" json:"risk_loading"`
+	ThirdPartyShape    float64 `yaml:"third_party_shape" json:"third_party_shape"`
+	ThirdPartyMeanDays float64 `yaml:"third_party_mean_days" json:"third_party_mean_days"`
 }
 
 type RunoffParams struct {
@@ -213,11 +215,13 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 				ThirdPartyAlpha:         d.Claims.Severity.ThirdPartyAlpha,
 			},
 			CloseLag: lob.CloseLagParams{
-				Shape:          d.Claims.CloseLag.Shape,
-				MeanDays:       d.Claims.CloseLag.MeanDays,
-				SizeThreshold:  d.Claims.CloseLag.SizeThreshold,
-				SizeMultiplier: d.Claims.CloseLag.SizeMultiplier,
-				RiskLoading:    d.Claims.CloseLag.RiskLoading,
+				Shape:              d.Claims.CloseLag.Shape,
+				MeanDays:           d.Claims.CloseLag.MeanDays,
+				SizeThreshold:      d.Claims.CloseLag.SizeThreshold,
+				SizeMultiplier:     d.Claims.CloseLag.SizeMultiplier,
+				RiskLoading:        d.Claims.CloseLag.RiskLoading,
+				ThirdPartyShape:    d.Claims.CloseLag.ThirdPartyShape,
+				ThirdPartyMeanDays: d.Claims.CloseLag.ThirdPartyMeanDays,
 			},
 			Inflation: lob.InflationParams{
 				Mean:       d.Claims.Inflation.Mean,

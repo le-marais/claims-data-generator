@@ -27,12 +27,19 @@ claims:
     own_damage_sigma: 1.0
     third_party_scale: 4000
     third_party_alpha: 2.2
+  # Report-to-close lag. The base shape/mean_days (with the size stretch)
+  # govern own-damage claims, which settle fast; third_party_shape and
+  # third_party_mean_days give third-party (bodily-injury) claims a much
+  # slower tail, so paid development continues into later ages as in the
+  # Schedule P reference companies.
   close_lag:
     shape: 1.2
     mean_days: 120
     size_threshold: 20000
     size_multiplier: 6
     risk_loading: 0.3
+    third_party_shape: 1.0
+    third_party_mean_days: 680
   # Claims inflation applied by occurrence year to every claim's ground-up
   # loss. Stochastic: each year's factor is `mean` times lognormal noise of
   # sigma `volatility`, compounded from 1.0 in the start year.

@@ -143,6 +143,11 @@ type CloseLagParams struct {
 	SizeMultiplier float64
 	// RiskLoading is the exponent applied to the policy risk factor.
 	RiskLoading float64
+	// ThirdPartyShape and ThirdPartyMeanDays are the gamma parameters for
+	// third-party (bodily-injury) claims, which settle far slower than own
+	// damage; the size stretch does not apply to them.
+	ThirdPartyShape    float64
+	ThirdPartyMeanDays float64
 }
 
 // RunoffParams drives steps 3-4, the case estimate path and payments.
@@ -333,6 +338,12 @@ func (c CloseLagParams) validate() error {
 	}
 	if c.RiskLoading < 0 {
 		return fmt.Errorf("close_lag.risk_loading: must not be negative, got %v", c.RiskLoading)
+	}
+	if c.ThirdPartyShape <= 0 {
+		return fmt.Errorf("close_lag.third_party_shape: must be positive, got %v", c.ThirdPartyShape)
+	}
+	if c.ThirdPartyMeanDays <= 0 {
+		return fmt.Errorf("close_lag.third_party_mean_days: must be positive, got %v", c.ThirdPartyMeanDays)
 	}
 	return nil
 }

@@ -25,11 +25,13 @@ func params() lob.ClaimParams {
 			ThirdPartyAlpha:         2.2,
 		},
 		CloseLag: lob.CloseLagParams{
-			Shape:          1.5,
-			MeanDays:       60,
-			SizeThreshold:  20000,
-			SizeMultiplier: 4,
-			RiskLoading:    0.3,
+			Shape:              1.5,
+			MeanDays:           60,
+			SizeThreshold:      20000,
+			SizeMultiplier:     4,
+			RiskLoading:        0.3,
+			ThirdPartyShape:    1.0,
+			ThirdPartyMeanDays: 900,
 		},
 	}
 }
@@ -135,8 +137,14 @@ func TestReportLagIsShortWithOutliers(t *testing.T) {
 func TestLargerClaimsCloseSlower(t *testing.T) {
 	sim := claim.NewClaimSimulator(params())
 	claims := sim.Simulate(random.NewSource(6), fixedBook(30000, 20000, 0, 1.0))
+	// The size stretch only governs the own-damage regime; third-party claims
+	// draw a flat long-tail lag regardless of size, so scope this check to
+	// own-damage claims to isolate the mechanism under test.
 	var smallSum, smallN, bigSum, bigN float64
 	for _, c := range claims {
+		if !c.OwnDamage {
+			continue
+		}
 		lag := float64(shared.DaysBetween(c.ReportDate, c.CloseDate))
 		if c.InitialEstimate.Dollars() > 20000 {
 			bigSum += lag

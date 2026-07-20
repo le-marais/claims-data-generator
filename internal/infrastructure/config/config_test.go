@@ -36,6 +36,8 @@ claims:
     size_threshold: 20000
     size_multiplier: 4
     risk_loading: 0.5
+    third_party_shape: 1.0
+    third_party_mean_days: 900
   inflation:
     mean: 1.04
     volatility: 0.02

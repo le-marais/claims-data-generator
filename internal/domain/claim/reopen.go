@@ -42,7 +42,7 @@ func (s *ReopenSimulator) Apply(src shared.RandomSource, claims []Claim) []Claim
 		if estimate < 1 {
 			estimate = 1
 		}
-		closeLag := int(math.Round(drawCloseLag(stream, s.params.CloseLag, estimate.Dollars(), c.RiskFactor)))
+		closeLag := int(math.Round(drawCloseLag(stream, s.params.CloseLag, estimate.Dollars(), c.RiskFactor, c.OwnDamage)))
 		if closeLag < 1 {
 			closeLag = 1 // the second close is strictly after the reopen
 		}

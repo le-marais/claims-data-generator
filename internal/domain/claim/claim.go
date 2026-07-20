@@ -109,7 +109,7 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 		return Claim{}, false
 	}
 
-	close := report.AddDays(int(math.Round(drawCloseLag(src, s.params.CloseLag, estimate, pol.RiskFactor))))
+	close := report.AddDays(int(math.Round(drawCloseLag(src, s.params.CloseLag, estimate, pol.RiskFactor, ownDamage))))
 
 	isNil := s.params.NilProbability > 0 && src.Bernoulli(s.params.NilProbability)
 
@@ -137,14 +137,27 @@ func (s *ClaimSimulator) drawGroundUpLoss(src shared.RandomSource, pol policy.Po
 	return pol.SumInsured.Dollars() * fraction, true
 }
 
-// drawCloseLag draws a report-to-close (or reopen-to-second-close) delay in
-// days: gamma distributed, with the mean stretched for large claims and
-// risky policyholders.
-func drawCloseLag(src shared.RandomSource, cl lob.CloseLagParams, estimate, riskFactor float64) float64 {
-	mean := cl.MeanDays
-	if estimate > cl.SizeThreshold {
-		mean *= cl.SizeMultiplier
+// closeLagRegime selects the (shape, mean) close-lag gamma parameters for a
+// claim: own-damage claims use the base parameters with the size stretch for
+// large claims; third-party claims use the long-tail parameters. Risk loading
+// applies to both.
+func closeLagRegime(cl lob.CloseLagParams, estimate, riskFactor float64, ownDamage bool) (shape, mean float64) {
+	if ownDamage {
+		shape, mean = cl.Shape, cl.MeanDays
+		if estimate > cl.SizeThreshold {
+			mean *= cl.SizeMultiplier
+		}
+	} else {
+		shape, mean = cl.ThirdPartyShape, cl.ThirdPartyMeanDays
 	}
 	mean *= math.Pow(riskFactor, cl.RiskLoading)
-	return src.Gamma(cl.Shape, mean/cl.Shape)
+	return shape, mean
+}
+
+// drawCloseLag draws a report-to-close (or reopen-to-second-close) delay in
+// days: gamma distributed, with own-damage and third-party claims drawing from
+// separate regimes (see closeLagRegime).
+func drawCloseLag(src shared.RandomSource, cl lob.CloseLagParams, estimate, riskFactor float64, ownDamage bool) float64 {
+	shape, mean := closeLagRegime(cl, estimate, riskFactor, ownDamage)
+	return src.Gamma(shape, mean/shape)
 }
