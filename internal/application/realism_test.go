@@ -13,7 +13,7 @@ import (
 // the shipped motor-personal preset must land inside the bands observed
 // across the Schedule P reference companies.
 func TestDefaultPresetIsRealistic(t *testing.T) {
-	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDirs...)
+	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +34,7 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 }
 
 func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
-	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDirs...)
+	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
 	if err != nil {
 		t.Fatal(err)
 	}

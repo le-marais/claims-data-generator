@@ -7,8 +7,7 @@ import "embed"
 //go:embed "schedule p/dec2025/ppauto_pos98-07/*.json"
 var Files embed.FS
 
-// PersonalMotorDirs lists the embedded datasets that make up the personal
-// motor reference pool, in load order. dec2025 spans accident years 1998-2007.
-var PersonalMotorDirs = []string{
-	"schedule p/dec2025/ppauto_pos98-07",
-}
+// PersonalMotorDir is the embedded dataset backing the personal motor
+// reference pool. dec2025 spans accident years 1998-2007; the companies are
+// hand-curated (see data/reference/gr-code-list.md).
+const PersonalMotorDir = "schedule p/dec2025/ppauto_pos98-07"

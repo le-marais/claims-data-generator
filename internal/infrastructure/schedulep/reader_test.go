@@ -8,7 +8,6 @@ import (
 	"testing/fstest"
 
 	refdata "github.com/le-marais/claimsgen/data/reference"
-	"github.com/le-marais/claimsgen/internal/domain/triangle"
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
 )
 
@@ -19,8 +18,8 @@ func TestLoadDirReadsAllCompanies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(refs) < 100 {
-		t.Fatalf("loaded %d reference companies, want at least 100", len(refs))
+	if len(refs) != 96 {
+		t.Fatalf("loaded %d reference companies, want 96", len(refs))
 	}
 }
 
@@ -53,20 +52,16 @@ func TestLoadKnownCompany(t *testing.T) {
 }
 
 func TestLoadFSEmbeddedMatchesDisk(t *testing.T) {
-	embedded, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDirs...)
+	embedded, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(embedded) != 96 {
 		t.Fatalf("embedded reference sets = %d, want 96", len(embedded))
 	}
-	var disk []triangle.ReferenceSet
-	for _, dir := range refdata.PersonalMotorDirs {
-		refs, err := schedulep.LoadDir(filepath.Join("../../../data/reference", dir))
-		if err != nil {
-			t.Fatal(err)
-		}
-		disk = append(disk, refs...)
+	disk, err := schedulep.LoadDir(filepath.Join("../../../data/reference", refdata.PersonalMotorDir))
+	if err != nil {
+		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(embedded, disk) {
 		t.Fatal("embedded reference sets differ from disk")
@@ -84,54 +79,9 @@ func TestLoadDirEmptyNamesDirectory(t *testing.T) {
 	}
 }
 
-const minimalRef = `{"ClassId":1,` +
-	`"PaidTriangle":{"TriangleValues":[[1998,[100,150]],[1999,[120]]]},` +
-	`"IncurredTriangle":{"TriangleValues":[[1998,[200,210]],[1999,[220]]]},` +
-	`"EarnedPremium":[[1998,400],[1999,450]]}`
-
-func TestLoadFSMergesDirsWithQualifiedNames(t *testing.T) {
-	fsys := fstest.MapFS{
-		"schedule p/dec2025/ppauto/10007.json": {Data: []byte(minimalRef)},
-		"schedule p/sep2011/auto/10007.json":   {Data: []byte(minimalRef)},
-	}
-	refs, err := schedulep.LoadFS(fsys, "schedule p/dec2025/ppauto", "schedule p/sep2011/auto")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(refs) != 2 {
-		t.Fatalf("loaded %d reference sets, want 2", len(refs))
-	}
-	if refs[0].Name != "dec2025/10007" || refs[1].Name != "sep2011/10007" {
-		t.Errorf("names = %q, %q; want dec2025/10007, sep2011/10007", refs[0].Name, refs[1].Name)
-	}
-}
-
-func TestLoadFSErrorsWhenAnyDirIsEmpty(t *testing.T) {
-	fsys := fstest.MapFS{
-		"schedule p/dec2025/ppauto/10007.json": {Data: []byte(minimalRef)},
-	}
-	_, err := schedulep.LoadFS(fsys, "schedule p/dec2025/ppauto", "schedule p/sep2011/auto")
+func TestLoadFSErrorsOnEmptyDir(t *testing.T) {
+	_, err := schedulep.LoadFS(fstest.MapFS{}, "schedule p/dec2025/ppauto_pos98-07")
 	if err == nil {
-		t.Fatal("LoadFS with an empty dir: want error, got nil")
-	}
-	if !strings.Contains(err.Error(), "schedule p/sep2011/auto") {
-		t.Fatalf("error %q does not name the empty directory", err)
-	}
-}
-
-func TestLoadFSErrorsOnNoDirs(t *testing.T) {
-	_, err := schedulep.LoadFS(fstest.MapFS{})
-	if err == nil {
-		t.Fatal("LoadFS with no dirs: want error, got nil")
-	}
-}
-
-func TestLoadDirQualifiesNamesByVintage(t *testing.T) {
-	refs, err := schedulep.LoadDir(refDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasPrefix(refs[0].Name, "dec2025/") {
-		t.Errorf("Name = %q, want dec2025/ prefix", refs[0].Name)
+		t.Fatal("LoadFS on an empty FS: want error, got nil")
 	}
 }

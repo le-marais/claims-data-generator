@@ -64,8 +64,8 @@ func (p *premiumJSON) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// LoadFile reads one reference company file from disk. Unlike LoadDir and
-// LoadFS, the resulting name is not vintage-qualified.
+// LoadFile reads one reference company file from disk, with a bare company
+// name (the file stem).
 func LoadFile(path string) (triangle.ReferenceSet, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -92,39 +92,25 @@ func parse(name string, b []byte) (triangle.ReferenceSet, error) {
 	}, nil
 }
 
-// LoadFS reads every reference company file in each dir of fsys, in the
-// order the dirs are given, files sorted by name within each dir for
-// determinism. Names are qualified with the dataset's vintage directory
-// (the parent of dir), e.g. "dec2025/10007", so companies that appear in
-// more than one vintage stay distinct.
-func LoadFS(fsys fs.FS, dirs ...string) ([]triangle.ReferenceSet, error) {
-	if len(dirs) == 0 {
-		return nil, errors.New("no reference directories given")
-	}
-	var refs []triangle.ReferenceSet
-	for _, dir := range dirs {
-		loaded, err := loadDirFS(fsys, dir, path.Base(path.Dir(path.Clean(dir))))
-		if err != nil {
-			return nil, err
-		}
-		refs = append(refs, loaded...)
-	}
-	return refs, nil
+// LoadFS reads every reference company file in dir of fsys, files sorted by
+// name for determinism. Company names are the bare file stem (for example
+// "10007").
+func LoadFS(fsys fs.FS, dir string) ([]triangle.ReferenceSet, error) {
+	return loadDirFS(fsys, dir)
 }
 
 // LoadDir reads every reference company file in a directory on disk, sorted
-// by file name for determinism, with names qualified by the vintage
-// directory (the parent of dir).
+// by file name for determinism, with bare company names.
 func LoadDir(dir string) ([]triangle.ReferenceSet, error) {
 	clean := filepath.Clean(dir)
-	refs, err := loadDirFS(os.DirFS(clean), ".", filepath.Base(filepath.Dir(clean)))
+	refs, err := loadDirFS(os.DirFS(clean), ".")
 	if errors.Is(err, errNoReferenceFiles) {
 		return nil, fmt.Errorf("%w in %s", errNoReferenceFiles, dir)
 	}
 	return refs, err
 }
 
-func loadDirFS(fsys fs.FS, dir, vintage string) ([]triangle.ReferenceSet, error) {
+func loadDirFS(fsys fs.FS, dir string) ([]triangle.ReferenceSet, error) {
 	names, err := fs.Glob(fsys, path.Join(dir, "*.json"))
 	if err != nil {
 		return nil, err
@@ -143,7 +129,6 @@ func loadDirFS(fsys fs.FS, dir, vintage string) ([]triangle.ReferenceSet, error)
 		if err != nil {
 			return nil, err
 		}
-		ref.Name = vintage + "/" + ref.Name
 		refs = append(refs, ref)
 	}
 	return refs, nil

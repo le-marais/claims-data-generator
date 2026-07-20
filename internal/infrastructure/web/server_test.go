@@ -22,7 +22,7 @@ import (
 
 func newTestServer(t *testing.T) *web.Server {
 	t.Helper()
-	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDirs...)
+	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
 	if err != nil {
 		t.Fatal(err)
 	}
