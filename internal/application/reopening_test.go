@@ -10,8 +10,11 @@ import (
 )
 
 // TestReopeningProbabilityZeroMeansOneRelease is the spec's output-level
-// off-switch check: with reopening off, once a claim's outstanding case
-// reaches zero it stays there - no case activity ever follows a release.
+// off-switch check: with reopening off, a claim's case is never re-raised
+// after its final close - no non-recovery transaction is dated after the
+// claim's CloseDate. (Outstanding may legitimately touch zero mid-episode
+// when a payment exceeds the running case; that transient zero is not a
+// close and does not end the claim.)
 func TestReopeningProbabilityZeroMeansOneRelease(t *testing.T) {
 	req := request(t)
 	req.LOB.Claims.Reopening.Probability = 0
@@ -19,25 +22,20 @@ func TestReopeningProbabilityZeroMeansOneRelease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	outstanding := map[int]shared.Money{}
-	released := map[int]bool{}
+	closeDate := map[int]shared.Date{}
+	for _, c := range ds.Claims {
+		closeDate[c.ID] = c.CloseDate
+		if c.Reopened() {
+			t.Fatalf("claim %d reopened with probability 0", c.ID)
+		}
+	}
 	for _, tx := range ds.Transactions {
 		if tx.Type.IsRecovery() {
 			continue
 		}
-		if released[tx.ClaimID] {
-			t.Fatalf("claim %d has case activity after its release to zero with reopening off", tx.ClaimID)
-		}
-		if tx.Type == transaction.Estimate {
-			outstanding[tx.ClaimID] += tx.Amount
-			if outstanding[tx.ClaimID] == 0 {
-				released[tx.ClaimID] = true
-			}
-		}
-	}
-	for _, c := range ds.Claims {
-		if c.Reopened() {
-			t.Fatalf("claim %d reopened with probability 0", c.ID)
+		if tx.Date.After(closeDate[tx.ClaimID]) {
+			t.Fatalf("claim %d has %v activity on %v, after its final close %v, with reopening off",
+				tx.ClaimID, tx.Type, tx.Date, closeDate[tx.ClaimID])
 		}
 	}
 }
