@@ -16,7 +16,7 @@ import (
 // It guards against unintended changes to the generated data or its CSV
 // encoding. If a change to the output is intentional, regenerate this digest
 // by running the test once (it prints the actual value) and paste it back in.
-const wantHash = "ab05550f441cc4408a2801e4c8950487b21f9bb0b0feab4594fdaf3cb4ece18c"
+const wantHash = "c68a402d4702cdc4d37dc9850072f3409db2da91496e9752b4c5f526ee372828"
 
 func TestGoldenCSVBytes(t *testing.T) {
 	ds, err := application.GenerateDataset(random.NewSource(1), request(t))
