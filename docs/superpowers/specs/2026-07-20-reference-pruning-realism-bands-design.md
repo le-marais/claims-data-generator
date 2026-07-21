@@ -188,6 +188,19 @@ Design:
   multi-seed gate passes P5-P95. This knob can move the failing ages, unlike the
   close-lag knobs tried before.
 
+## Addendum (2026-07-20): flatten the vintage folder layer
+
+Section 4 collapsed the multi-vintage loader but left the physical `dec2025`
+vintage directory in place, so the embed path was still `schedule p/dec2025/
+ppauto_pos98-07`. With only one vintage that middle layer is vestigial. The six
+line-of-business directories were moved up from `schedule p/dec2025/<lob>` to
+`schedule p/<lob>`, the `dec2025` directory removed, and every reference updated
+(`refdata.go` embed + `PersonalMotorDir`, `reader_test.go`, the preset comment,
+the README path, and `tools/prune-dec2025.ps1`'s base path). The `schedule p`
+source grouping and the LOB directory names (which encode accident years
+`98-07`) are kept; the December 2025 vintage now lives only in comments and the
+keep-list header as provenance.
+
 ## Testing strategy
 
 Unit tests cover the new percentile and filter logic in isolation (domain layer). The

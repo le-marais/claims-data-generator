@@ -84,7 +84,7 @@ The model deliberately trades some realism for a clean, reproducible engine. The
 ## Realism
 
 Generated data is checked against 96 hand-curated Schedule P private passenger
-auto reference companies (`data/reference/schedule p/dec2025/ppauto_pos98-07/`,
+auto reference companies (`data/reference/schedule p/ppauto_pos98-07/`,
 accident years 1998-2007). The companies were curated from the full Schedule P
 extract via `data/reference/gr-code-list.md` and `tools/prune-dec2025.ps1` to
 remove low-volume and degenerate companies. Paid and incurred age-to-age

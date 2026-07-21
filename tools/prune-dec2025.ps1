@@ -7,9 +7,9 @@
     gr-code-list.md holds one "<lob>: <grcode>" entry per line, where <lob> is
     one of the six Schedule P lines of business. The keep-list is scoped per
     line of business: a gr code kept for one LOB is not automatically kept for
-    another. For each dec2025 subdirectory this script keeps only the
-    "<grcode>.json" files whose code is listed for that LOB and deletes the
-    rest.
+    another. For each Schedule P line-of-business subdirectory this script keeps
+    only the "<grcode>.json" files whose code is listed for that LOB and deletes
+    the rest.
 
     Runs as a dry-run by default (prints what would be deleted). Pass -Apply to
     actually delete. Deleted files are git-tracked, so an accidental run is
@@ -29,9 +29,9 @@ $ErrorActionPreference = 'Stop'
 # Repo root is the parent of this script's directory.
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $listPath = Join-Path $repoRoot 'data/reference/gr-code-list.md'
-$dec2025  = Join-Path $repoRoot 'data/reference/schedule p/dec2025'
+$refBase  = Join-Path $repoRoot 'data/reference/schedule p'
 
-# Map the list's LOB prefix to its dec2025 subdirectory name.
+# Map the list's LOB prefix to its subdirectory name.
 $lobToDir = @{
     'comauto'  = 'comauto_pos_98-07'
     'medmal'   = 'medmal_pos_98-07'
@@ -74,9 +74,9 @@ $totalDeleted = 0
 $totalKept    = 0
 
 foreach ($dir in ($lobToDir.Values | Sort-Object)) {
-    $subPath = Join-Path $dec2025 $dir
+    $subPath = Join-Path $refBase $dir
     if (-not (Test-Path -LiteralPath $subPath)) {
-        Write-Warning "dec2025 subdirectory missing: $subPath"
+        Write-Warning "Schedule P subdirectory missing: $subPath"
         continue
     }
 
