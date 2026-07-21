@@ -154,6 +154,9 @@ func TestGenerateRoundTrip(t *testing.T) {
 			LossRatio struct {
 				Value float64 `json:"value"`
 			} `json:"loss_ratio"`
+			LossRatioDrift struct {
+				Value float64 `json:"value"`
+			} `json:"loss_ratio_drift"`
 		} `json:"realism"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
@@ -173,6 +176,9 @@ func TestGenerateRoundTrip(t *testing.T) {
 	}
 	if len(resp.Realism.PaidATA) == 0 || resp.Realism.LossRatio.Value <= 0 {
 		t.Fatalf("realism = %+v", resp.Realism)
+	}
+	if resp.Realism.LossRatioDrift.Value <= 0 {
+		t.Fatalf("realism.loss_ratio_drift = %+v", resp.Realism.LossRatioDrift)
 	}
 
 	// The UI path must write byte-identical CSVs to the CLI path.

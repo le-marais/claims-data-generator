@@ -82,10 +82,11 @@ type binJSON struct {
 }
 
 type realismJSON struct {
-	Pass        bool           `json:"pass"`
-	PaidATA     []ageCheckJSON `json:"paid_ata"`
-	IncurredATA []ageCheckJSON `json:"incurred_ata"`
-	LossRatio   checkJSON      `json:"loss_ratio"`
+	Pass           bool           `json:"pass"`
+	PaidATA        []ageCheckJSON `json:"paid_ata"`
+	IncurredATA    []ageCheckJSON `json:"incurred_ata"`
+	LossRatio      checkJSON      `json:"loss_ratio"`
+	LossRatioDrift checkJSON      `json:"loss_ratio_drift"`
 }
 
 type ageCheckJSON struct {
@@ -206,6 +207,14 @@ func realismView(r triangle.Report) realismJSON {
 			Min:    finite(r.LossRatio.Band.Min),
 			Max:    finite(r.LossRatio.Band.Max),
 			Within: r.LossRatio.Within,
+		},
+		LossRatioDrift: checkJSON{
+			Value:  finite(r.LossRatioDrift.Value),
+			Lo:     finite(r.LossRatioDrift.Band.Lo),
+			Hi:     finite(r.LossRatioDrift.Band.Hi),
+			Min:    finite(r.LossRatioDrift.Band.Min),
+			Max:    finite(r.LossRatioDrift.Band.Max),
+			Within: r.LossRatioDrift.Within,
 		},
 	}
 }

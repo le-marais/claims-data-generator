@@ -442,6 +442,7 @@ function renderRealism(r) {
     bandCard("Paid age-to-age factors vs reference P5-P95 (min/max faint)", r.paid_ata || []),
     bandCard("Incurred age-to-age factors vs reference P5-P95 (min/max faint)", r.incurred_ata || []),
     bandCard("Net loss ratio vs Schedule P P5-P95 (min/max faint)", [{ ...r.loss_ratio, label: "Net LR" }]),
+    bandCard("Loss-ratio drift 2nd half / 1st half (flat = 1)", [{ ...r.loss_ratio_drift, label: "Drift" }]),
   );
 }
 
