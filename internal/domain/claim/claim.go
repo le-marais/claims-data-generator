@@ -118,7 +118,11 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 
 	// Nil claims draw their severity and probability independently of claim
 	// size; real withdrawn claims skew small, so this is a known simplification.
-	isNil := s.params.NilProbability > 0 && src.Bernoulli(s.params.NilProbability)
+	// The Bernoulli is always drawn - Bernoulli(0) still consumes one uniform
+	// and returns false - so toggling the nil knob never reshuffles the draws of
+	// later claims on the same policy. This is the shift-free contract the reopen
+	// and recovery post-passes also uphold.
+	isNil := src.Bernoulli(s.params.NilProbability)
 
 	return Claim{
 		PolicyID:        pol.ID,
