@@ -41,6 +41,11 @@ const (
 	bandHiPercentile = 95.0
 )
 
+// driftTolerance bounds systematic loss-ratio drift: the second-half loss
+// ratio must stay within [1/driftTolerance, driftTolerance] of the first-half
+// loss ratio. Tightening it toward 1 makes the drift gate stricter.
+const driftTolerance = 1.10
+
 // Percentile returns the linearly-interpolated p-th percentile (p in [0,100])
 // of xs, where p=0 is the minimum and p=100 the maximum. It does not modify
 // xs. Returns NaN for empty xs.
@@ -119,9 +124,10 @@ type Check struct {
 
 // Report is the outcome of comparing generated data to the reference set.
 type Report struct {
-	PaidATA     []AgeCheck
-	IncurredATA []AgeCheck
-	LossRatio   Check
+	PaidATA        []AgeCheck
+	IncurredATA    []AgeCheck
+	LossRatio      Check
+	LossRatioDrift Check
 }
 
 // Pass reports whether every checked metric fell inside its band.
@@ -131,7 +137,7 @@ func (r Report) Pass() bool {
 			return false
 		}
 	}
-	return r.LossRatio.Within
+	return r.LossRatio.Within && r.LossRatioDrift.Within
 }
 
 func (r Report) String() string {
@@ -146,6 +152,8 @@ func (r Report) String() string {
 	writeChecks("incurred", r.IncurredATA)
 	fmt.Fprintf(&b, "ultimate loss ratio: %.4f in [%.4f, %.4f] = %v\n",
 		r.LossRatio.Value, r.LossRatio.Band.Lo, r.LossRatio.Band.Hi, r.LossRatio.Within)
+	fmt.Fprintf(&b, "loss ratio drift (2nd half / 1st half): %.4f in [%.4f, %.4f] = %v\n",
+		r.LossRatioDrift.Value, r.LossRatioDrift.Band.Lo, r.LossRatioDrift.Band.Hi, r.LossRatioDrift.Within)
 	return b.String()
 }
 
@@ -201,6 +209,10 @@ func CompareToReference(c Comparison, refs []ReferenceSet) Report {
 	lrBand := bandFromValues(lrs)
 	value, ok := lossRatio(c.Incurred, c.EarnedPremium)
 	report.LossRatio = Check{Value: value, Band: lrBand, Within: ok && lrBand.contains(value)}
+
+	drift, driftOK := lossRatioDrift(c.Incurred, c.EarnedPremium)
+	driftBand := Band{Lo: 1 / driftTolerance, Hi: driftTolerance, Min: 1 / driftTolerance, Max: driftTolerance}
+	report.LossRatioDrift = Check{Value: drift, Band: driftBand, Within: !driftOK || driftBand.contains(drift)}
 	return report
 }
 
@@ -231,4 +243,31 @@ func lossRatio(incurred Triangle, earnedPremium []float64) (float64, bool) {
 		return 0, false
 	}
 	return totalIncurred / totalEP, true
+}
+
+// lossRatioDrift measures systematic loss-ratio drift across accident years:
+// the ratio of the second-half aggregate loss ratio to the first-half one. A
+// value near 1 means a flat loss-ratio trend. It uses the generated data only
+// (no reference), so it is immune to reference immaturity. ok is false when
+// there are too few years or no first-half signal.
+func lossRatioDrift(incurred Triangle, earnedPremium []float64) (float64, bool) {
+	latest := incurred.latestDiagonal()
+	n := len(latest)
+	if n < 2 || len(earnedPremium) < n {
+		return 0, false
+	}
+	half := n / 2
+	sum := func(lo, hi int) (inc, ep float64) {
+		for i := lo; i < hi; i++ {
+			inc += latest[i]
+			ep += earnedPremium[i]
+		}
+		return
+	}
+	inc1, ep1 := sum(0, half)
+	inc2, ep2 := sum(n-half, n)
+	if ep1 <= 0 || ep2 <= 0 || inc1 <= 0 {
+		return 0, false
+	}
+	return (inc2 / ep2) / (inc1 / ep1), true
 }
