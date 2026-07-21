@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"time"
 
 	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/domain/policy"
@@ -52,6 +53,7 @@ type ClaimSimulator struct {
 	inflation           InflationIndex
 	sumInsuredInflation float64
 	startYear           int
+	windowEnd           shared.Date // zero value means no windowing
 }
 
 // NewClaimSimulator builds a claim simulator from the claim parameters.
@@ -88,6 +90,35 @@ func (s *ClaimSimulator) baseSumInsured(pol policy.Policy) float64 {
 	return pol.SumInsured.Dollars() / math.Pow(s.sumInsuredInflation, float64(offset))
 }
 
+// WithWindow constrains claim occurrences to the run window [startYear, startYear+years):
+// each policy's frequency is pro-rated by its in-window exposed fraction of the
+// cover term, and occurrences are drawn only over the in-window portion of the
+// cover. This stops the trailing underwriting year from spilling a partial,
+// out-of-window accident year into claims.csv (MF-2). Unset leaves full-term
+// behaviour.
+func (s *ClaimSimulator) WithWindow(startYear, years int) *ClaimSimulator {
+	s.windowEnd = shared.NewDate(startYear+years, time.January, 1)
+	return s
+}
+
+// exposedFraction is the share of a policy's cover term that lies inside the
+// window; 1 when the window is unset or the cover ends before window end.
+func (s *ClaimSimulator) exposedFraction(pol policy.Policy) float64 {
+	if s.windowEnd.IsZero() {
+		return 1
+	}
+	end := pol.CoverEnd
+	if s.windowEnd.Before(end) {
+		end = s.windowEnd
+	}
+	term := shared.DaysBetween(pol.CoverStart, pol.CoverEnd)
+	if term <= 0 {
+		return 1
+	}
+	inWindow := shared.DaysBetween(pol.CoverStart, end)
+	return float64(inWindow) / float64(term)
+}
+
 // Simulate draws claim events for every policy. Claims are returned sorted
 // by report date with sequential IDs, resembling a claims system's
 // registration order.
@@ -95,7 +126,7 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 	var claims []Claim
 	for _, pol := range book {
 		stream := src.Split(fmt.Sprintf("claims-policy-%d", pol.ID))
-		n := stream.Poisson(s.params.BaseFrequency * pol.RiskFactor)
+		n := stream.Poisson(s.params.BaseFrequency * pol.RiskFactor * s.exposedFraction(pol))
 		for i := 0; i < n; i++ {
 			if c, ok := s.simulateClaim(stream, pol); ok {
 				claims = append(claims, c)
@@ -120,8 +151,16 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 // simulateClaim draws one claim; ok is false when the ground-up loss does
 // not exceed the excess, making the claim unreportable.
 func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Policy) (Claim, bool) {
-	term := shared.DaysBetween(pol.CoverStart, pol.CoverEnd)
-	occurrence := pol.CoverStart.AddDays(int(src.Uniform() * float64(term+1)))
+	end := pol.CoverEnd
+	capToWindow := !s.windowEnd.IsZero() && s.windowEnd.Before(end)
+	if capToWindow {
+		end = s.windowEnd
+	}
+	span := shared.DaysBetween(pol.CoverStart, end)
+	if !capToWindow {
+		span++ // include the final cover day, as the pre-window model did
+	}
+	occurrence := pol.CoverStart.AddDays(int(src.Uniform() * float64(span)))
 
 	lag := src.LogNormal(math.Log(s.params.ReportLagMedian), s.params.ReportLagSigma)
 	report := occurrence.AddDays(int(math.Round(lag)))
