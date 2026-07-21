@@ -58,6 +58,25 @@ func TestStopLossParetoClosedForm(t *testing.T) {
 	}
 }
 
+func TestLimitedStopLossLognormal(t *testing.T) {
+	const median, sigma = 5000.0, 1.0
+	// With a cap it equals the difference of two stop-loss layers.
+	excess, cap := 300.0, 20000.0
+	want := stopLossLognormal(median, sigma, excess) - stopLossLognormal(median, sigma, cap)
+	if got := limitedStopLossLognormal(median, sigma, excess, cap); math.Abs(got-want) > 1e-9 {
+		t.Fatalf("layered form: got %.6f, want %.6f", got, want)
+	}
+	// A finite cap is strictly cheaper than the uncapped stop-loss.
+	uncapped := stopLossLognormal(median, sigma, excess)
+	if got := limitedStopLossLognormal(median, sigma, excess, cap); got >= uncapped {
+		t.Fatalf("cap should reduce cost: capped %.6f, uncapped %.6f", got, uncapped)
+	}
+	// cap <= excess yields no layer.
+	if got := limitedStopLossLognormal(median, sigma, 20000, 20000); got != 0 {
+		t.Fatalf("cap == excess: got %.6f, want 0", got)
+	}
+}
+
 func TestExpectedPolicyLossScalesWithRiskAndInflation(t *testing.T) {
 	c := ClaimParams{
 		BaseFrequency: 0.12,

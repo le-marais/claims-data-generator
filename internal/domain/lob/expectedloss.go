@@ -20,6 +20,17 @@ func stopLossLognormal(median, sigma, excess float64) float64 {
 	return mean*normCDF(d1) - excess*normCDF(d2)
 }
 
+// limitedStopLossLognormal returns E[(min(X, cap) - excess)+] for X lognormal
+// with the given median and sigma: the expected excess-of-excess cost when
+// losses are also capped at cap. For excess < cap it is the difference of two
+// stop-loss layers; cap <= excess yields 0.
+func limitedStopLossLognormal(median, sigma, excess, cap float64) float64 {
+	if cap <= excess {
+		return 0
+	}
+	return stopLossLognormal(median, sigma, excess) - stopLossLognormal(median, sigma, cap)
+}
+
 // stopLossPareto returns E[(X-excess)+] for X Pareto with the given scale
 // (minimum) and alpha > 1. Below the minimum every loss exceeds the excess;
 // above it, the closed-form tail integral applies.
