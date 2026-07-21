@@ -168,16 +168,29 @@ In `Simulate`, multiply the Poisson mean by the exposed fraction:
 
 - [ ] **Step 5: Constrain the occurrence draw in simulateClaim**
 
-Replace the occurrence lines at the top of `simulateClaim`:
+Replace the occurrence lines at the top of `simulateClaim`. The window end
+(`Jan 1 of startYear+years`) is **exclusive** - a claim on that day is already
+the next accident year - so when clamping to the window the draw must stay
+strictly below it; when not clamping, keep the original inclusive-of-`CoverEnd`
+behaviour (`term+1`):
 
 ```go
 	end := pol.CoverEnd
-	if !s.windowEnd.IsZero() && s.windowEnd.Before(end) {
+	capToWindow := !s.windowEnd.IsZero() && s.windowEnd.Before(end)
+	if capToWindow {
 		end = s.windowEnd
 	}
 	span := shared.DaysBetween(pol.CoverStart, end)
-	occurrence := pol.CoverStart.AddDays(int(src.Uniform() * float64(span+1)))
+	if !capToWindow {
+		span++ // include the final cover day, as the pre-window model did
+	}
+	occurrence := pol.CoverStart.AddDays(int(src.Uniform() * float64(span)))
 ```
+
+When clamped, `span = DaysBetween(CoverStart, windowEnd)` and the draw covers
+`[0, span)`, so the latest occurrence is `windowEnd - 1 day` (Dec 31 of the last
+window year) - never `windowEnd` itself. When not clamped, `span` is
+`DaysBetween(CoverStart, CoverEnd) + 1`, reproducing the original draw exactly.
 
 - [ ] **Step 6: Run test to verify it passes**
 

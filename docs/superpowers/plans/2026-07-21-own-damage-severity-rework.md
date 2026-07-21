@@ -465,59 +465,28 @@ func TestOwnDamageTrendIsClaimsIndexNotProduct(t *testing.T) {
 Run: `go test ./internal/application/ -run TestOwnDamageTrendIsClaimsIndexNotProduct -v`
 Expected: PASS. (If it fails high, the base-year rebase in Task 3 is wrong.)
 
-- [ ] **Step 3: Write the shift-free test**
+- [ ] **Step 3: Verify the SL-5 shift-free contract still holds**
 
-The cap is a deterministic transform, so toggling it (via a preset whose cap never binds vs one where it does) must not move any claim's dates or third-party severities. Add:
+The SL-3 cap is a deterministic `min()` with no `src` call, so it cannot shift
+the RNG stream - this is guaranteed structurally and verified by reading the
+diff (no new draw in the claim path). The behavioural guarantee that toggling a
+real knob does not reshuffle later claims is already covered by the existing
+`TestNilClaimsDoNotShiftOtherStages` (`internal/application/nil_test.go`). Run it
+here to confirm the rework did not regress it:
 
-```go
-// TestCapDoesNotShiftDates proves the SL-3 cap introduces no random draw: only
-// own-damage amounts above the cap change; every date and every third-party
-// severity is identical whether or not the cap binds.
-func TestCapDoesNotShiftDates(t *testing.T) {
-	base := request(t)
-	base.StartYear = 1998
-	base.Years = 5
-	base.InitialBookSize = 3000
-
-	loose := base
-	loose.LOB.Book.SumInsuredMedian = 1e9 // cap can never bind
-
-	dsBind, err := application.GenerateDataset(random.NewSource(9), base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dsLoose, err := application.GenerateDataset(random.NewSource(9), loose)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(dsBind.Claims) != len(dsLoose.Claims) {
-		t.Fatalf("claim count changed: %d vs %d", len(dsBind.Claims), len(dsLoose.Claims))
-	}
-	for i := range dsBind.Claims {
-		a, b := dsBind.Claims[i], dsLoose.Claims[i]
-		if !a.OccurrenceDate.Equal(b.OccurrenceDate) || !a.ReportDate.Equal(b.ReportDate) ||
-			!a.CloseDate.Equal(b.CloseDate) || a.OwnDamage != b.OwnDamage {
-			t.Fatalf("claim %d shifted when cap toggled:\n bind:  %+v\n loose: %+v", a.ID, a, b)
-		}
-		if !a.OwnDamage && a.InitialEstimate != b.InitialEstimate {
-			t.Fatalf("third-party claim %d severity moved: %v vs %v", a.ID, a.InitialEstimate, b.InitialEstimate)
-		}
-	}
-}
-```
-
-Note: `SumInsuredMedian` is raised so the SI cap never binds; because own-damage severity scales with `baseSI`, raising the median scales both severity and cap together, but the *dates* and *third-party* draws (the shift-free signal) are independent of it. If a stricter isolation is wanted the plan's reviewer may instead vary only a cap knob; this preset-level check is sufficient for the no-new-draw guarantee.
-
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `go test ./internal/application/ -run TestCapDoesNotShiftDates -v`
+Run: `go test ./internal/application/ -run TestNilClaimsDoNotShiftOtherStages -v`
 Expected: PASS.
 
-- [ ] **Step 5: Commit**
+(No separate cap-toggle test is written: there is no cap knob to toggle, and
+un-binding the cap by changing the sum insured also changes the estimate, which
+legitimately moves reportability and the close-lag size regime - those are model
+effects, not RNG shifts, so such a test would assert a false invariant.)
+
+- [ ] **Step 4: Commit**
 
 ```bash
 git add internal/application/severity_test.go
-git commit -m "Test own-damage rebase and shift-free cap (SL-3, SL-4)"
+git commit -m "Test own-damage rebase; confirm shift-free contract intact (SL-3, SL-4)"
 ```
 
 ---
@@ -568,6 +537,6 @@ git commit -m "Recalibrate preset and refresh golden after own-damage rework (SL
 
 ## Self-Review
 
-- **Spec coverage:** SL-3 cap → Tasks 1-3, invariant test Task 3; SL-4 rebase → Tasks 2-3, trend test Task 4; pricing mirror → Task 2; shift-free → Task 4; recalibration + golden → Task 5. Salvage coupling explicitly out of scope (design doc). All covered.
+- **Spec coverage:** SL-3 cap → Tasks 1-3, invariant test Task 3; SL-4 rebase → Tasks 2-3, trend test Task 4; pricing mirror → Task 2; shift-free contract confirmed (not newly tested - no cap knob exists) → Task 4 Step 3 via the existing nil no-shift test; recalibration + golden → Task 5. Salvage coupling explicitly out of scope (design doc). All covered.
 - **Placeholders:** none - every step has concrete code or an exact command. Task 5 recalibration is inherently iterative but has a concrete procedure and pass criterion.
 - **Type consistency:** `ExpectedPolicyLoss(..., siDrift)` 5-arg form used in Task 2 and the book call; `WithBaseYear(sumInsuredInflation, startYear)` and `baseSumInsured(pol)` used consistently in Task 3; `limitedStopLossLognormal` signature matches Task 1 and its use in Task 2.
