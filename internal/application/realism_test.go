@@ -21,7 +21,11 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 	req := request(t)
 	req.StartYear = 1998
 	req.Years = 10
-	req.InitialBookSize = 10000
+	// 40k keeps the loss-ratio drift metric's seed-to-seed sampling noise
+	// small enough for the 1.10 drift band: at 10k book size, heavy-tail
+	// claim-sampling noise pushes ~12.5% of seeds outside [0.909, 1.10] even
+	// with no systematic drift; at ~40k the metric stabilizes to about ±0.05.
+	req.InitialBookSize = 40000
 	// Run the gate on several seeds so a calibration that only happens to
 	// pass on one seed is caught here.
 	for _, seed := range []uint64{1, 42, 7} {

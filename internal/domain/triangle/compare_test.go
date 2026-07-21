@@ -28,6 +28,23 @@ func TestLossRatioDriftFlatIsNearOne(t *testing.T) {
 	}
 }
 
+func TestReportPassRequiresDriftWithin(t *testing.T) {
+	report := Report{
+		PaidATA:        []AgeCheck{{Within: true}},
+		IncurredATA:    []AgeCheck{{Within: true}},
+		LossRatio:      Check{Within: true},
+		LossRatioDrift: Check{Within: false},
+	}
+	if report.Pass() {
+		t.Fatal("Pass() = true with LossRatioDrift.Within = false, want false")
+	}
+
+	report.LossRatioDrift.Within = true
+	if !report.Pass() {
+		t.Fatal("Pass() = false with all checks Within = true, want true")
+	}
+}
+
 func TestLossRatioDriftClimbingExceedsTolerance(t *testing.T) {
 	years := 10
 	cells := make([][]float64, years)
