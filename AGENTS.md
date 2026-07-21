@@ -12,6 +12,10 @@ Guidance for AI coding agents working in this repository. Human contributors may
 
 Nothing in the output is real, so there are no data governance concerns. See `docs/mission.md` for the full pitch and `docs/roadmap.md` for status and sequencing.
 
+## Preferred workflows
+
+- **Fetch at the start of every session.** When you begin a new Claude session in this repo, run `git fetch` first to check for new work on the remote before doing anything else, so you are working against the latest state and avoid diverging from `origin`.
+
 ## Tech stack
 
 - **Language:** Go 1.26 (see `go.mod`; module path `github.com/le-marais/claimsgen`)
