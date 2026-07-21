@@ -7,7 +7,7 @@ import (
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 )
 
-// meanOwnDamageBySeverityYear returns mean own-damage InitialEstimate for the
+// meanOwnDamageByYear returns mean own-damage InitialEstimate for the
 // first and last accident year of the run.
 func meanOwnDamageByYear(ds application.Dataset, firstYear, lastYear int) (first, last float64) {
 	var fs, ls, fn, ln float64
@@ -35,7 +35,7 @@ func meanOwnDamageByYear(ds application.Dataset, firstYear, lastYear int) (first
 
 // TestOwnDamageTrendIsClaimsIndexNotProduct proves SL-4: with the claims index
 // held at 1.0, own-damage severity does NOT trend even though the sum insured
-// drifts at 3%/yr. Before the rebase, severity trended at ~sum_insured_inflation.
+// drifts at 10%/yr. Before the rebase, severity trended at ~sum_insured_inflation.
 func TestOwnDamageTrendIsClaimsIndexNotProduct(t *testing.T) {
 	req := request(t)
 	req.StartYear = 1998
