@@ -97,11 +97,17 @@ still vary premiums policy to policy.
 
 ### 4. Realism gate: per-year drift check
 
-Add a self-consistency check to `internal/domain/triangle/compare.go`: compute
-the generated per-accident-year loss ratios and assert their spread stays
-within a tolerance (`max/min <= threshold`, proposed **1.15**). This needs no
-reference data, so it sidesteps the SL-2 reference-immaturity problem. Surface
-the result in `Report` / `Report.Pass()` and the realism UI tab.
+Add a self-consistency check to `internal/domain/triangle/compare.go`: split the
+generated accident years into a first and second half, aggregate incurred and
+earned premium within each half, and check the ratio of the second-half loss
+ratio to the first-half loss ratio stays within a tolerance
+(`[1/tol, tol]`, proposed **tol = 1.10**). A value near 1 means a flat
+loss-ratio trend. Aggregating each half (rather than a per-year max/min) is
+robust to a single outlier year - important while own-damage severity is still
+uncapped (SL-3). This needs no reference data, so it sidesteps the SL-2
+reference-immaturity problem. The incurred triangle is already net of
+recoveries, so the drift check runs on net incurred; the trend is basis-neutral.
+Surface the result in `Report` / `Report.Pass()` and the realism UI tab.
 
 ### 5. Testing
 
