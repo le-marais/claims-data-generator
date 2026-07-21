@@ -54,15 +54,16 @@ func (s *BookSimulator) Simulate(src shared.RandomSource, startYear, years, init
 		year := startYear + y
 		medianSI := s.book.SumInsuredMedian * math.Pow(s.book.SumInsuredInflation, float64(y))
 		inflation := math.Pow(s.claims.Inflation.Mean, float64(y))
+		siDrift := math.Pow(s.book.SumInsuredInflation, float64(y))
 		for i := 0; i < size; i++ {
-			book = append(book, s.simulatePolicy(src.Split(fmt.Sprintf("policy-%d", id)), id, year, medianSI, inflation))
+			book = append(book, s.simulatePolicy(src.Split(fmt.Sprintf("policy-%d", id)), id, year, medianSI, inflation, siDrift))
 			id++
 		}
 	}
 	return book
 }
 
-func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, year int, medianSI, inflation float64) Policy {
+func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, year int, medianSI, inflation, siDrift float64) Policy {
 	yearStart := shared.NewDate(year, time.January, 1)
 	daysInYear := shared.DaysBetween(yearStart, shared.NewDate(year+1, time.January, 1))
 	start := yearStart.AddDays(int(src.Uniform() * float64(daysInYear)))
@@ -74,7 +75,7 @@ func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, year int, me
 	riskFactor := src.Gamma(1/spread2, spread2)
 
 	excess := s.drawExcess(src)
-	premium := s.claims.ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflation) / s.book.TargetLossRatio
+	premium := s.claims.ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflation, siDrift) / s.book.TargetLossRatio
 
 	return Policy{
 		ID:         id,

@@ -43,14 +43,17 @@ func stopLossPareto(scale, alpha, excess float64) float64 {
 }
 
 // ExpectedPolicyLoss is the deterministic expected ultimate gross incurred loss
-// for one policy at the given claims-inflation factor (Inflation.Mean raised to
-// the policy's year offset). It mirrors the severity model in the claim package
-// so premium can be priced to a target loss ratio. It draws no randomness, so
-// pricing never perturbs a sub-stream. Recoveries are excluded (gross basis).
-func (c ClaimParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflationFactor float64) float64 {
+// for one policy. It mirrors the severity model in the claim package so premium
+// can be priced to a target loss ratio: own damage is expressed in base-year
+// sum-insured terms (baseSI = sumInsured / siDrift) trended by the claims index
+// only, and capped at the drifted sumInsured (a total loss). Third party keeps
+// the claims index. It draws no randomness, so pricing never perturbs a
+// sub-stream. Recoveries are excluded (gross basis).
+func (c ClaimParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflationFactor, siDrift float64) float64 {
 	s := c.Severity
-	odMedian := inflationFactor * sumInsured * s.OwnDamageMedianFraction
-	od := stopLossLognormal(odMedian, s.OwnDamageSigma, excess)
+	baseSI := sumInsured / siDrift
+	odMedian := inflationFactor * baseSI * s.OwnDamageMedianFraction
+	od := limitedStopLossLognormal(odMedian, s.OwnDamageSigma, excess, sumInsured)
 	tpScale := inflationFactor * s.ThirdPartyScale
 	tp := stopLossPareto(tpScale, s.ThirdPartyAlpha, excess)
 	perClaim := s.ThirdPartyWeight*tp + (1-s.ThirdPartyWeight)*od

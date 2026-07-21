@@ -124,8 +124,10 @@ func TestPolicyFieldConsistency(t *testing.T) {
 			t.Fatalf("risk factor %v not positive", p.RiskFactor)
 		}
 		cp := claimParams()
-		infl := math.Pow(cp.Inflation.Mean, float64(p.CoverStart.Year()-1998))
-		wantPremium := cp.ExpectedPolicyLoss(p.SumInsured.Dollars(), p.Excess.Dollars(), p.RiskFactor, infl) / prm.TargetLossRatio
+		yearOffset := float64(p.CoverStart.Year() - 1998)
+		infl := math.Pow(cp.Inflation.Mean, yearOffset)
+		siDrift := math.Pow(prm.SumInsuredInflation, yearOffset)
+		wantPremium := cp.ExpectedPolicyLoss(p.SumInsured.Dollars(), p.Excess.Dollars(), p.RiskFactor, infl, siDrift) / prm.TargetLossRatio
 		if math.Abs(p.Premium.Dollars()-wantPremium) > 0.01 {
 			t.Fatalf("premium %v, want %v", p.Premium.Dollars(), wantPremium)
 		}
