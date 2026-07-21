@@ -152,7 +152,7 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 // not exceed the excess, making the claim unreportable.
 func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Policy) (Claim, bool) {
 	end := pol.CoverEnd
-	capToWindow := !s.windowEnd.IsZero() && s.windowEnd.Before(end)
+	capToWindow := !s.windowEnd.IsZero() && !end.Before(s.windowEnd)
 	if capToWindow {
 		end = s.windowEnd
 	}

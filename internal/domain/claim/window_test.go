@@ -60,3 +60,45 @@ func TestWindowedOccurrencesStayInWindow(t *testing.T) {
 		}
 	}
 }
+
+// boundaryBook writes policies whose CoverEnd lands exactly on windowEnd:
+// startYear=1998, years=10 puts the last underwriting year at 2007, a
+// non-leap year, so a Jan-2 cover start plus a 364-day (12-month) term ends
+// exactly on Jan 1 1998+10 = windowEnd. This exercises the equality boundary
+// that a strict "Before" clamp check would miss (MF-2 regression).
+func boundaryBook(startYear, years, n int) []policy.Policy {
+	var b []policy.Policy
+	lastUY := startYear + years - 1
+	start := shared.NewDate(lastUY, time.January, 2)
+	for i := 1; i <= n; i++ {
+		b = append(b, policy.Policy{
+			ID:         i,
+			CoverStart: start,
+			CoverEnd:   start.AddDays(364), // == windowEnd exactly for this startYear/years
+			SumInsured: shared.FromDollars(20000),
+			Excess:     shared.FromDollars(300),
+			RiskFactor: 1.0,
+		})
+	}
+	return b
+}
+
+func TestWindowedOccurrencesStayInWindowAtExactBoundary(t *testing.T) {
+	const startYear, years = 1998, 10
+	windowEnd := shared.NewDate(startYear+years, time.January, 1)
+	book := boundaryBook(startYear, years, 1)
+	if !book[0].CoverEnd.Equal(windowEnd) {
+		t.Fatalf("test setup invalid: CoverEnd %s does not equal windowEnd %s", book[0].CoverEnd, windowEnd)
+	}
+	claims := NewClaimSimulator(windowParams()).
+		WithWindow(startYear, years).
+		Simulate(random.NewSource(1), boundaryBook(startYear, years, 2000))
+	if len(claims) == 0 {
+		t.Fatal("no claims generated")
+	}
+	for _, c := range claims {
+		if !c.OccurrenceDate.Before(windowEnd) {
+			t.Fatalf("claim %d occurred %s, on/after window end %s", c.ID, c.OccurrenceDate, windowEnd)
+		}
+	}
+}
