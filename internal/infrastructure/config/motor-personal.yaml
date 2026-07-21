@@ -16,7 +16,10 @@ book:
     - {value: 300, weight: 0.30}
     - {value: 500, weight: 0.30}
     - {value: 1000, weight: 0.10}
-  premium_rate_factor: 0.035
+  # Premium is priced to this target loss ratio: each policy's premium is its
+  # expected ultimate loss divided by the target. Keeps the accident-year loss
+  # ratio flat as severities inflate.
+  target_loss_ratio: 0.72
 claims:
   base_frequency: 0.12
   report_lag_median: 2

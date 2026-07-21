@@ -19,7 +19,7 @@ book:
   excess_choices:
     - {value: 0, weight: 0.1}
     - {value: 500, weight: 0.9}
-  premium_rate_factor: 0.03
+  target_loss_ratio: 0.72
 claims:
   base_frequency: 0.15
   report_lag_median: 2

@@ -23,7 +23,7 @@ func validMotor() LineOfBusiness {
 				{Value: 500, Weight: 0.3},
 				{Value: 1000, Weight: 0.1},
 			},
-			PremiumRateFactor: 0.03,
+			TargetLossRatio: 0.72,
 		},
 		Claims: ClaimParams{
 			BaseFrequency:   0.15,
@@ -84,7 +84,7 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"book.excess_choices", func(l *LineOfBusiness) { l.Book.ExcessChoices = nil }},
 		{"book.excess_choices", func(l *LineOfBusiness) { l.Book.ExcessChoices[0].Weight = -1 }},
 		{"book.excess_choices", func(l *LineOfBusiness) { l.Book.ExcessChoices[0].Value = -100 }},
-		{"book.premium_rate_factor", func(l *LineOfBusiness) { l.Book.PremiumRateFactor = 0 }},
+		{"book.target_loss_ratio", func(l *LineOfBusiness) { l.Book.TargetLossRatio = 0 }},
 		{"claims.base_frequency", func(l *LineOfBusiness) { l.Claims.BaseFrequency = 0 }},
 		{"claims.report_lag_median", func(l *LineOfBusiness) { l.Claims.ReportLagMedian = 0 }},
 		{"claims.report_lag_sigma", func(l *LineOfBusiness) { l.Claims.ReportLagSigma = 0 }},

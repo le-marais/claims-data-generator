@@ -44,7 +44,7 @@ func GenerateDataset(src shared.RandomSource, req GenerateRequest) (Dataset, err
 	if err := req.validate(); err != nil {
 		return Dataset{}, err
 	}
-	book := policy.NewBookSimulator(req.LOB.Book).
+	book := policy.NewBookSimulator(req.LOB.Book, req.LOB.Claims).
 		Simulate(src.Split("book"), req.StartYear, req.Years, req.InitialBookSize)
 	// Build the index one year past the window: policies written late in the
 	// final underwriting year produce occurrences in startYear+years (cover

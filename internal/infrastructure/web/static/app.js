@@ -13,7 +13,7 @@ const FIELD_GROUPS = [
       { path: ["book", "spread"], label: "Spread", tip: "Heterogeneity: sigma of sum insured and sd of the risk factor." },
       { path: ["book", "sum_insured_median"], label: "Sum insured median", tip: "Year-1 median sum insured in dollars." },
       { path: ["book", "sum_insured_inflation"], label: "Sum insured inflation", tip: "Annual multiplicative drift of the median." },
-      { path: ["book", "premium_rate_factor"], label: "Premium rate factor", tip: "Premium = sum insured x rate x risk factor." },
+      { path: ["book", "target_loss_ratio"], label: "Target loss ratio", tip: "Premium = expected ultimate loss / target loss ratio." },
     ],
   },
   {

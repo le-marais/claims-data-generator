@@ -31,8 +31,9 @@ type BookParams struct {
 	SumInsuredInflation float64
 	// ExcessChoices is the discrete set of available excesses with weights.
 	ExcessChoices []ExcessChoice
-	// PremiumRateFactor sets premium = sum insured x rate x risk factor.
-	PremiumRateFactor float64
+	// TargetLossRatio prices premium: each policy's premium is its expected
+	// ultimate loss (ClaimParams.ExpectedPolicyLoss) divided by this target.
+	TargetLossRatio float64
 }
 
 type ExcessChoice struct {
@@ -214,7 +215,7 @@ func (b BookParams) validate() error {
 		namedFloat{"book.spread", b.Spread},
 		namedFloat{"book.sum_insured_median", b.SumInsuredMedian},
 		namedFloat{"book.sum_insured_inflation", b.SumInsuredInflation},
-		namedFloat{"book.premium_rate_factor", b.PremiumRateFactor},
+		namedFloat{"book.target_loss_ratio", b.TargetLossRatio},
 	); err != nil {
 		return err
 	}
@@ -255,8 +256,8 @@ func (b BookParams) validate() error {
 	if totalWeight <= 0 {
 		return fmt.Errorf("book.excess_choices: weights must sum to a positive value")
 	}
-	if b.PremiumRateFactor <= 0 {
-		return fmt.Errorf("book.premium_rate_factor: must be positive, got %v", b.PremiumRateFactor)
+	if b.TargetLossRatio <= 0 {
+		return fmt.Errorf("book.target_loss_ratio: must be positive, got %v", b.TargetLossRatio)
 	}
 	return nil
 }

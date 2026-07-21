@@ -37,7 +37,7 @@ type BookParams struct {
 	SumInsuredMedian    float64              `yaml:"sum_insured_median" json:"sum_insured_median"`
 	SumInsuredInflation float64              `yaml:"sum_insured_inflation" json:"sum_insured_inflation"`
 	ExcessChoices       []ExcessChoiceParams `yaml:"excess_choices" json:"excess_choices"`
-	PremiumRateFactor   float64              `yaml:"premium_rate_factor" json:"premium_rate_factor"`
+	TargetLossRatio     float64              `yaml:"target_loss_ratio" json:"target_loss_ratio"`
 }
 
 // ExcessChoiceParams mirrors lob.ExcessChoice for YAML/JSON.
@@ -211,7 +211,7 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			SumInsuredMedian:    d.Book.SumInsuredMedian,
 			SumInsuredInflation: d.Book.SumInsuredInflation,
 			ExcessChoices:       excesses,
-			PremiumRateFactor:   d.Book.PremiumRateFactor,
+			TargetLossRatio:     d.Book.TargetLossRatio,
 		},
 		Claims: lob.ClaimParams{
 			BaseFrequency:   d.Claims.BaseFrequency,
