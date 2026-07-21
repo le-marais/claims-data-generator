@@ -106,8 +106,17 @@ style of `TestRecoveriesDoNotShiftOtherStages`:
    payments) may differ. Fails before Change A, passes after.
 
 2. **Salvage no-shift.** Generate twice - once with `Salvage.Probability = 0`,
-   once with it on. Assert every `SUBROGATION` transaction (claim id, amount,
-   date) is identical across both runs. Fails before Change B, passes after.
+   once with it on. Assert the set of `SUBROGATION` rows by `(ClaimID, Date)` is
+   identical across both runs. This is the pure sub-stream signal: subrogation's
+   Bernoulli (firing) and lag (date) come only from its own sub-stream, so they
+   must not move when salvage is toggled. Fails before Change B, passes after.
+   The test deliberately does **not** assert on subrogation *amount*: the "total
+   recovered strictly below gross paid" cap (`recovery.go:107-108`) accumulates
+   salvage into `recovered` before subrogation, so a capped subrogation amount
+   can legitimately differ when salvage fires. That is an economic coupling, not
+   an RNG shift. (A theoretical edge - the cap dropping a subrogation amount
+   below one cent and so removing its row - requires salvage to nearly exhaust
+   gross paid; it is not guarded.)
 
 Also tighten the existing `TestRecoveriesDoNotShiftOtherStages`
 (`recoveries_test.go:55`), which currently only tests both recovery types off
