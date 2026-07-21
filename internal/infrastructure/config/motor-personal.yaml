@@ -43,7 +43,7 @@ claims:
     size_threshold: 20000
     size_multiplier: 6
     risk_loading: 0.3
-    third_party_shape: 1.0
+    third_party_shape: 1.2
     third_party_mean_days: 680
   # Claims inflation applied by occurrence year to every claim's ground-up
   # loss. Stochastic: each year's factor is `mean` times lognormal noise of

@@ -76,7 +76,7 @@ All behavior is driven by a YAML file mapped to the `LineOfBusiness` domain obje
 
 The model deliberately trades some realism for a clean, reproducible engine. The main simplifications a reviewer should know about:
 
-- **Own-damage severity trend is the product of two knobs.** Own-damage losses scale with a sum insured that already drifts by `sum_insured_inflation` per underwriting year and are then multiplied again by the occurrence-year claims-inflation index, so the effective own-damage trend is the product of the two. Third-party losses carry only the claims-inflation index. Anyone reading a single "claims inflation" figure off the YAML should keep this in mind.
+- **Own-damage severity trends at the claims index only and is capped at the sum insured.** Own-damage losses are sized off a fixed base-year sum insured, trended by the occurrence-year claims-inflation index alone, and capped at the policy's sum insured - so own damage and third party share the single claims-inflation trend and own damage can never exceed the cover. Third-party losses carry the same claims-inflation index and are not capped at the sum insured.
 - **Case estimates re-centre on the true ultimate at the first revision**, so incurred development carries little systematic IBNER signal - incurred is close to unbiased at every age, and incurred-based methods will look flattering on this data.
 - **Nil claims draw severity and probability independently of claim size**; real withdrawn or nil claims skew small.
 - **No seasonality, catastrophe, or event clustering.** Occurrences are uniform within each cover period and claims are independent across policies (the only cross-policy link is the shared inflation path).
