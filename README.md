@@ -64,6 +64,8 @@ transactions.csv is emitted in claim-registration order, not date order: all of 
 
 Claims inflation is a stochastic path: each calendar year's factor is a mean level (a per-line-of-business knob) times lognormal noise, compounding from the start year and drawn from its own labelled sub-stream so it stays reproducible and independent of the other stages.
 
+Every independent decision is drawn from its own labelled sub-stream keyed by the seed and a label path, so toggling a knob is invisible to unrelated draws: turning nil claims, reopening, salvage, or subrogation on or off never reshuffles the dates or severities of any other claim or stage. (Salvage and subrogation amounts remain linked through the rule that a claim's total recovered stays below its gross paid, which is an accounting constraint, not a random draw.)
+
 There is no valuation date: every claim runs to closure, which supports out-of-sample testing of reserving methods.
 
 ## Parameters per line of business
