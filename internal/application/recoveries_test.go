@@ -1,9 +1,11 @@
 package application_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/le-marais/claimsgen/internal/application"
+	"github.com/le-marais/claimsgen/internal/domain/shared"
 	"github.com/le-marais/claimsgen/internal/domain/transaction"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 )
@@ -89,5 +91,48 @@ func TestRecoveriesDoNotShiftOtherStages(t *testing.T) {
 		if got != want {
 			t.Fatalf("non-recovery transaction %d differs with recoveries on: %+v vs %+v", i, got, want)
 		}
+	}
+}
+
+// TestSalvageDoesNotShiftSubrogation proves per-recovery-type stream
+// independence: toggling salvage must not move whether subrogation fires or
+// when. It compares subrogation rows by (ClaimID, Date) - the pure sub-stream
+// signal. It does not compare amounts: the "total recovered below gross paid"
+// cap accumulates salvage before subrogation, so a capped subrogation amount
+// can legitimately differ when salvage fires (an economic coupling, not an RNG
+// shift).
+func TestSalvageDoesNotShiftSubrogation(t *testing.T) {
+	off := request(t)
+	off.LOB.Claims.Recoveries.Salvage.Probability = 0
+
+	dsOn, err := application.GenerateDataset(random.NewSource(13), request(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dsOff, err := application.GenerateDataset(random.NewSource(13), off)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	type subKey struct {
+		claimID int
+		date    shared.Date
+	}
+	collect := func(ds application.Dataset) map[subKey]int {
+		m := map[subKey]int{}
+		for _, tx := range ds.Transactions {
+			if tx.Type == transaction.Subrogation {
+				m[subKey{tx.ClaimID, tx.Date}]++
+			}
+		}
+		return m
+	}
+	onSubs, offSubs := collect(dsOn), collect(dsOff)
+	if len(onSubs) == 0 {
+		t.Fatal("expected subrogation rows on the default run")
+	}
+	if !reflect.DeepEqual(onSubs, offSubs) {
+		t.Fatalf("subrogation firing/timing shifted when salvage toggled: %d keys with salvage on, %d off",
+			len(onSubs), len(offSubs))
 	}
 }

@@ -37,8 +37,10 @@ func NewRecoverySimulator(p lob.RecoveryParams) *RecoverySimulator {
 
 // Apply merges each eligible claim's recovery rows into the runoff output
 // after that claim's block, renumbering IDs. Every claim draws from its own
-// labelled sub-stream, so enabling recoveries never reshuffles the draws of
-// other stages, and a claim's recoveries do not depend on any other claim.
+// labelled sub-stream, and within a claim each recovery type draws from its
+// own sub-stream (recovery-claim-{id}/SALVAGE, .../SUBROGATION), so toggling
+// one recovery type never reshuffles the draws of the other type or any other
+// stage.
 func (s *RecoverySimulator) Apply(src shared.RandomSource, claims []claim.Claim, txs []Transaction) []Transaction {
 	paid := make(map[int]shared.Money, len(claims))
 	for _, tx := range txs {
@@ -95,12 +97,13 @@ func (s *RecoverySimulator) simulateClaim(src shared.RandomSource, c claim.Claim
 	var rows []Transaction
 	recovered := shared.Money(0)
 	for _, k := range kinds {
-		if k.p.Probability <= 0 || !src.Bernoulli(k.p.Probability) {
+		ksrc := src.Split(string(k.t)) // recovery-claim-{id}/SALVAGE, .../SUBROGATION
+		if k.p.Probability <= 0 || !ksrc.Bernoulli(k.p.Probability) {
 			continue
 		}
-		share := src.Beta(k.p.MeanShare*k.p.Concentration, (1-k.p.MeanShare)*k.p.Concentration)
+		share := ksrc.Beta(k.p.MeanShare*k.p.Concentration, (1-k.p.MeanShare)*k.p.Concentration)
 		amount := paid.MulFloat(share)
-		lag := int(math.Round(src.LogNormal(math.Log(k.p.LagMedianDays), k.p.LagSigma)))
+		lag := int(math.Round(ksrc.LogNormal(math.Log(k.p.LagMedianDays), k.p.LagSigma)))
 		if lag < 1 {
 			lag = 1 // recoveries land strictly after close
 		}
