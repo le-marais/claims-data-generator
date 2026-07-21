@@ -1,0 +1,6 @@
+# Normalize all text files to LF in the repository, regardless of the
+# platform or editor that wrote them. Git auto-detects text vs binary.
+* text=auto eol=lf
+
+# Binary assets - never touch their bytes.
+*.png binary
