@@ -54,6 +54,7 @@ func GenerateDataset(src shared.RandomSource, req GenerateRequest) (Dataset, err
 	inflation := claim.NewInflationIndex(src.Split("inflation"), req.LOB.Claims.Inflation, req.StartYear, req.Years+1)
 	claims := claim.NewClaimSimulator(req.LOB.Claims).
 		WithInflation(inflation).
+		WithBaseYear(req.LOB.Book.SumInsuredInflation, req.StartYear).
 		Simulate(src.Split("claims"), book)
 	claims = claim.NewReopenSimulator(req.LOB.Claims).
 		Apply(src.Split("reopening"), claims)

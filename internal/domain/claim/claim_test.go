@@ -136,7 +136,10 @@ func TestReportLagIsShortWithOutliers(t *testing.T) {
 
 func TestLargerClaimsCloseSlower(t *testing.T) {
 	sim := claim.NewClaimSimulator(params())
-	claims := sim.Simulate(random.NewSource(6), fixedBook(30000, 20000, 0, 1.0))
+	// Sum insured is set well above the close-lag size threshold (20000) so the
+	// SL-3/SL-4 own-damage cap at sum insured does not bind and both small and
+	// big claims (relative to the threshold) still occur.
+	claims := sim.Simulate(random.NewSource(6), fixedBook(30000, 200000, 0, 1.0))
 	// The size stretch only governs the own-damage regime; third-party claims
 	// draw a flat long-tail lag regardless of size, so scope this check to
 	// own-damage claims to isolate the mechanism under test.

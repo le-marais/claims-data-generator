@@ -48,8 +48,10 @@ func (c Claim) Reopened() bool {
 
 // ClaimSimulator generates claim events for a policy book.
 type ClaimSimulator struct {
-	params    lob.ClaimParams
-	inflation InflationIndex
+	params              lob.ClaimParams
+	inflation           InflationIndex
+	sumInsuredInflation float64
+	startYear           int
 }
 
 // NewClaimSimulator builds a claim simulator from the claim parameters.
@@ -63,6 +65,27 @@ func NewClaimSimulator(p lob.ClaimParams) *ClaimSimulator {
 func (s *ClaimSimulator) WithInflation(x InflationIndex) *ClaimSimulator {
 	s.inflation = x
 	return s
+}
+
+// WithBaseYear sets the sum-insured inflation rate and run start year so
+// own-damage severity can be expressed in base-year sum-insured terms (SL-4):
+// the drifted sum insured is deflated by sum_insured_inflation raised to the
+// policy's underwriting-year offset before scaling the loss. Unset (the zero
+// value) leaves severity scaled by the nominal sum insured.
+func (s *ClaimSimulator) WithBaseYear(sumInsuredInflation float64, startYear int) *ClaimSimulator {
+	s.sumInsuredInflation = sumInsuredInflation
+	s.startYear = startYear
+	return s
+}
+
+// baseSumInsured deflates the policy's drifted sum insured back to base-year
+// dollars. Identity when the base-year knob is unset.
+func (s *ClaimSimulator) baseSumInsured(pol policy.Policy) float64 {
+	if s.sumInsuredInflation <= 0 {
+		return pol.SumInsured.Dollars()
+	}
+	offset := pol.CoverStart.Year() - s.startYear
+	return pol.SumInsured.Dollars() / math.Pow(s.sumInsuredInflation, float64(offset))
 }
 
 // Simulate draws claim events for every policy. Claims are returned sorted
@@ -104,11 +127,17 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	report := occurrence.AddDays(int(math.Round(lag)))
 
 	loss, ownDamage := s.drawGroundUpLoss(src, pol)
-	// The own-damage component scales with a sum insured that already drifts by
-	// sum_insured_inflation, so its effective severity trend is the product of
-	// sum_insured_inflation and claims inflation; third-party (Pareto) losses
-	// carry only the claims index applied here.
+	// Own damage is expressed in base-year sum-insured terms (baseSumInsured)
+	// and trended by the claims index only, applied here; third-party (Pareto)
+	// losses carry the same claims index but no sum-insured term at all. Own
+	// damage is then capped at the drifted sum insured, representing a total
+	// loss.
 	loss *= s.inflation.For(occurrence.Year())
+	if ownDamage {
+		if cap := pol.SumInsured.Dollars(); loss > cap {
+			loss = cap
+		}
+	}
 	estimate := loss - pol.Excess.Dollars()
 	if estimate <= 0 {
 		return Claim{}, false
@@ -145,7 +174,7 @@ func (s *ClaimSimulator) drawGroundUpLoss(src shared.RandomSource, pol policy.Po
 		return src.Pareto(sev.ThirdPartyScale, sev.ThirdPartyAlpha), false
 	}
 	fraction := src.LogNormal(math.Log(sev.OwnDamageMedianFraction), sev.OwnDamageSigma)
-	return pol.SumInsured.Dollars() * fraction, true
+	return s.baseSumInsured(pol) * fraction, true
 }
 
 // closeLagRegime selects the (shape, mean) close-lag gamma parameters for a
