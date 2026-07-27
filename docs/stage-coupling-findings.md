@@ -45,6 +45,8 @@ type LossPricer interface {
 
 The application layer constructs the pricer from the claims model and injects it into `NewBookSimulator`, so `policy` no longer imports claim severity knobs. Better still, source the pricer and the simulator from one severity model type so there is a single definition of the mixture, removing the duplication rather than only hiding it. If you prefer minimal churn, at least move `ExpectedPolicyLoss` next to the claim severity code so the two live side by side.
 
+**Status (2026-07-27):** Addressed. Premium is now priced from a policy-owned `PricingParams` block (see `docs/superpowers/specs/2026-07-27-independent-pricing-basis-design.md`); the `policy` package no longer imports `ClaimParams`, and the duplicated inflation-mean path (the F2 aspect) is now the intentional pricing-vs-truth separation.
+
 ---
 
 ## F2 - Claims inflation mean is duplicated across pricing and the claims stage
@@ -170,7 +172,7 @@ The analytics (`internal/domain/triangle`, `internal/application/summary.go`, `h
 
 | ID | Bleed | Type | Nature | Core suggestion |
 |----|-------|------|--------|-----------------|
-| F1 | Book stage embeds and duplicates the claims severity model to price premium | config coupling + logic duplication | inherent (make explicit) | Inject a `LossPricer` port; single-source the severity model |
+| F1 | Book stage embeds and duplicates the claims severity model to price premium | config coupling + logic duplication | inherent (make explicit) | **Done (2026-07-27).** Book stage now prices from its own `PricingParams`, independent of `ClaimParams` |
 | F2 | Inflation mean derived twice, for pricing and for claims | logic duplication | removable | One inflation model yielding expected and sampled factors |
 | F3 | Claims stage reads `Book.SumInsuredInflation` for base-year deflation | config coupling | inherent (make explicit) | Store base-year sum insured on `Policy` |
 | F4 | Recovery params namespaced under `claims` but used by transactions | namespacing | removable | Move `Recoveries` under `runoff`/its own group + YAML |

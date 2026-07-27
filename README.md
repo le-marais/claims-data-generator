@@ -51,7 +51,7 @@ Configure a run in the sidebar and hit Generate - the summary tab shows per-year
 
 ## How the simulation works
 
-1. **Policy book** - each year's book size is the previous year's size times a growth factor times random noise, so the book trends upward but can shrink in individual years. Per policy: sum insured (lognormal with calendar-year inflation), a mean-1 risk factor loading claim frequency, an excess from a discrete choice set. Premium is priced to a target loss ratio - each policy's premium is its expected ultimate loss divided by `target_loss_ratio` - so the accident-year loss ratio stays flat as severities inflate.
+1. **Policy book** - each year's book size is the previous year's size times a growth factor times random noise, so the book trends upward but can shrink in individual years. Per policy: sum insured (lognormal with calendar-year inflation), a mean-1 risk factor loading claim frequency, an excess from a discrete choice set. Premium is priced from a separate pricing basis - the insurer's assumed loss cost - divided by `target_loss_ratio`, independent of the claims model that generates experience. When the pricing assumptions match the true claims parameters (the shipped default) the book is priced perfectly and the realized loss ratio lands on target; deviating them models underpricing or adverse experience, and the realized loss ratio moves on its own.
 2. **Claim events** - Poisson claim counts per policy scaled by the risk factor; short lognormal report lags; ground-up losses mixing own damage (lognormal, scaled by sum insured) and third party liability (Pareto, not capped at sum insured), then scaled by a claims-inflation index at the claim's occurrence year; losses below the excess are not reportable. Close delays are gamma distributed: own-damage claims settle fast (stretched for large claims and risky policyholders), while third-party (bodily-injury) claims draw from a slower long-tail regime, so paid losses keep developing at later ages. A share of reported claims are nil - they close without any payment at their first close.
 3. **Case estimate runoff** - each claim's true ultimate cost is drawn around the initial estimate, payments split it over the claim's life, and the case estimate is a noisy view of the remaining cost that settles as the claim ages. A nil claim instead carries its case estimate through revisions and releases it to zero at close, paying nothing.
 4. **Transactions** - the first row of every claim is its initial case estimate on the report date, so the outstanding case at any time is the running sum of `ESTIMATE` amounts. Every payment carries a matching case reduction. At close the outstanding case is exactly zero and total paid equals the ultimate (zero for a nil claim). Recovery rows are the only transactions dated after a claim's final close date.
@@ -70,7 +70,7 @@ There is no valuation date: every claim runs to closure, which supports out-of-s
 
 ## Parameters per line of business
 
-All behavior is driven by a YAML file mapped to the `LineOfBusiness` domain object - see `internal/infrastructure/config/motor-personal.yaml` for the annotated motor preset. A new short-tail class is a YAML file for the CLI (`generate --config my-lob.yaml` is pure YAML, no code changes); surfacing it as a UI preset also needs one registration line in the preset registry. See `docs/roadmap.md` for the second-line-of-business plan.
+All behavior is driven by a YAML file mapped to the `LineOfBusiness` domain object - see `internal/infrastructure/config/motor-personal.yaml` for the annotated motor preset. The top-level blocks are `book`, `pricing`, `claims`, and `runoff` - `pricing` holds the insurer's assumed loss cost, kept separate from the `claims` block that generates the true experience. A new short-tail class is a YAML file for the CLI (`generate --config my-lob.yaml` is pure YAML, no code changes); surfacing it as a UI preset also needs one registration line in the preset registry. See `docs/roadmap.md` for the second-line-of-business plan.
 
 ## Assumptions and known simplifications
 
@@ -81,7 +81,7 @@ The model deliberately trades some realism for a clean, reproducible engine. The
 - **Nil claims draw severity and probability independently of claim size**; real withdrawn or nil claims skew small.
 - **No seasonality, catastrophe, or event clustering.** Occurrences are uniform within each cover period and claims are independent across policies (the only cross-policy link is the shared inflation path).
 - **Each year's book is an independent cohort** - no policy renews, so per-policy claim histories never correlate across years.
-- **The insurer prices risk perfectly** - premium uses the exact risk factor that drives claim frequency, with no pricing error, so loss ratios are more stable across cohorts than a real book's.
+- **The insurer prices risk perfectly by default, but this is configurable.** The shipped preset's `pricing` assumptions equal the true claims parameters, so premium tracks expected loss exactly and loss ratios are stable across cohorts. Set the `pricing` block away from the claims values to model underpricing, overpricing, or adverse experience; the realized loss ratio then differs from `target_loss_ratio`.
 
 ## Realism
 
