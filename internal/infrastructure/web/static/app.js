@@ -13,7 +13,21 @@ const FIELD_GROUPS = [
       { path: ["book", "spread"], label: "Spread", tip: "Heterogeneity: sigma of sum insured and sd of the risk factor." },
       { path: ["book", "sum_insured_median"], label: "Sum insured median", tip: "Year-1 median sum insured in dollars." },
       { path: ["book", "sum_insured_inflation"], label: "Sum insured inflation", tip: "Annual multiplicative drift of the median." },
-      { path: ["book", "target_loss_ratio"], label: "Target loss ratio", tip: "Premium = expected ultimate loss / target loss ratio." },
+    ],
+  },
+  {
+    label: "Pricing",
+    fields: [
+      { path: ["pricing", "target_loss_ratio"], label: "Target loss ratio", tip: "Assumed loss ratio premium is priced to. Premium = assumed expected loss / target." },
+      { path: ["pricing", "base_frequency"], label: "Assumed base frequency", tip: "Assumed ground-up frequency used for pricing (independent of the true claims frequency)." },
+      { path: ["pricing", "severity", "third_party_weight"], label: "Assumed third party weight", tip: "Assumed probability a claim is third party, for pricing." },
+      { path: ["pricing", "severity", "own_damage_median_fraction"], label: "Assumed own damage median fraction", tip: "Assumed median own-damage loss as a fraction of sum insured, for pricing." },
+      { path: ["pricing", "severity", "own_damage_sigma"], label: "Assumed own damage sigma", tip: "Assumed sigma of the own-damage lognormal, for pricing." },
+      { path: ["pricing", "severity", "third_party_scale"], label: "Assumed third party scale", tip: "Assumed Pareto scale (minimum) in dollars, for pricing." },
+      { path: ["pricing", "severity", "third_party_alpha"], label: "Assumed third party alpha", tip: "Assumed Pareto tail index, for pricing; must exceed 1." },
+      { path: ["pricing", "reopen_probability"], label: "Assumed reopen probability", tip: "Assumed reopen chance feeding the pricing uplift." },
+      { path: ["pricing", "reopen_estimate_factor"], label: "Assumed reopen estimate factor", tip: "Assumed reopen estimate factor feeding the pricing uplift." },
+      { path: ["pricing", "inflation_mean"], label: "Assumed inflation trend", tip: "Assumed mean annual claims-inflation trend used for pricing." },
     ],
   },
   {
