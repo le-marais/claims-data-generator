@@ -12,6 +12,7 @@ A living view of where claimsgen is and what comes next. Grounded in `mission.md
 - **Nil claims** - a share of reported claims close without payment, with a dedicated no-payment runoff path and a `nil_probability` off switch.
 - **Recoveries (salvage and subrogation)** - money coming back on own-damage claims after close, as SALVAGE and SUBROGATION transaction types; triangles and the realism gate go net of recoveries, and the triangle tab gains a gross/net toggle.
 - **Reopened claims** - a closed claim can reopen once and develop a second episode; claims.csv shows the final close date and the reopen appears in transactions as a case re-raised after a release to zero, with a reopen_probability off switch.
+- **Premium pricing to a target loss ratio** - premium is priced from an independent pricing basis (the insurer's assumed loss cost) divided by a `target_loss_ratio`, so the accident-year loss ratio stays flat as severities inflate. The pricing basis lives in its own `pricing` block, decoupled from the claims model: with the assumptions equal to the true claims values (the default) the book prices perfectly, and deviating them models underpricing or adverse experience with an emergent loss ratio. The realism gate guards per-year loss-ratio drift.
 
 Only motor personal exists as a line of business today.
 

@@ -16,6 +16,8 @@ The findings below are hardening and hygiene items, not remotely exploitable def
 
 This rating reflects the tool as designed and run today: local, loopback, synthetic output.
 
+**Re-verified 2026-07-27.** All seven findings were re-checked against the current code after the severity-rework, windowing, reference-pruning, and pricing refactors. None have changed: those refactors touched only the simulation and pricing logic (`application/generate.go`, the `domain` packages), not the server hardening surface (`server.go`, `csv/writer.go`), the tracked `.gitignore`, or `tools/screenshots`. M1, L1, L2, L3, I1, and I2 remain open exactly as described; I3 remains an intact, still-safe invariant. Line numbers below are as of the 2026-07-22 review and may have shifted slightly (for example the two `writeError` calls are now around `server.go:138` and `:142`), but every finding still stands.
+
 ### Findings by severity
 
 | ID | Severity | Finding | Location |

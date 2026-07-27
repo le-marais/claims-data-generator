@@ -51,15 +51,17 @@ The application layer constructs the pricer from the claims model and injects it
 
 ## F2 - Claims inflation mean is duplicated across pricing and the claims stage
 
-**Type:** logic duplication. **Nature:** removable.
+**Type:** logic duplication. **Nature:** removable. **Partly reduced by F1 (2026-07-27).**
 
 **Where:**
-- `internal/domain/policy/book.go:56` - `inflation := math.Pow(s.claims.Inflation.Mean, float64(y))` (a deterministic mean path used for pricing).
-- `internal/domain/claim/inflation.go` - `NewInflationIndex` builds the *stochastic* path from the same `InflationParams`, and the claims stage trends losses by it.
+- `internal/domain/policy/book.go:57` - `inflation := math.Pow(s.pricing.InflationMean, float64(y))` (a deterministic mean path used for pricing).
+- `internal/domain/claim/inflation.go` - `NewInflationIndex` builds the *stochastic* path from `claims.Inflation`, and the claims stage trends losses by it.
 
-**What bleeds:** two different code paths derive an inflation factor from one parameter block, for two stages. They are intentionally different (mean vs stochastic), but both hard-code the compounding rule, so a change to how inflation compounds must be made in both.
+**What bleeds:** two different code paths derive an inflation factor and each hard-code the compounding rule, so a change to how inflation compounds must be made in both.
 
 **Why it matters:** it is a subtle consistency trap - pricing uses `Mean^y`; the claims stage uses a compounded noisy index whose expectation is `Mean^y` only approximately. Divergence here shows up as a systematic loss-ratio bias that is hard to trace.
+
+**Status (2026-07-27):** Partly reduced. The independent pricing basis (F1) split the *shared parameter*: pricing now reads its own assumed `pricing.InflationMean`, and the claims stage reads the true `claims.Inflation` - they are meant to differ, so this is no longer a coupling. What remains is the *logic* duplication: `book.go:57` and `inflation.go` still each hard-code the `Mean^y` compounding independently.
 
 **Suggested alteration:** give the inflation model one type that can yield both an expected factor and a sampled factor for a given year, and have both stages consume it, rather than each raising `Mean` to a power independently. This folds naturally into the F1 pricing port (the pricer takes the expected inflation index).
 
@@ -97,20 +99,21 @@ The application layer constructs the pricer from the claims model and injects it
 
 ---
 
-## F5 - Nil and reopening are claims knobs but drive the transaction lifecycle (and pricing)
+## F5 - Nil and reopening are claims knobs but drive the transaction lifecycle
 
 **Type:** config coupling + data smuggling. **Nature:** partly inherent; the ownership can be clarified.
 
 **Where:**
 - `NilProbability` and `Reopening` live under `ClaimParams`.
 - The claims stage sets `Claim.Nil` (`claim.go`) and the reopen fields (`reopen.go`), but the transaction stage consumes them: `runoff.go:83,85,90,91` branch on `c.Nil`, `c.FirstCloseDate`, `c.ReopenDate`, `c.ReopenEstimate`.
-- `Reopening` also feeds *policy* pricing via the reopen uplift in `expectedloss.go`.
 
-**What bleeds:** the nil and reopen decisions are made in the claims stage but their entire effect is a transaction-stage lifecycle (extra episodes, zero-payment closes), and their parameters also touch policy pricing. These two knobs span all three stages.
+**What bleeds:** the nil and reopen decisions are made in the claims stage but their entire effect is a transaction-stage lifecycle (extra episodes, zero-payment closes). These knobs span the claims and transaction stages.
 
-**Why it matters:** it is hard to reason about "what does the transaction stage depend on" when its behaviour is driven by flags set two stages upstream, and about "what does pricing depend on" when a claims-lifecycle knob feeds it.
+**Why it matters:** it is hard to reason about "what does the transaction stage depend on" when its behaviour is driven by flags set two stages upstream.
 
-**Suggested alteration:** decide the canonical owner of the claim lifecycle. The cleaner split is: the claims stage owns occurrence, report, and severity only; the transaction/runoff stage owns the *lifecycle* (nil, close timing, reopen), drawing those decisions itself. That would move `NilProbability` and `Reopening` into the transaction config and remove the nil/reopen fields from the `Claim` struct. If reproducibility layering makes that too invasive, the lighter step is to regroup these as explicitly lifecycle knobs and document that pricing consumes the reopen uplift through the F1 port rather than reading `Reopening` directly.
+**Status (2026-07-27):** The pricing sub-point is resolved. Pricing no longer reads `claims.Reopening` for the reopen uplift; the independent pricing basis (F1) gave it its own assumed `pricing.ReopenProbability` and `pricing.ReopenEstimateFactor` (`internal/domain/lob/expectedloss.go`). The claims-vs-transaction lifecycle ownership below is unchanged.
+
+**Suggested alteration:** decide the canonical owner of the claim lifecycle. The cleaner split is: the claims stage owns occurrence, report, and severity only; the transaction/runoff stage owns the *lifecycle* (nil, close timing, reopen), drawing those decisions itself. That would move `NilProbability` and `Reopening` into the transaction config and remove the nil/reopen fields from the `Claim` struct. If reproducibility layering makes that too invasive, the lighter step is to regroup these as explicitly lifecycle knobs.
 
 ---
 
@@ -152,15 +155,16 @@ The application layer constructs the pricer from the claims model and injects it
 **Type:** structural. **Nature:** removable.
 
 **Where:**
-- `NewBookSimulator(book, claims)` takes all of `ClaimParams` (see F1).
-- `ExpectedPolicyLoss` is a method on `ClaimParams`, so any holder of `ClaimParams` can price.
-- Generally, each stage receives a domain sub-struct by value, and nothing structurally stops it from reading fields outside its concern.
+- `NewBookSimulator(book, pricing)` takes all of `PricingParams`; other stage constructors likewise take a whole domain sub-struct by value.
+- Nothing structurally stops a stage from reading fields outside its concern - the separation is by convention.
 
 **What bleeds:** there is no compile-time boundary preventing a stage from reaching into another stage's knobs; the current separation is by convention only, which is how F1-F5 crept in.
 
 **Why it matters:** without an enforced boundary, future changes will re-introduce reach-through even after F1-F5 are fixed.
 
-**Suggested alteration:** give each stage a narrow, purpose-built input - either a small per-stage config struct or an interface exposing only what that stage needs (the F1 `LossPricer` is one instance). Keep `LineOfBusiness` as the aggregate the config layer produces, and map it to per-stage inputs at the application boundary in `generate.go`. The compiler then enforces isolation.
+**Status (2026-07-27):** Partly demonstrated. The independent pricing basis (F1) is an instance of this pattern applied to one stage: the book simulator now takes a purpose-built `PricingParams` instead of the whole `ClaimParams`, so it structurally cannot read claims knobs. The remaining stages still take whole sub-structs.
+
+**Suggested alteration:** give each stage a narrow, purpose-built input - either a small per-stage config struct (as `PricingParams` now is) or an interface exposing only what that stage needs. Keep `LineOfBusiness` as the aggregate the config layer produces, and map it to per-stage inputs at the application boundary in `generate.go`. The compiler then enforces isolation.
 
 ---
 
@@ -173,10 +177,10 @@ The analytics (`internal/domain/triangle`, `internal/application/summary.go`, `h
 | ID | Bleed | Type | Nature | Core suggestion |
 |----|-------|------|--------|-----------------|
 | F1 | Book stage embeds and duplicates the claims severity model to price premium | config coupling + logic duplication | inherent (make explicit) | **Done (2026-07-27).** Book stage now prices from its own `PricingParams`, independent of `ClaimParams` |
-| F2 | Inflation mean derived twice, for pricing and for claims | logic duplication | removable | One inflation model yielding expected and sampled factors |
+| F2 | Inflation mean derived twice, for pricing and for claims | logic duplication | removable | Partly reduced (2026-07-27): shared param split by F1; `Mean^y` logic still duplicated. One inflation model yielding expected and sampled factors |
 | F3 | Claims stage reads `Book.SumInsuredInflation` for base-year deflation | config coupling | inherent (make explicit) | Store base-year sum insured on `Policy` |
 | F4 | Recovery params namespaced under `claims` but used by transactions | namespacing | removable | Move `Recoveries` under `runoff`/its own group + YAML |
-| F5 | Nil and reopening are claims knobs but drive the transaction lifecycle and pricing | config coupling + data smuggling | partly inherent | Move lifecycle decisions to the transaction stage, or clearly regroup |
+| F5 | Nil and reopening are claims knobs but drive the transaction lifecycle | config coupling + data smuggling | partly inherent | Pricing sub-point resolved by F1 (2026-07-27). Move lifecycle decisions to the transaction stage, or clearly regroup |
 | F6 | `Claim.RiskFactor` carried as policy state but only used inside claims | data smuggling + stale comment | removable | Remove from `Claim`; pass at draw time; fix comment |
 | F7 | `Claim.OwnDamage` crosses claim → transaction for recovery eligibility | data coupling | inherent | Keep, but make it an explicit `ClaimKind` contract |
-| F8 | Stages receive whole parameter blocks; boundaries are convention-only | structural | removable | Per-stage narrow config inputs / interfaces |
+| F8 | Stages receive whole parameter blocks; boundaries are convention-only | structural | removable | Partly demonstrated (2026-07-27): F1 gave the book stage a narrow `PricingParams`. Per-stage narrow inputs / interfaces for the rest |

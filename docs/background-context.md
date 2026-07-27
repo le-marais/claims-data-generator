@@ -2,6 +2,8 @@
 
 Consolidated from the transcripts in `docs/raw user inputs/transcripts/`. This is the original brief and captures the initial thinking, including open questions since resolved - see `docs/superpowers/specs/` for design decisions and `docs/roadmap.md` for current status.
 
+> **Historical document, intentionally not updated (reviewed 2026-07-27).** This is a point-in-time record of the original brief and its open questions - the distribution-choice and case-estimate-runoff "recommendation requested" notes below have all since been resolved in the implementation. It is deliberately preserved as written rather than refreshed to match the current code; for how the simulation actually works today see `README.md`, `docs/detailed-architecture.md`, and the specs in `docs/superpowers/specs/`.
+
 ## Purpose
 
 The team frequently needs individual insurance claims data for use in demo models and reserving processes. The app's mission is to simulate individual claims for loss reserving purposes, where the reserving exercise may be done either on an individual-claims basis or on an aggregated (triangulated) basis.

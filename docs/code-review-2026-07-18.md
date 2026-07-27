@@ -8,13 +8,18 @@ Baseline: `go vet ./...` is clean and `go test ./...` passes on every package. F
 
 **Update 2026-07-18:** the simple-to-resolve findings were addressed in a single cleanup pass (commit `ce5c013`; design in `docs/superpowers/specs/2026-07-18-review-cleanup-design.md`) and removed from this document. Findings that were only partially addressed have been trimmed to the remaining work, with a note on what was done. What remains below is the substantive backlog: the two high-severity findings, the simulation-model changes, the larger refactors, the heavier server guardrails, and CI.
 
+**Update 2026-07-27:** every finding was re-verified against the current code after the severity-rework, windowing, reference-pruning, knob-isolation, target-loss-ratio, and independent-pricing-basis refactors landed. Individual findings carry an inline **Resolved (2026-07-27)** marker where fixed.
+
+- **Resolved:** both high-severity findings (**SL-1** percentile bands + `usableRefs` filter; **MF-1** premium priced to a target loss ratio plus a per-year drift gate), plus **SL-3** (own damage capped at sum insured), **SL-4** (own-damage trend rebased to base-year sum insured), **SL-5** (nil Bernoulli always drawn; recovery types now split into their own sub-streams), **MF-2** (claim occurrences windowed to the run period), **MF-7** (`target_loss_ratio` knob, now in a dedicated `pricing` block), **D-3** (window and close-lag tests added), and part of **RF-10** (shared `bandFromValues`; single `MotorPersonal`/`Preset` load path).
+- **Still open:** **SL-2, SL-6, SL-7, SL-13, SL-14, SL-16**; **MF-3**; all robustness items **R-1, R-2, R-4, R-13, R-14**; and refactors **RF-1, RF-4, RF-5, RF-7, RF-9, RF-11, RF-13, RF-14** plus the remaining **RF-10** sub-items. The independent-pricing-basis feature is itself a fresh example of the RF-13 parameter fan-out.
+
 Severity scale: **high** - materially undermines the mission, fix before building on top; **medium** - worth addressing soon; **low** - fix when touching the area.
 
 ## Summary
 
 The codebase is in very good shape. The transaction accounting invariants the README claims (outstanding case is the running sum of ESTIMATE rows, exactly zero at close, total paid equals ultimate to the cent, recoveries strictly after final close and strictly below gross paid, nil claims pay nothing in their first episode) all hold by construction in the emitter design and are enforced by a strong end-to-end invariant test. The labelled sub-stream RNG architecture genuinely delivers the reproducibility contract. Layering is clean: the domain imports nothing outward, and the CLI and web UI share the same use cases with byte-identical CSV output (tested).
 
-Two high-severity findings, both about the gap between what the realism story promises and what it delivers:
+Two high-severity findings, both about the gap between what the realism story promises and what it delivers (both **resolved** as of 2026-07-27 - see the update note above):
 
 1. **The realism gate is near-vacuous** (SL-1). Bands are the raw min/max across all 289 reference companies with no volume or quality filter, so degenerate companies set the bounds. Measured: the loss ratio band is [0.00, 1.48] and the paid age 1-2 band is [0.71, 37.5]. A run with a 5% or 140% loss ratio still passes.
 2. **The default preset's loss ratio drifts from 69% to 101% across the ten years** (MF-1), because premiums grow at 3%/yr (sum insured inflation) while own-damage losses grow at roughly 7%/yr (sum insured inflation compounded with claims inflation) and the premium rate factor never responds. The pooled-book realism check cannot see this; any actuary computing accident-year loss ratios in a demo will notice it immediately.
@@ -26,6 +31,8 @@ Findings are labelled SL (simulation logic), MF (mission fit), R (robustness out
 ## Simulation logic
 
 ### SL-1 (high) - min/max realism bands over unfiltered companies make several checks near-vacuous
+
+**Resolved (2026-07-27).** `compare.go` now scores against P5-P95 percentile bands (`bandLoPercentile=5`, `bandHiPercentile=95`) built by `bandFromValues`, with `usableRefs` dropping companies that have zero earned premium or an all-zero incurred diagonal; min/max are kept only for display.
 
 - Where: `internal/domain/triangle/compare.go:35-54` (ATA bands), `internal/domain/triangle/compare.go:119-131` (loss ratio band).
 - Bands are the raw min and max across every reference company, with no volume or quality filter, so a single tiny or degenerate company sets the bound. Measured on the embedded data: loss ratio band [0.0000, 1.4762] (the min set by dec2025/11460, a company with near-zero incurred); paid ATA age 1-2 band [0.714, 37.5] (the max set by sep2011/18309); incurred ATA ages 1-2, 3-4, and 6-7 have band min 0.0000. Only the late ages genuinely constrain (paid age 8-9 is [0.960, 1.083]). The sep2011 vintage also contains all-zero rows (e.g. sep2011/10007, years 1988-1993).
@@ -40,11 +47,15 @@ Findings are labelled SL (simulation logic), MF (mission fit), R (robustness out
 
 ### SL-3 (medium) - own-damage severity is uncapped at the sum insured
 
+**Resolved (2026-07-27).** `internal/domain/claim/claim.go` caps the own-damage ground-up loss at the (inflated) sum insured after applying claims inflation - a total loss.
+
 - Where: `internal/domain/claim/claim.go:131-138` (`drawGroundUpLoss`).
 - The own-damage loss is sum insured times an uncapped lognormal fraction. With the preset's `own_damage_median_fraction: 0.12` and `own_damage_sigma: 1.0`, about 1.7% of own-damage claims draw a fraction above 1, and claims inflation pushes that higher in later years - producing own-damage claims paying several times the vehicle's insured value, then earning salvage and subrogation on top. Real own-damage claims cap at sum insured less excess (a total loss), which is exactly the salvage-eligible case.
 - Action: cap the own-damage ground-up loss at the (inflated) sum insured, or add a per-LOB cap parameter; consider flagging capped claims as total losses for the salvage model.
 
 ### SL-4 (medium) - claims inflation double-counts price drift for the own-damage component
+
+**Resolved (2026-07-27).** Own damage is now expressed in base-year sum-insured terms: `baseSumInsured` deflates the drifted sum insured by `sum_insured_inflation` before the lognormal fraction, and only the occurrence-year claims index is then applied, so the trend is no longer the silent product of two knobs.
 
 - Where: `internal/domain/claim/claim.go:105-106` and `internal/domain/policy/book.go:52`.
 - Own-damage losses are proportional to a sum insured that already drifts by `sum_insured_inflation` per underwriting year, and are then multiplied again by the occurrence-year claims inflation index, while third-party losses (fixed Pareto scale) get only the claims index. With the preset (1.03 and 1.04) the own-damage severity trend is about 7.1%/yr but the third-party trend is 4%/yr - anyone calibrating "claims inflation" from the YAML will misread the own-damage trend in the triangles. This is also the driver of MF-1.
@@ -52,6 +63,8 @@ Findings are labelled SL (simulation logic), MF (mission fit), R (robustness out
 - Action: rebase the own-damage component (for example apply claims inflation only to third party, or express own damage in start-year sum insured terms) so the trend is not the silent product of two knobs.
 
 ### SL-5 (medium) - the nil-claim draw breaks the knob-isolation property the other stages deliberately maintain
+
+**Resolved (2026-07-27).** The nil Bernoulli is now drawn unconditionally (constant draw count regardless of `NilProbability`), and each recovery type draws from its own labelled sub-stream (`src.Split(type)`), so toggling salvage alone no longer shifts subrogation - pinned by `TestSalvageDoesNotShiftSubrogation`.
 
 - Where: `internal/domain/claim/claim.go:114` (conditional Bernoulli), `internal/domain/claim/claim.go:73-79` (claims share one per-policy stream); same pattern at `internal/domain/transaction/recovery.go:96-98` (salvage short-circuit).
 - All claims on a policy draw sequentially from one per-policy stream, and the nil Bernoulli is only drawn when `NilProbability > 0`, so toggling nil claims on consumes an extra uniform per claim and reshuffles the dates and severities of every subsequent claim on the same policy. This contradicts the design contract that reopening (`internal/domain/claim/reopen.go:12-14`) and recoveries (`internal/domain/transaction/recovery.go:38-40`) uphold via per-claim labelled splits. Similarly, disabling salvage alone changes the same claim's subrogation outcome; `TestRecoveriesDoNotShiftOtherStages` only tests both recovery types off together.
@@ -91,12 +104,16 @@ Findings are labelled SL (simulation logic), MF (mission fit), R (robustness out
 
 ### MF-1 (high) - premium adequacy: the loss ratio deteriorates about 3%/yr with no rate response, and the realism gate cannot see it
 
+**Resolved (2026-07-27).** Premium is priced off expected loss to a `target_loss_ratio` (`book.go` premium = `pricing.ExpectedPolicyLoss(...) / pricing.TargetLossRatio`), so the accident-year loss ratio stays flat under inflation, and `compare.go` gained a per-year `lossRatioDrift` gate (second-half vs first-half, `driftTolerance = 1.10`) wired into `Report.Pass()`. Later generalised to an independent pricing basis (`docs/superpowers/specs/2026-07-27-independent-pricing-basis-design.md`).
+
 - Where: `internal/domain/policy/book.go:79` (premium = sum insured x constant rate x risk factor), `internal/infrastructure/config/motor-personal.yaml:11` (`sum_insured_inflation: 1.03`), `:18` (`premium_rate_factor: 0.035`, constant), `:39` (`inflation.mean: 1.04`), `internal/domain/triangle/compare.go:119-133` (single whole-book loss ratio check).
 - Measured on the default run: per-year loss ratios climb monotonically from 69.3% (1998) to 101.0% (2007). Premiums grow with sum insured at 3%/yr while own-damage losses compound both inflation knobs (see SL-4). The gate checks only the pooled ten-year loss ratio against [0, 1.48], so it passes.
 - Impact: the mission promises data a team member can "feed into a reserving demo without manual fixes"; a book drifting from profit to 100%+ with no rate action reads as a data artifact.
 - Action: apply the same drift to `premium_rate_factor`, or price off inflated expected loss (a target loss ratio knob would do both - see MF-7); add per-year loss ratio to the realism gate; at minimum document the drift in the README.
 
 ### MF-2 (medium) - claims.csv contains a partial extra accident year that the summary, triangles, and realism check silently drop
+
+**Resolved (2026-07-27).** `ClaimSimulator.WithWindow` constrains occurrences to `[startYear, startYear+years)`: frequency is pro-rated by each policy's in-window `exposedFraction` and occurrence draws are capped at `windowEnd`, so no trailing partial accident year spills into claims.csv. Pinned by `TestNoClaimsOutsideWindow` and `TestHeaderCountMatchesSummary`.
 
 - Where: `internal/domain/claim/claim.go:100` (occurrence uniform over the full 12-month cover, spilling past the run window), `internal/application/summary.go:58` and `:69-71`, `internal/domain/triangle/triangle.go:79-81` (occurrence years outside the window are skipped).
 - On the default run the UI header reports 27,823 claims but the summary totals 26,150; the missing 1,673 claims (6%) occur in 2008, outside the ten-year window, yet are written to claims.csv. A user triangulating the CSVs themselves gets an eleventh, partial-exposure accident year the in-app views never showed, and the header count contradicts the summary on screen.
@@ -109,6 +126,8 @@ Findings are labelled SL (simulation logic), MF (mission fit), R (robustness out
 - Action: relax validation of sub-blocks whose probability or weight is 0, so a new-class YAML author is not forced to supply parameters for features they turned off.
 
 ### MF-7 (low) - no target loss ratio parameter despite the original idea suggesting one
+
+**Resolved (2026-07-27).** A `target_loss_ratio` knob now exists, in a dedicated top-level `pricing` block (`lob.PricingParams`), and premium is priced to it.
 
 - Where: `docs/raw user inputs/rough-idea.md:9` ("Consider using pricing loss ratio as a parameter or target") vs `internal/domain/lob/lob.go:31` (only `PremiumRateFactor` exists; the loss ratio is emergent).
 - Action: a target loss ratio knob would directly fix MF-1 and match the original intent.
@@ -184,6 +203,8 @@ Findings are labelled SL (simulation logic), MF (mission fit), R (robustness out
 
 ### RF-10 (low) - small duplications worth consolidating
 
+**Partly resolved (2026-07-27).** The band min/max accumulation is now a shared `bandFromValues` helper, and `MotorPersonal`/`Preset` share a single load path against the embedded YAML. The occurrence-year map, first-close derivation, duplicate CLI unknown-command tests, paid-by-claim maps, and the thrice-repeated lognormal-lag pattern remain.
+
 - Occurrence-year map building: `internal/application/summary.go:55-57` vs `internal/domain/triangle/triangle.go:65-68`.
 - Min/max band accumulation: `internal/domain/triangle/compare.go:42-51` vs `:119-131` (an `expand(v)` helper on `Band` serves both).
 - First-close derivation (`c.CloseDate` unless reopened): `internal/domain/transaction/runoff.go:75-78` and `internal/application/invariants_test.go:73-76` - deserves a `Claim.EffectiveFirstClose()` method.
@@ -199,6 +220,8 @@ Findings are labelled SL (simulation logic), MF (mission fit), R (robustness out
 
 ### RF-13 (medium) - adding one line-of-business parameter touches five places (merged from the earlier review)
 
+**Still open (2026-07-27), with a fresh example.** The 2026-07-27 independent-pricing-basis feature added the `pricing` block through exactly this fan-out: domain struct + validation (`lob.go`), config DTO + `ToDomain` (`config.go`), preset YAML (`motor-personal.yaml`), and UI form metadata (`app.js`). See also `docs/stage-coupling-findings.md` F8, which the pricing change partly demonstrates the fix for.
+
 - Where: the domain struct plus validation (`internal/domain/lob/lob.go`), the config DTO plus `ToDomain` (`internal/infrastructure/config/config.go:188` onward), the preset YAML (`internal/infrastructure/config/motor-personal.yaml`), and the UI form metadata (`internal/infrastructure/web/static/app.js:7-62`, where labels and tips restate the YAML comments by hand). The recoveries and reopening features each show this full fan-out in their diffs.
 - This is the main friction for the roadmap's second line of business. Suggestions, in increasing order of ambition: (1) document the checklist in a short "adding a parameter" doc; (2) serve the form metadata from the server - a small registry of label/tip/group per field would let app.js build the form generically and eliminate the JS-side duplication and its drift risk against the YAML comments; (3) revisit whether the DTO layer pays its way - the mirrored structs keep the domain tag-free, a legitimate choice, but if the `ToDomain` mapping keeps growing, consider code generation or accepting yaml/json tags on the lob package.
 
@@ -210,6 +233,8 @@ Findings are labelled SL (simulation logic), MF (mission fit), R (robustness out
 ## Documentation and tests
 
 ### D-3 (low) - remaining test gaps worth closing
+
+**Resolved (2026-07-27).** The MF-2 window behaviour is pinned (`internal/application/window_test.go`), and the close-lag size loading has a shape test (`internal/domain/claim/closelag_internal_test.go`, `TestCloseLagRegimeSelectsByComponent`).
 
 - No test pins the MF-2 behavior (out-of-window occurrences present in the CSVs but absent from summaries and triangles); whichever way that finding is resolved, a test should document the choice (merged from the earlier review).
 - No test covers the statistical shape of the close-lag size loading (the step at `SizeThreshold`, `internal/domain/claim/claim.go:143-150`), which calibration for a second class will likely touch (merged from the earlier review).
@@ -226,9 +251,11 @@ Findings are labelled SL (simulation logic), MF (mission fit), R (robustness out
 
 ## Suggested priorities
 
-1. SL-1 plus MF-1 together: filter and tighten the realism bands, then fix the premium drift (a target loss ratio knob covers MF-7 too). These two make the realism story real.
-2. SL-5: close the remaining gap in the reproducibility contract (nil-claim knob isolation) before more features stack on top. (The full-dataset determinism test, RF-2, is done.)
-3. SL-3 and SL-4: cap own damage at sum insured and rebase the own-damage inflation component - both distort severity levels and trend calibration. (SL-4's documentation is done; the model rebase remains.)
-4. R-1 and R-2: the heavier server guardrails (mutex or 409 on concurrent runs, input caps plus context cancellation) before sharing the UI with the team.
-5. MF-2: decide the trailing-accident-year policy so the CSVs and the in-app views agree.
-6. RF-13 and RF-14 before starting the second line of business: both the parameter fan-out and the Claim struct's pipeline-carry fields get more expensive with every added parameter and feature.
+**Update 2026-07-27:** priorities 1, 2, 3, and 5 below are now **done** (SL-1, MF-1, MF-7, SL-5, SL-3, SL-4, MF-2). The remaining live priorities are 4 (server guardrails) and 6 (the fan-out / Claim-struct refactors before a second line of business), plus the still-open simulation-realism items SL-2, SL-6, and SL-7.
+
+1. ~~SL-1 plus MF-1 together: filter and tighten the realism bands, then fix the premium drift (a target loss ratio knob covers MF-7 too).~~ **Done.** These two made the realism story real.
+2. ~~SL-5: close the remaining gap in the reproducibility contract (nil-claim knob isolation).~~ **Done.** (The full-dataset determinism test, RF-2, is also done.)
+3. ~~SL-3 and SL-4: cap own damage at sum insured and rebase the own-damage inflation component.~~ **Done.**
+4. R-1 and R-2: the heavier server guardrails (mutex or 409 on concurrent runs, input caps plus context cancellation) before sharing the UI with the team. **Still open.**
+5. ~~MF-2: decide the trailing-accident-year policy so the CSVs and the in-app views agree.~~ **Done** (occurrences windowed to the run period).
+6. RF-13 and RF-14 before starting the second line of business: both the parameter fan-out and the Claim struct's pipeline-carry fields get more expensive with every added parameter and feature. **Still open** (the pricing feature is a fresh instance of RF-13).
