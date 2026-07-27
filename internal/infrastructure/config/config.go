@@ -23,10 +23,11 @@ var motorPersonalYAML []byte
 // These exported types also serve as the JSON shape of the web API.
 
 type LOBParams struct {
-	Name   string       `yaml:"name" json:"name"`
-	Book   BookParams   `yaml:"book" json:"book"`
-	Claims ClaimsParams `yaml:"claims" json:"claims"`
-	Runoff RunoffParams `yaml:"runoff" json:"runoff"`
+	Name    string        `yaml:"name" json:"name"`
+	Book    BookParams    `yaml:"book" json:"book"`
+	Pricing PricingParams `yaml:"pricing" json:"pricing"`
+	Claims  ClaimsParams  `yaml:"claims" json:"claims"`
+	Runoff  RunoffParams  `yaml:"runoff" json:"runoff"`
 }
 
 // BookParams mirrors lob.BookParams for YAML/JSON.
@@ -37,13 +38,22 @@ type BookParams struct {
 	SumInsuredMedian    float64              `yaml:"sum_insured_median" json:"sum_insured_median"`
 	SumInsuredInflation float64              `yaml:"sum_insured_inflation" json:"sum_insured_inflation"`
 	ExcessChoices       []ExcessChoiceParams `yaml:"excess_choices" json:"excess_choices"`
-	TargetLossRatio     float64              `yaml:"target_loss_ratio" json:"target_loss_ratio"`
 }
 
 // ExcessChoiceParams mirrors lob.ExcessChoice for YAML/JSON.
 type ExcessChoiceParams struct {
 	Value  float64 `yaml:"value" json:"value"`
 	Weight float64 `yaml:"weight" json:"weight"`
+}
+
+// PricingParams mirrors lob.PricingParams for YAML/JSON.
+type PricingParams struct {
+	TargetLossRatio      float64        `yaml:"target_loss_ratio" json:"target_loss_ratio"`
+	BaseFrequency        float64        `yaml:"base_frequency" json:"base_frequency"`
+	Severity             SeverityParams `yaml:"severity" json:"severity"`
+	ReopenProbability    float64        `yaml:"reopen_probability" json:"reopen_probability"`
+	ReopenEstimateFactor float64        `yaml:"reopen_estimate_factor" json:"reopen_estimate_factor"`
+	InflationMean        float64        `yaml:"inflation_mean" json:"inflation_mean"`
 }
 
 // ClaimsParams mirrors lob.ClaimParams for YAML/JSON.
@@ -211,7 +221,20 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			SumInsuredMedian:    d.Book.SumInsuredMedian,
 			SumInsuredInflation: d.Book.SumInsuredInflation,
 			ExcessChoices:       excesses,
-			TargetLossRatio:     d.Book.TargetLossRatio,
+		},
+		Pricing: lob.PricingParams{
+			TargetLossRatio: d.Pricing.TargetLossRatio,
+			BaseFrequency:   d.Pricing.BaseFrequency,
+			Severity: lob.SeverityParams{
+				ThirdPartyWeight:        d.Pricing.Severity.ThirdPartyWeight,
+				OwnDamageMedianFraction: d.Pricing.Severity.OwnDamageMedianFraction,
+				OwnDamageSigma:          d.Pricing.Severity.OwnDamageSigma,
+				ThirdPartyScale:         d.Pricing.Severity.ThirdPartyScale,
+				ThirdPartyAlpha:         d.Pricing.Severity.ThirdPartyAlpha,
+			},
+			ReopenProbability:    d.Pricing.ReopenProbability,
+			ReopenEstimateFactor: d.Pricing.ReopenEstimateFactor,
+			InflationMean:        d.Pricing.InflationMean,
 		},
 		Claims: lob.ClaimParams{
 			BaseFrequency:   d.Claims.BaseFrequency,

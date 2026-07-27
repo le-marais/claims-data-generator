@@ -44,7 +44,7 @@ func GenerateDataset(src shared.RandomSource, req GenerateRequest) (Dataset, err
 	if err := req.validate(); err != nil {
 		return Dataset{}, err
 	}
-	book := policy.NewBookSimulator(req.LOB.Book, req.LOB.Claims).
+	book := policy.NewBookSimulator(req.LOB.Book, req.LOB.Pricing).
 		Simulate(src.Split("book"), req.StartYear, req.Years, req.InitialBookSize)
 	// Occurrences are constrained to the window (MF-2), so the inflation index
 	// only needs to span the window years; the For clamp stays as a defensive

@@ -19,7 +19,18 @@ book:
   excess_choices:
     - {value: 0, weight: 0.1}
     - {value: 500, weight: 0.9}
+pricing:
   target_loss_ratio: 0.72
+  base_frequency: 0.15
+  severity:
+    third_party_weight: 0.15
+    own_damage_median_fraction: 0.15
+    own_damage_sigma: 1.0
+    third_party_scale: 5000
+    third_party_alpha: 2.0
+  reopen_probability: 0.04
+  reopen_estimate_factor: 0.45
+  inflation_mean: 1.04
 claims:
   base_frequency: 0.15
   report_lag_median: 2
@@ -214,5 +225,27 @@ func TestPresetUnknown(t *testing.T) {
 	}
 	if _, err := PresetParams("marine-cargo"); err == nil {
 		t.Fatal("PresetParams(marine-cargo): want error, got nil")
+	}
+}
+
+func TestMotorPresetPricesToTruth(t *testing.T) {
+	l, err := MotorPersonal()
+	if err != nil {
+		t.Fatalf("MotorPersonal: %v", err)
+	}
+	if l.Pricing.BaseFrequency != l.Claims.BaseFrequency {
+		t.Errorf("pricing base frequency %v != claims %v", l.Pricing.BaseFrequency, l.Claims.BaseFrequency)
+	}
+	if l.Pricing.Severity != l.Claims.Severity {
+		t.Errorf("pricing severity %+v != claims %+v", l.Pricing.Severity, l.Claims.Severity)
+	}
+	if l.Pricing.ReopenProbability != l.Claims.Reopening.Probability {
+		t.Errorf("pricing reopen prob %v != claims %v", l.Pricing.ReopenProbability, l.Claims.Reopening.Probability)
+	}
+	if l.Pricing.ReopenEstimateFactor != l.Claims.Reopening.EstimateFactor {
+		t.Errorf("pricing reopen factor %v != claims %v", l.Pricing.ReopenEstimateFactor, l.Claims.Reopening.EstimateFactor)
+	}
+	if l.Pricing.InflationMean != l.Claims.Inflation.Mean {
+		t.Errorf("pricing inflation mean %v != claims %v", l.Pricing.InflationMean, l.Claims.Inflation.Mean)
 	}
 }

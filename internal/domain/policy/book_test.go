@@ -24,13 +24,13 @@ func params() lob.BookParams {
 			{Value: 500, Weight: 0.3},
 			{Value: 1000, Weight: 0.1},
 		},
-		TargetLossRatio: 0.72,
 	}
 }
 
-func claimParams() lob.ClaimParams {
-	return lob.ClaimParams{
-		BaseFrequency: 0.12,
+func pricingParams() lob.PricingParams {
+	return lob.PricingParams{
+		TargetLossRatio: 0.72,
+		BaseFrequency:   0.12,
 		Severity: lob.SeverityParams{
 			ThirdPartyWeight:        0.20,
 			OwnDamageMedianFraction: 0.12,
@@ -38,8 +38,9 @@ func claimParams() lob.ClaimParams {
 			ThirdPartyScale:         4000,
 			ThirdPartyAlpha:         2.2,
 		},
-		Inflation: lob.InflationParams{Mean: 1.04},
-		Reopening: lob.ReopeningParams{Probability: 0.04, EstimateFactor: 0.45},
+		ReopenProbability:    0.04,
+		ReopenEstimateFactor: 0.45,
+		InflationMean:        1.04,
 	}
 }
 
@@ -54,7 +55,7 @@ func countByStartYear(book []policy.Policy) map[int]int {
 func TestBookSizeFollowsRecursionWithoutVolatility(t *testing.T) {
 	p := params()
 	p.SizeVolatility = 0
-	sim := policy.NewBookSimulator(p, claimParams())
+	sim := policy.NewBookSimulator(p, pricingParams())
 	book := sim.Simulate(random.NewSource(1), 1998, 3, 100)
 	counts := countByStartYear(book)
 	// 100, round(100*1.05)=105, round(105*1.05)=110
@@ -73,7 +74,7 @@ func TestBookSizeCanShrinkSomeYears(t *testing.T) {
 	p := params()
 	p.GrowthFactor = 1.02
 	p.SizeVolatility = 0.10
-	sim := policy.NewBookSimulator(p, claimParams())
+	sim := policy.NewBookSimulator(p, pricingParams())
 	book := sim.Simulate(random.NewSource(3), 1998, 15, 1000)
 	counts := countByStartYear(book)
 	years := make([]int, 0, len(counts))
@@ -93,7 +94,7 @@ func TestBookSizeCanShrinkSomeYears(t *testing.T) {
 }
 
 func TestPolicyIDsAreSequential(t *testing.T) {
-	sim := policy.NewBookSimulator(params(), claimParams())
+	sim := policy.NewBookSimulator(params(), pricingParams())
 	book := sim.Simulate(random.NewSource(1), 1998, 2, 50)
 	for i, p := range book {
 		if p.ID != i+1 {
@@ -104,7 +105,7 @@ func TestPolicyIDsAreSequential(t *testing.T) {
 
 func TestPolicyFieldConsistency(t *testing.T) {
 	prm := params()
-	sim := policy.NewBookSimulator(prm, claimParams())
+	sim := policy.NewBookSimulator(prm, pricingParams())
 	book := sim.Simulate(random.NewSource(2), 1998, 3, 500)
 	validExcess := map[float64]bool{0: true, 100: true, 300: true, 500: true, 1000: true}
 	for _, p := range book {
@@ -123,11 +124,11 @@ func TestPolicyFieldConsistency(t *testing.T) {
 		if p.RiskFactor <= 0 {
 			t.Fatalf("risk factor %v not positive", p.RiskFactor)
 		}
-		cp := claimParams()
+		pp := pricingParams()
 		yearOffset := float64(p.CoverStart.Year() - 1998)
-		infl := math.Pow(cp.Inflation.Mean, yearOffset)
+		infl := math.Pow(pp.InflationMean, yearOffset)
 		siDrift := math.Pow(prm.SumInsuredInflation, yearOffset)
-		wantPremium := cp.ExpectedPolicyLoss(p.SumInsured.Dollars(), p.Excess.Dollars(), p.RiskFactor, infl, siDrift) / prm.TargetLossRatio
+		wantPremium := pp.ExpectedPolicyLoss(p.SumInsured.Dollars(), p.Excess.Dollars(), p.RiskFactor, infl, siDrift) / pp.TargetLossRatio
 		if math.Abs(p.Premium.Dollars()-wantPremium) > 0.01 {
 			t.Fatalf("premium %v, want %v", p.Premium.Dollars(), wantPremium)
 		}
@@ -139,7 +140,7 @@ func TestSumInsuredMedianInflatesAcrossYears(t *testing.T) {
 	p.Spread = 0.05 // near-homogeneous so medians are tight
 	p.GrowthFactor = 1.0
 	p.SizeVolatility = 0
-	sim := policy.NewBookSimulator(p, claimParams())
+	sim := policy.NewBookSimulator(p, pricingParams())
 	book := sim.Simulate(random.NewSource(4), 1998, 2, 20000)
 	var y1, y2 []float64
 	for _, pol := range book {
@@ -164,7 +165,7 @@ func TestSumInsuredMedianInflatesAcrossYears(t *testing.T) {
 }
 
 func TestRiskFactorMeanIsOne(t *testing.T) {
-	sim := policy.NewBookSimulator(params(), claimParams())
+	sim := policy.NewBookSimulator(params(), pricingParams())
 	book := sim.Simulate(random.NewSource(5), 1998, 1, 50000)
 	sum := 0.0
 	for _, p := range book {
@@ -177,7 +178,7 @@ func TestRiskFactorMeanIsOne(t *testing.T) {
 }
 
 func TestExcessWeightsAreRespected(t *testing.T) {
-	sim := policy.NewBookSimulator(params(), claimParams())
+	sim := policy.NewBookSimulator(params(), pricingParams())
 	book := sim.Simulate(random.NewSource(6), 1998, 1, 50000)
 	freq := map[float64]float64{}
 	for _, p := range book {
@@ -193,7 +194,7 @@ func TestExcessWeightsAreRespected(t *testing.T) {
 }
 
 func TestSimulateIsDeterministic(t *testing.T) {
-	sim := policy.NewBookSimulator(params(), claimParams())
+	sim := policy.NewBookSimulator(params(), pricingParams())
 	a := sim.Simulate(random.NewSource(42), 1998, 3, 200)
 	b := sim.Simulate(random.NewSource(42), 1998, 3, 200)
 	if len(a) != len(b) {

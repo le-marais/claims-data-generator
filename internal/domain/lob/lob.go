@@ -9,10 +9,11 @@ import (
 )
 
 type LineOfBusiness struct {
-	Name   string
-	Book   BookParams
-	Claims ClaimParams
-	Runoff RunoffParams
+	Name    string
+	Book    BookParams
+	Pricing PricingParams
+	Claims  ClaimParams
+	Runoff  RunoffParams
 }
 
 // BookParams drives step 1, the policy book simulation.
@@ -31,14 +32,32 @@ type BookParams struct {
 	SumInsuredInflation float64
 	// ExcessChoices is the discrete set of available excesses with weights.
 	ExcessChoices []ExcessChoice
-	// TargetLossRatio prices premium: each policy's premium is its expected
-	// ultimate loss (ClaimParams.ExpectedPolicyLoss) divided by this target.
-	TargetLossRatio float64
 }
 
 type ExcessChoice struct {
 	Value  float64
 	Weight float64
+}
+
+// PricingParams drives premium pricing: the insurer's assumed loss cost,
+// independent of the claims model. Each policy's premium is its assumed
+// expected ultimate loss (ExpectedPolicyLoss) divided by TargetLossRatio.
+// When these assumptions equal the true claims values the book is priced
+// perfectly and the realized loss ratio lands on the target; deviating them
+// models underpricing or adverse experience.
+type PricingParams struct {
+	// TargetLossRatio is the assumed loss ratio premium is priced to.
+	TargetLossRatio float64
+	// BaseFrequency is the assumed ground-up occurrence frequency at risk factor 1.
+	BaseFrequency float64
+	// Severity is the assumed ground-up loss mixture.
+	Severity SeverityParams
+	// ReopenProbability and ReopenEstimateFactor are the assumed reopen uplift
+	// inputs: expected extra development is ReopenProbability * ReopenEstimateFactor.
+	ReopenProbability    float64
+	ReopenEstimateFactor float64
+	// InflationMean is the assumed mean annual claims-inflation trend.
+	InflationMean float64
 }
 
 // ClaimParams drives step 2, claim event simulation.
@@ -202,6 +221,9 @@ func (l LineOfBusiness) Validate() error {
 	if err := l.Book.validate(); err != nil {
 		return err
 	}
+	if err := l.Pricing.validate(); err != nil {
+		return err
+	}
 	if err := l.Claims.validate(); err != nil {
 		return err
 	}
@@ -215,7 +237,6 @@ func (b BookParams) validate() error {
 		namedFloat{"book.spread", b.Spread},
 		namedFloat{"book.sum_insured_median", b.SumInsuredMedian},
 		namedFloat{"book.sum_insured_inflation", b.SumInsuredInflation},
-		namedFloat{"book.target_loss_ratio", b.TargetLossRatio},
 	); err != nil {
 		return err
 	}
@@ -256,8 +277,36 @@ func (b BookParams) validate() error {
 	if totalWeight <= 0 {
 		return fmt.Errorf("book.excess_choices: weights must sum to a positive value")
 	}
-	if b.TargetLossRatio <= 0 {
-		return fmt.Errorf("book.target_loss_ratio: must be positive, got %v", b.TargetLossRatio)
+	return nil
+}
+
+func (p PricingParams) validate() error {
+	if err := checkFinite(
+		namedFloat{"pricing.target_loss_ratio", p.TargetLossRatio},
+		namedFloat{"pricing.base_frequency", p.BaseFrequency},
+		namedFloat{"pricing.reopen_probability", p.ReopenProbability},
+		namedFloat{"pricing.reopen_estimate_factor", p.ReopenEstimateFactor},
+		namedFloat{"pricing.inflation_mean", p.InflationMean},
+	); err != nil {
+		return err
+	}
+	if p.TargetLossRatio <= 0 {
+		return fmt.Errorf("pricing.target_loss_ratio: must be positive, got %v", p.TargetLossRatio)
+	}
+	if p.BaseFrequency <= 0 {
+		return fmt.Errorf("pricing.base_frequency: must be positive, got %v", p.BaseFrequency)
+	}
+	if err := p.Severity.validate("pricing.severity"); err != nil {
+		return err
+	}
+	if p.ReopenProbability < 0 || p.ReopenProbability >= 1 {
+		return fmt.Errorf("pricing.reopen_probability: must be in [0, 1), got %v", p.ReopenProbability)
+	}
+	if p.ReopenEstimateFactor <= 0 {
+		return fmt.Errorf("pricing.reopen_estimate_factor: must be positive, got %v", p.ReopenEstimateFactor)
+	}
+	if p.InflationMean <= 0 {
+		return fmt.Errorf("pricing.inflation_mean: must be positive, got %v", p.InflationMean)
 	}
 	return nil
 }
@@ -280,7 +329,7 @@ func (c ClaimParams) validate() error {
 	if c.ReportLagSigma <= 0 {
 		return fmt.Errorf("claims.report_lag_sigma: must be positive, got %v", c.ReportLagSigma)
 	}
-	if err := c.Severity.validate(); err != nil {
+	if err := c.Severity.validate("claims.severity"); err != nil {
 		return err
 	}
 	if err := c.Inflation.validate(); err != nil {
@@ -373,30 +422,30 @@ func (r ReopeningParams) validate() error {
 	return nil
 }
 
-func (s SeverityParams) validate() error {
+func (s SeverityParams) validate(prefix string) error {
 	if err := checkFinite(
-		namedFloat{"claims.severity.third_party_weight", s.ThirdPartyWeight},
-		namedFloat{"claims.severity.own_damage_median_fraction", s.OwnDamageMedianFraction},
-		namedFloat{"claims.severity.own_damage_sigma", s.OwnDamageSigma},
-		namedFloat{"claims.severity.third_party_scale", s.ThirdPartyScale},
-		namedFloat{"claims.severity.third_party_alpha", s.ThirdPartyAlpha},
+		namedFloat{prefix + ".third_party_weight", s.ThirdPartyWeight},
+		namedFloat{prefix + ".own_damage_median_fraction", s.OwnDamageMedianFraction},
+		namedFloat{prefix + ".own_damage_sigma", s.OwnDamageSigma},
+		namedFloat{prefix + ".third_party_scale", s.ThirdPartyScale},
+		namedFloat{prefix + ".third_party_alpha", s.ThirdPartyAlpha},
 	); err != nil {
 		return err
 	}
 	if s.ThirdPartyWeight < 0 || s.ThirdPartyWeight > 1 {
-		return fmt.Errorf("claims.severity.third_party_weight: must be in [0, 1], got %v", s.ThirdPartyWeight)
+		return fmt.Errorf("%s.third_party_weight: must be in [0, 1], got %v", prefix, s.ThirdPartyWeight)
 	}
 	if s.OwnDamageMedianFraction <= 0 {
-		return fmt.Errorf("claims.severity.own_damage_median_fraction: must be positive, got %v", s.OwnDamageMedianFraction)
+		return fmt.Errorf("%s.own_damage_median_fraction: must be positive, got %v", prefix, s.OwnDamageMedianFraction)
 	}
 	if s.OwnDamageSigma <= 0 {
-		return fmt.Errorf("claims.severity.own_damage_sigma: must be positive, got %v", s.OwnDamageSigma)
+		return fmt.Errorf("%s.own_damage_sigma: must be positive, got %v", prefix, s.OwnDamageSigma)
 	}
 	if s.ThirdPartyScale <= 0 {
-		return fmt.Errorf("claims.severity.third_party_scale: must be positive, got %v", s.ThirdPartyScale)
+		return fmt.Errorf("%s.third_party_scale: must be positive, got %v", prefix, s.ThirdPartyScale)
 	}
 	if s.ThirdPartyAlpha <= 1 {
-		return fmt.Errorf("claims.severity.third_party_alpha: must exceed 1 for a finite mean, got %v", s.ThirdPartyAlpha)
+		return fmt.Errorf("%s.third_party_alpha: must exceed 1 for a finite mean, got %v", prefix, s.ThirdPartyAlpha)
 	}
 	return nil
 }

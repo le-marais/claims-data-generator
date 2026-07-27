@@ -16,10 +16,23 @@ book:
     - {value: 300, weight: 0.30}
     - {value: 500, weight: 0.30}
     - {value: 1000, weight: 0.10}
-  # Premium is priced to this target loss ratio: each policy's premium is its
-  # expected ultimate loss divided by the target. Keeps the accident-year loss
-  # ratio flat as severities inflate.
+# Pricing basis: the insurer's assumed loss cost, used only to set premium.
+# Independent of the claims block, which generates the true experience. When
+# these assumptions equal the claims values (as below) the book is priced
+# perfectly and the realized loss ratio lands on target_loss_ratio; deviate
+# them to model underpricing or adverse experience.
+pricing:
   target_loss_ratio: 0.72
+  base_frequency: 0.12
+  severity:
+    third_party_weight: 0.20
+    own_damage_median_fraction: 0.12
+    own_damage_sigma: 1.0
+    third_party_scale: 4000
+    third_party_alpha: 2.2
+  reopen_probability: 0.04
+  reopen_estimate_factor: 0.45
+  inflation_mean: 1.04
 claims:
   base_frequency: 0.12
   report_lag_median: 2
