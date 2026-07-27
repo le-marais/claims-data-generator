@@ -24,14 +24,15 @@ type Policy struct {
 
 // BookSimulator generates the policy book for a run.
 type BookSimulator struct {
-	book   lob.BookParams
-	claims lob.ClaimParams
+	book    lob.BookParams
+	pricing lob.PricingParams
 }
 
-// NewBookSimulator builds a book simulator from the book and claim
-// parameters; claim parameters drive expected-loss pricing.
-func NewBookSimulator(book lob.BookParams, claims lob.ClaimParams) *BookSimulator {
-	return &BookSimulator{book: book, claims: claims}
+// NewBookSimulator builds a book simulator from the book and pricing
+// parameters; pricing parameters drive premium (independent of the claims
+// model that generates experience).
+func NewBookSimulator(book lob.BookParams, pricing lob.PricingParams) *BookSimulator {
+	return &BookSimulator{book: book, pricing: pricing}
 }
 
 // Simulate produces the book: policies written over the given calendar
@@ -53,7 +54,7 @@ func (s *BookSimulator) Simulate(src shared.RandomSource, startYear, years, init
 		}
 		year := startYear + y
 		medianSI := s.book.SumInsuredMedian * math.Pow(s.book.SumInsuredInflation, float64(y))
-		inflation := math.Pow(s.claims.Inflation.Mean, float64(y))
+		inflation := math.Pow(s.pricing.InflationMean, float64(y))
 		siDrift := math.Pow(s.book.SumInsuredInflation, float64(y))
 		for i := 0; i < size; i++ {
 			book = append(book, s.simulatePolicy(src.Split(fmt.Sprintf("policy-%d", id)), id, year, medianSI, inflation, siDrift))
@@ -75,7 +76,7 @@ func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, year int, me
 	riskFactor := src.Gamma(1/spread2, spread2)
 
 	excess := s.drawExcess(src)
-	premium := s.claims.ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflation, siDrift) / s.book.TargetLossRatio
+	premium := s.pricing.ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflation, siDrift) / s.pricing.TargetLossRatio
 
 	return Policy{
 		ID:         id,
