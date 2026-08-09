@@ -2,6 +2,7 @@ package web_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -186,7 +187,7 @@ func TestGenerateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ds, err := application.GenerateDataset(random.NewSource(7), application.GenerateRequest{
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(7), application.GenerateRequest{
 		LOB: params.ToDomain(), StartYear: 1998, Years: 2, InitialBookSize: 300,
 	})
 	if err != nil {
@@ -338,5 +339,82 @@ func TestServesStaticAssets(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("GET %s: status = %d, want 200", target, rec.Code)
 		}
+	}
+}
+
+func TestLimitsEndpoint(t *testing.T) {
+	rec := do(t, newTestServer(t), "GET", "/api/limits", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var limits struct {
+		MaxYears           int `json:"max_years"`
+		MaxInitialBookSize int `json:"max_initial_book_size"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &limits); err != nil {
+		t.Fatal(err)
+	}
+	if limits.MaxYears <= 0 || limits.MaxInitialBookSize <= 0 {
+		t.Fatalf("limits = %+v, want positive caps for the form to mirror", limits)
+	}
+}
+
+func TestGenerateRejectsOversizedRuns(t *testing.T) {
+	cases := []struct {
+		name string
+		edit func(map[string]any)
+		want string
+	}{
+		{"years above the cap", func(b map[string]any) { b["years"] = 1000 }, "years"},
+		{"book above the cap", func(b map[string]any) { b["initial_book_size"] = 50_000_000 }, "initial book size"},
+		{
+			// Neither scalar is over its own cap; the compounding is.
+			"compounding growth", func(b map[string]any) {
+				b["years"] = 100
+				params := b["params"].(config.LOBParams)
+				params.Book.GrowthFactor = 1.5
+				b["params"] = params
+			},
+			"run too large",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := generateBody(t, t.TempDir())
+			tc.edit(body)
+			rec := do(t, newTestServer(t), "POST", "/api/generate", body)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400; body = %s", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), tc.want) {
+				t.Fatalf("body = %s, want mention of %q", rec.Body.String(), tc.want)
+			}
+		})
+	}
+}
+
+func TestGenerateReportsACancelledRun(t *testing.T) {
+	outDir := t.TempDir()
+	b, err := json.Marshal(generateBody(t, outDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	req := httptest.NewRequest("POST", "/api/generate", bytes.NewReader(b)).WithContext(ctx)
+	req.Host = "127.0.0.1"
+	rec := httptest.NewRecorder()
+	newTestServer(t).ServeHTTP(rec, req)
+
+	if rec.Code != 499 {
+		t.Fatalf("status = %d, want 499 (client closed request); body = %s", rec.Code, rec.Body.String())
+	}
+	// A cancelled run must not leave a half-written CSV behind.
+	entries, err := os.ReadDir(outDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("cancelled run wrote %d files into the output directory", len(entries))
 	}
 }

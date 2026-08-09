@@ -16,7 +16,7 @@ func TestRecoveryProbabilitiesZeroLeaveNoRecoveries(t *testing.T) {
 	req := request(t)
 	req.LOB.Claims.Recoveries.Salvage.Probability = 0
 	req.LOB.Claims.Recoveries.Subrogation.Probability = 0
-	ds, err := application.GenerateDataset(random.NewSource(7), req)
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(7), req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestRecoveryProbabilitiesZeroLeaveNoRecoveries(t *testing.T) {
 // TestDefaultPresetGeneratesBothRecoveryTypes proves the feature is on by
 // default and both types appear in the output.
 func TestDefaultPresetGeneratesBothRecoveryTypes(t *testing.T) {
-	ds, err := application.GenerateDataset(random.NewSource(8), request(t))
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(8), request(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,11 +58,11 @@ func TestRecoveriesDoNotShiftOtherStages(t *testing.T) {
 	off := request(t)
 	off.LOB.Claims.Recoveries.Salvage.Probability = 0
 	off.LOB.Claims.Recoveries.Subrogation.Probability = 0
-	dsOff, err := application.GenerateDataset(random.NewSource(13), off)
+	dsOff, err := application.GenerateDataset(t.Context(), random.NewSource(13), off)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dsOn, err := application.GenerateDataset(random.NewSource(13), request(t))
+	dsOn, err := application.GenerateDataset(t.Context(), random.NewSource(13), request(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,11 +105,11 @@ func TestSalvageDoesNotShiftSubrogation(t *testing.T) {
 	off := request(t)
 	off.LOB.Claims.Recoveries.Salvage.Probability = 0
 
-	dsOn, err := application.GenerateDataset(random.NewSource(13), request(t))
+	dsOn, err := application.GenerateDataset(t.Context(), random.NewSource(13), request(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	dsOff, err := application.GenerateDataset(random.NewSource(13), off)
+	dsOff, err := application.GenerateDataset(t.Context(), random.NewSource(13), off)
 	if err != nil {
 		t.Fatal(err)
 	}

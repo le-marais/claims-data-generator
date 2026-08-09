@@ -18,7 +18,7 @@ func TestNilProbabilityZeroLeavesNoUnpaidClaims(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.Claims.NilProbability = 0
-	ds, err := application.GenerateDataset(random.NewSource(7), application.GenerateRequest{
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(7), application.GenerateRequest{
 		LOB: l, StartYear: 1998, Years: 4, InitialBookSize: 3000,
 	})
 	if err != nil {

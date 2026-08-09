@@ -18,7 +18,7 @@ func dataset(t *testing.T) application.Dataset {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ds, err := application.GenerateDataset(random.NewSource(42), application.GenerateRequest{
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(42), application.GenerateRequest{
 		LOB: l, StartYear: 1998, Years: 2, InitialBookSize: 200,
 	})
 	if err != nil {

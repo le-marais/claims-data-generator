@@ -44,7 +44,7 @@ func TestOwnDamageTrendIsClaimsIndexNotProduct(t *testing.T) {
 	req.LOB.Claims.Inflation.Mean = 1.0 // claims index off
 	req.LOB.Claims.Inflation.Volatility = 0.0
 	req.LOB.Book.SumInsuredInflation = 1.10 // strong SI drift
-	ds, err := application.GenerateDataset(random.NewSource(1), req)
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(1), req)
 	if err != nil {
 		t.Fatal(err)
 	}

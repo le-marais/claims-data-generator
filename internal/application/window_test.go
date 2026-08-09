@@ -16,7 +16,7 @@ func TestNoClaimsOutsideWindow(t *testing.T) {
 	req.StartYear = 1998
 	req.Years = 10
 	req.InitialBookSize = 4000
-	ds, err := application.GenerateDataset(random.NewSource(1), req)
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(1), req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestHeaderCountMatchesSummary(t *testing.T) {
 	req.StartYear = 1998
 	req.Years = 10
 	req.InitialBookSize = 4000
-	ds, err := application.GenerateDataset(random.NewSource(1), req)
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(1), req)
 	if err != nil {
 		t.Fatal(err)
 	}

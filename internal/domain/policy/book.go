@@ -64,6 +64,23 @@ func (s *BookSimulator) Simulate(src shared.RandomSource, startYear, years, init
 	return book
 }
 
+// ProjectedSize is the number of policies a run would write if every year's
+// size noise came out at its mean of 1: the initial size compounded by the
+// growth factor, summed over the years. It mirrors the growth rule in
+// Simulate and lets a caller size a run before paying for it. The result is a
+// float64 because a large growth factor over many years overflows an int
+// long before the run would ever finish.
+func ProjectedSize(book lob.BookParams, years, initialSize int) float64 {
+	total, size := 0.0, float64(initialSize)
+	for y := 0; y < years; y++ {
+		if y > 0 {
+			size = math.Max(size*book.GrowthFactor, 1) // Simulate floors each year at 1
+		}
+		total += size
+	}
+	return total
+}
+
 func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, year int, medianSI, inflation, siDrift float64) Policy {
 	yearStart := shared.NewDate(year, time.January, 1)
 	daysInYear := shared.DaysBetween(yearStart, shared.NewDate(year+1, time.January, 1))

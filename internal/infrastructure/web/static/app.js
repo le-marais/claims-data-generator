@@ -121,6 +121,15 @@ async function loadPreset(id) {
   buildParamsForm();
 }
 
+// The server caps run size; mirroring the caps as input bounds turns a
+// rejected run into a form validation message, and keeps the numbers in one
+// place rather than restating them here.
+async function loadLimits() {
+  const limits = await fetchJSON("/api/limits");
+  $("#years").max = limits.max_years;
+  $("#initial-book-size").max = limits.max_initial_book_size;
+}
+
 function numberInput(value, path) {
   const input = document.createElement("input");
   input.type = "number";
@@ -189,13 +198,46 @@ function collectParams() {
   return params;
 }
 
+// Results left on screen from an earlier run are dimmed and labelled while a
+// run is in flight and after a failure: the parameters beside them have moved
+// on, so they are no longer what the form describes.
+function markStale(stale) {
+  const shown = !$("#results").hidden;
+  $("#results").classList.toggle("stale", stale && shown);
+  $("#stale-note").hidden = !(stale && shown);
+}
+
+// A run has no progress to report, so the elapsed second count is the signal
+// that the server is still working.
+function startElapsed() {
+  const status = $("#run-status");
+  const started = Date.now();
+  const tick = () => {
+    status.textContent = `Generating… ${Math.round((Date.now() - started) / 1000)}s elapsed`;
+  };
+  status.hidden = false;
+  tick();
+  const timer = setInterval(tick, 1000);
+  return () => {
+    clearInterval(timer);
+    status.hidden = true;
+  };
+}
+
+let inFlight = null; // AbortController for the run in progress, if any
+
 async function generate(event) {
   event.preventDefault();
   clearError();
   if (!preset) { showError("Preset failed to load — reload the page."); return; }
   const btn = $("#generate-btn");
+  const cancelBtn = $("#cancel-btn");
+  inFlight = new AbortController();
   btn.disabled = true;
   btn.textContent = "Generating…";
+  cancelBtn.hidden = false;
+  markStale(true);
+  const stopElapsed = startElapsed();
   try {
     const body = {
       seed: $("#seed").value,
@@ -209,13 +251,20 @@ async function generate(event) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: inFlight.signal,
     });
     renderResults(run);
+    markStale(false);
   } catch (e) {
-    showError(e.message);
+    // An abort is the user's own doing, so it is reported as a state, not a
+    // failure; the results stay marked stale either way.
+    showError(e.name === "AbortError" ? "Run cancelled." : e.message);
   } finally {
+    stopElapsed();
+    inFlight = null;
     btn.disabled = false;
     btn.textContent = "Generate";
+    cancelBtn.hidden = true;
   }
 }
 
@@ -236,19 +285,32 @@ function renderRunHeader(run) {
     `${fmtInt.format(run.transactions)} transactions · ${run.out_dir}`;
 }
 
-function th(text) {
+function th(text, tip) {
   const el = document.createElement("th");
   el.textContent = text;
+  if (tip) el.title = tip;
   return el;
 }
+
+// Column labels for the summary table; the second entry is a hover tip where
+// the label alone would mislead.
+const SUMMARY_COLUMNS = [
+  ["Year"],
+  ["Policies"],
+  ["Claims"],
+  ["Nil claims", "Counted at first close: a nil claim that reopens and then pays still counts here."],
+  ["Reopened"],
+  ["Earned premium"],
+  ["Ultimate (paid)"],
+  ["Recovered"],
+  ["Loss ratio (gross)"],
+];
 
 function renderSummary(summary) {
   const table = document.createElement("table");
   table.className = "data-table";
   const head = table.createTHead().insertRow();
-  for (const label of ["Year", "Policies", "Claims", "Nil claims", "Reopened", "Earned premium", "Ultimate (paid)", "Recovered", "Loss ratio (gross)"]) {
-    head.append(th(label));
-  }
+  for (const [label, tip] of SUMMARY_COLUMNS) head.append(th(label, tip));
   const body = table.createTBody();
   for (const row of summary.years) body.append(summaryRow(row, String(row.year)));
   table.createTFoot().append(summaryRow(summary.total, "Total"));
@@ -517,9 +579,11 @@ function initTabs() {
 }
 
 $("#config-form").addEventListener("submit", generate);
+$("#cancel-btn").addEventListener("click", () => inFlight?.abort());
 $("#reset-params").addEventListener("click", () => {
   if (!preset) { showError("Preset failed to load — reload the page."); return; }
   try { buildParamsForm(); } catch (e) { showError(e.message); }
 });
 initTabs();
+loadLimits().catch((e) => showError(e.message));
 loadLOBs().catch((e) => showError(e.message));
