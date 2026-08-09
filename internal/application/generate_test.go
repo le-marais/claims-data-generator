@@ -1,6 +1,8 @@
 package application_test
 
 import (
+	"context"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -25,7 +27,7 @@ func request(t *testing.T) application.GenerateRequest {
 }
 
 func TestGenerateDatasetLinksTheThreeDatasets(t *testing.T) {
-	ds, err := application.GenerateDataset(random.NewSource(42), request(t))
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(42), request(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,11 +54,11 @@ func TestGenerateDatasetLinksTheThreeDatasets(t *testing.T) {
 }
 
 func TestGenerateDatasetIsDeterministic(t *testing.T) {
-	a, err := application.GenerateDataset(random.NewSource(7), request(t))
+	a, err := application.GenerateDataset(t.Context(), random.NewSource(7), request(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := application.GenerateDataset(random.NewSource(7), request(t))
+	b, err := application.GenerateDataset(t.Context(), random.NewSource(7), request(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +80,7 @@ func TestGenerateDatasetValidatesRequest(t *testing.T) {
 	for _, c := range cases {
 		req := request(t)
 		c.mutate(&req)
-		_, err := application.GenerateDataset(random.NewSource(1), req)
+		_, err := application.GenerateDataset(t.Context(), random.NewSource(1), req)
 		if err == nil {
 			t.Errorf("%s: expected error, got nil", c.name)
 			continue
@@ -86,5 +88,30 @@ func TestGenerateDatasetValidatesRequest(t *testing.T) {
 		if !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: error %q does not mention %q", c.name, err.Error(), c.want)
 		}
+	}
+}
+
+func TestGenerateDatasetStopsWhenCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := application.GenerateDataset(ctx, random.NewSource(42), request(t)); !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v, want context.Canceled", err)
+	}
+}
+
+func TestGenerateDatasetIgnoresContextOtherwise(t *testing.T) {
+	// The context decides only when a run stops, never what it draws.
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	a, err := application.GenerateDataset(ctx, random.NewSource(7), request(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := application.GenerateDataset(t.Context(), random.NewSource(7), request(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(a, b) {
+		t.Fatal("dataset depends on the context")
 	}
 }

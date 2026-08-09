@@ -18,7 +18,7 @@ import (
 func TestReopeningOffLeavesNoPostCloseActivity(t *testing.T) {
 	req := request(t)
 	req.LOB.Claims.Reopening.Probability = 0
-	ds, err := application.GenerateDataset(random.NewSource(17), req)
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(17), req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestReopeningOffLeavesNoPostCloseActivity(t *testing.T) {
 func TestDefaultPresetGeneratesReopenedClaims(t *testing.T) {
 	req := request(t)
 	req.InitialBookSize = 2000
-	ds, err := application.GenerateDataset(random.NewSource(18), req)
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(18), req)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,11 +72,11 @@ func TestDefaultPresetGeneratesReopenedClaims(t *testing.T) {
 func TestReopeningDoesNotShiftOtherStages(t *testing.T) {
 	off := request(t)
 	off.LOB.Claims.Reopening.Probability = 0
-	dsOff, err := application.GenerateDataset(random.NewSource(19), off)
+	dsOff, err := application.GenerateDataset(t.Context(), random.NewSource(19), off)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dsOn, err := application.GenerateDataset(random.NewSource(19), request(t))
+	dsOn, err := application.GenerateDataset(t.Context(), random.NewSource(19), request(t))
 	if err != nil {
 		t.Fatal(err)
 	}

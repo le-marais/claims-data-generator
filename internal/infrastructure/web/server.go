@@ -3,8 +3,10 @@
 package web
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net"
@@ -12,8 +14,11 @@ import (
 	"net/url"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 
 	"github.com/le-marais/claimsgen/internal/application"
+	"github.com/le-marais/claimsgen/internal/domain/lob"
+	"github.com/le-marais/claimsgen/internal/domain/policy"
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
 	"github.com/le-marais/claimsgen/internal/infrastructure/config"
 	csvout "github.com/le-marais/claimsgen/internal/infrastructure/csv"
@@ -23,17 +28,48 @@ import (
 //go:embed static
 var staticFS embed.FS
 
-// Server handles the UI's HTTP API. It is stateless apart from the loaded
-// reference sets: the latest run lives in the browser.
+// Run limits for the browser UI. They are a guard against a mistyped form -
+// book size compounds by the growth factor every year, so a slip in either
+// field can ask for billions of policies - not a security boundary; the CLI
+// stays unlimited. maxProjectedPolicies is the one that bites, since neither
+// scalar bound alone catches compounding. About 240k policies take a second
+// on a laptop, so the cap is roughly half a minute of work.
+const (
+	maxYears             = 100
+	maxInitialBookSize   = 1_000_000
+	maxProjectedPolicies = 2_000_000
+)
+
+// statusClientClosedRequest is nginx's 499: the client went away before the
+// response was ready. Go has no constant for it, and no 4xx in the standard
+// set says "you cancelled this yourself".
+const statusClientClosedRequest = 499
+
+// maxRunsInFlight is how many generate requests may be running or queued
+// before the rest are turned away. One local user needs one run; the slack is
+// for a stray double-click or a second tab, not for throughput.
+const maxRunsInFlight = 4
+
+// Server handles the UI's HTTP API. Apart from the loaded reference sets and
+// the run slot it is stateless: the latest run lives in the browser.
 type Server struct {
 	refs []triangle.ReferenceSet
 	mux  *http.ServeMux
+	// runSlot is a one-deep semaphore holding the right to generate. Two runs
+	// pointed at the same out_dir would interleave writes to the same three
+	// CSVs and both report success, so runs are serialized. Waiting for the
+	// slot is cancellable, unlike a mutex: a cancelled run keeps working until
+	// the next stage boundary, and the retry that usually follows should queue
+	// behind it rather than be rejected.
+	runSlot  chan struct{}
+	inFlight atomic.Int32
 }
 
 func NewServer(refs []triangle.ReferenceSet) *Server {
-	s := &Server{refs: refs, mux: http.NewServeMux()}
+	s := &Server{refs: refs, mux: http.NewServeMux(), runSlot: make(chan struct{}, 1)}
 	s.mux.HandleFunc("GET /api/lobs", s.handleLOBs)
 	s.mux.HandleFunc("GET /api/lobs/{id}/preset", s.handlePreset)
+	s.mux.HandleFunc("GET /api/limits", s.handleLimits)
 	s.mux.HandleFunc("POST /api/generate", s.handleGenerate)
 
 	staticRoot, err := fs.Sub(staticFS, "static")
@@ -95,6 +131,16 @@ func (s *Server) handlePreset(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, params)
 }
 
+// handleLimits serves the run caps so the form can mirror them as input
+// bounds instead of restating the numbers in JavaScript.
+func (s *Server) handleLimits(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]int{
+		"max_years":              maxYears,
+		"max_initial_book_size":  maxInitialBookSize,
+		"max_projected_policies": maxProjectedPolicies,
+	})
+}
+
 type generateRequest struct {
 	Seed            string           `json:"seed"`
 	StartYear       int              `json:"start_year"`
@@ -128,12 +174,31 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.OutDir = absOut
-	ds, err := application.GenerateDataset(random.NewSource(seed), application.GenerateRequest{
-		LOB:             req.Params.ToDomain(),
+	line := req.Params.ToDomain()
+	if err := checkRunSize(line, req.Years, req.InitialBookSize); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.acquireRun(r.Context()); err != nil {
+		if errors.Is(err, errTooManyRuns) {
+			writeError(w, http.StatusConflict, err.Error())
+		} else {
+			writeError(w, statusClientClosedRequest, "run cancelled")
+		}
+		return
+	}
+	defer s.releaseRun()
+
+	ds, err := application.GenerateDataset(r.Context(), random.NewSource(seed), application.GenerateRequest{
+		LOB:             line,
 		StartYear:       req.StartYear,
 		Years:           req.Years,
 		InitialBookSize: req.InitialBookSize,
 	})
+	if errors.Is(err, context.Canceled) {
+		writeError(w, statusClientClosedRequest, "run cancelled")
+		return
+	}
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -143,6 +208,46 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, buildResponse(req, ds, s.refs))
+}
+
+var errTooManyRuns = errors.New("too many generation runs in flight; wait for one to finish")
+
+// acquireRun blocks until this request owns the single run slot, the client
+// goes away, or too many requests are already stacked up behind it.
+func (s *Server) acquireRun(ctx context.Context) error {
+	if s.inFlight.Add(1) > maxRunsInFlight {
+		s.inFlight.Add(-1)
+		return errTooManyRuns
+	}
+	select {
+	case s.runSlot <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		s.inFlight.Add(-1)
+		return ctx.Err()
+	}
+}
+
+func (s *Server) releaseRun() {
+	<-s.runSlot
+	s.inFlight.Add(-1)
+}
+
+// checkRunSize rejects a run that would be too large to be a deliberate ask.
+// Lower bounds stay with the use case; these upper bounds are a property of
+// this interface, which is why the CLI does not share them.
+func checkRunSize(l lob.LineOfBusiness, years, initialBookSize int) error {
+	if years > maxYears {
+		return fmt.Errorf("years: must be at most %d, got %d", maxYears, years)
+	}
+	if initialBookSize > maxInitialBookSize {
+		return fmt.Errorf("initial book size: must be at most %d, got %d", maxInitialBookSize, initialBookSize)
+	}
+	if projected := policy.ProjectedSize(l.Book, years, initialBookSize); projected > maxProjectedPolicies {
+		return fmt.Errorf("run too large: %d policies over %d years at growth %g projects to about %.0f policies, more than the %d limit",
+			initialBookSize, years, l.Book.GrowthFactor, projected, maxProjectedPolicies)
+	}
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -23,7 +23,7 @@ func TestUnderpricingRaisesRealizedLossRatio(t *testing.T) {
 	}
 	req := application.GenerateRequest{LOB: base, StartYear: 1998, Years: 10, InitialBookSize: 4000}
 
-	dsBase, err := application.GenerateDataset(random.NewSource(1), req)
+	dsBase, err := application.GenerateDataset(t.Context(), random.NewSource(1), req)
 	if err != nil {
 		t.Fatalf("baseline generate: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestUnderpricingRaisesRealizedLossRatio(t *testing.T) {
 	reqUnder := req
 	reqUnder.LOB = under
 
-	dsUnder, err := application.GenerateDataset(random.NewSource(1), reqUnder)
+	dsUnder, err := application.GenerateDataset(t.Context(), random.NewSource(1), reqUnder)
 	if err != nil {
 		t.Fatalf("underpriced generate: %v", err)
 	}

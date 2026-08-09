@@ -35,6 +35,8 @@ claimsgen generate \
 
 Serves a local web UI on `http://127.0.0.1:8080` (`--port` to change). It offers the same run flags as the CLI plus every line of business parameter (prefilled from the preset, editable, including a Recoveries group for the salvage and subrogation probabilities, mean shares, and lags, and a reopen probability and reopen estimate factor for reopened claims), writes the same three CSVs on Generate, and shows the result: per-year summary stats (including a Recovered column and a Reopened column), paid and incurred development triangles with age-to-age factors and a Paid (gross) / Paid (net) / Incurred toggle, severity and lag distributions, and the run's position inside the Schedule P realism bands. The Schedule P reference data is embedded in the binary.
 
+A run reports its elapsed time and can be cancelled while it is going; the previous run's results stay on screen, dimmed and labelled, until the new ones arrive. Runs are serialized, so two tabs cannot write over each other's CSVs, and the UI caps run size - years, initial book size, and the projected policy count once the growth factor has compounded - so a mistyped parameter is rejected rather than run. The CLI has no such caps.
+
 Configure a run in the sidebar and hit Generate - the summary tab shows per-year stats for the book:
 
 ![Run configuration and per-year summary](docs/screenshots/ui-summary.png)

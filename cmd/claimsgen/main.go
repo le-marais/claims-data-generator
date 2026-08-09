@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -85,7 +86,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	ds, err := application.GenerateDataset(random.NewSource(*seed), application.GenerateRequest{
+	ds, err := application.GenerateDataset(context.Background(), random.NewSource(*seed), application.GenerateRequest{
 		LOB:             l,
 		StartYear:       *startYear,
 		Years:           *years,

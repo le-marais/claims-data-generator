@@ -13,11 +13,11 @@ import (
 func TestNilClaimsDoNotShiftOtherStages(t *testing.T) {
 	off := request(t)
 	off.LOB.Claims.NilProbability = 0
-	dsOff, err := application.GenerateDataset(random.NewSource(13), off)
+	dsOff, err := application.GenerateDataset(t.Context(), random.NewSource(13), off)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dsOn, err := application.GenerateDataset(random.NewSource(13), request(t))
+	dsOn, err := application.GenerateDataset(t.Context(), random.NewSource(13), request(t))
 	if err != nil {
 		t.Fatal(err)
 	}

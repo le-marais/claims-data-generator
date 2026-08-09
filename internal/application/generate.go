@@ -3,6 +3,7 @@
 package application
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/le-marais/claimsgen/internal/domain/claim"
@@ -39,13 +40,24 @@ func (r GenerateRequest) validate() error {
 
 // GenerateDataset runs the three simulation stages. Each stage draws from
 // its own labelled sub-stream of the given source, so results only depend
-// on the master seed and the request.
-func GenerateDataset(src shared.RandomSource, req GenerateRequest) (Dataset, error) {
+// on the master seed and the request - never on ctx, which only decides how
+// early an abandoned run stops.
+//
+// Cancellation is checked between stages rather than inside them: the domain
+// stays free of infrastructure concerns, and each stage is bounded work, so a
+// caller that walks away waits at most one stage rather than a whole run.
+func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateRequest) (Dataset, error) {
 	if err := req.validate(); err != nil {
+		return Dataset{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return Dataset{}, err
 	}
 	book := policy.NewBookSimulator(req.LOB.Book, req.LOB.Pricing).
 		Simulate(src.Split("book"), req.StartYear, req.Years, req.InitialBookSize)
+	if err := ctx.Err(); err != nil {
+		return Dataset{}, err
+	}
 	// Occurrences are constrained to the window (MF-2), so the inflation index
 	// only needs to span the window years; the For clamp stays as a defensive
 	// fallback.
@@ -57,8 +69,14 @@ func GenerateDataset(src shared.RandomSource, req GenerateRequest) (Dataset, err
 		Simulate(src.Split("claims"), book)
 	claims = claim.NewReopenSimulator(req.LOB.Claims).
 		Apply(src.Split("reopening"), claims)
+	if err := ctx.Err(); err != nil {
+		return Dataset{}, err
+	}
 	txs := transaction.NewRunoffSimulator(req.LOB.Runoff).
 		Simulate(src.Split("runoff"), claims)
+	if err := ctx.Err(); err != nil {
+		return Dataset{}, err
+	}
 	txs = transaction.NewRecoverySimulator(req.LOB.Claims.Recoveries).
 		Apply(src.Split("recovery"), claims, txs)
 	return Dataset{Policies: book, Claims: claims, Transactions: txs}, nil

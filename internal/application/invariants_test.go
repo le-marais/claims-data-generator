@@ -15,7 +15,7 @@ func TestDatasetInvariants(t *testing.T) {
 	req := request(t)
 	req.Years = 5
 	req.InitialBookSize = 2000
-	ds, err := application.GenerateDataset(random.NewSource(99), req)
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(99), req)
 	if err != nil {
 		t.Fatal(err)
 	}

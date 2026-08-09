@@ -29,10 +29,13 @@
         <button type="button" id="reset-params">Reset to preset defaults</button>
       </details>
       <button type="submit" id="generate-btn">Generate</button>
+      <button type="button" id="cancel-btn" hidden>Cancel</button>
+      <div id="run-status" class="run-status" hidden></div>
     </form>
   </aside>
   <main class="results">
     <div id="empty-state">Configure a run and hit Generate.</div>
+    <div id="stale-note" class="stale-note" hidden>Showing the previous run - these results do not match the parameters on the left.</div>
     <div id="results" hidden>
       <div id="run-header"></div>
       <nav class="tabs" id="tabs">

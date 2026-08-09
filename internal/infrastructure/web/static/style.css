@@ -93,6 +93,16 @@ summary { cursor: pointer; }
   font-weight: 600;
 }
 #generate-btn:disabled { opacity: 0.6; cursor: wait; }
+#cancel-btn {
+  width: 100%;
+  padding: 8px;
+  margin-top: 8px;
+  background: none;
+  border: 1px solid var(--baseline);
+  border-radius: 6px;
+  color: var(--text-secondary);
+}
+.run-status { margin-top: 8px; font-size: 13px; color: var(--muted); text-align: center; }
 .error-banner {
   background: color-mix(in srgb, var(--status-critical) 12%, var(--surface-1));
   border: 1px solid var(--status-critical);
@@ -107,6 +117,18 @@ summary { cursor: pointer; }
 .results { flex: 1; padding: 16px; min-width: 0; }
 #empty-state { color: var(--muted); padding: 48px; text-align: center; }
 #run-header { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
+/* A run in flight, or one that failed, leaves the previous results on screen;
+   dimming them keeps stale numbers from reading as the current parameters. */
+#results.stale { opacity: 0.45; }
+.stale-note {
+  background: var(--surface-1);
+  border: 1px solid var(--baseline);
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--grid); margin-bottom: 16px; }
 .tabs button {
   background: none;

@@ -206,3 +206,27 @@ func TestSimulateIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectedSizeMatchesTheGrowthRule(t *testing.T) {
+	book := params() // growth 1.05
+	// 100 + 105 + 110.25, before rounding.
+	if got, want := policy.ProjectedSize(book, 3, 100), 315.25; math.Abs(got-want) > 1e-9 {
+		t.Fatalf("ProjectedSize = %v, want %v", got, want)
+	}
+	// A shrinking book floors at one policy a year, as Simulate does.
+	book.GrowthFactor = 0.01
+	if got, want := policy.ProjectedSize(book, 4, 10), 10.0+1+1+1; got != want {
+		t.Fatalf("shrinking ProjectedSize = %v, want %v", got, want)
+	}
+}
+
+func TestProjectedSizeMatchesTheSimulatedBookWithoutNoise(t *testing.T) {
+	// The projection is the noise-free path, so with the size noise switched
+	// off it should be exactly the book Simulate writes.
+	book := params()
+	book.SizeVolatility = 0
+	got := len(policy.NewBookSimulator(book, pricingParams()).Simulate(random.NewSource(3), 1998, 8, 400))
+	if want := policy.ProjectedSize(book, 8, 400); math.Abs(float64(got)-want) > 8 {
+		t.Fatalf("simulated %d policies, projection %v", got, want)
+	}
+}

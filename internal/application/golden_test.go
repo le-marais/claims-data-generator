@@ -19,7 +19,7 @@ import (
 const wantHash = "c68a402d4702cdc4d37dc9850072f3409db2da91496e9752b4c5f526ee372828"
 
 func TestGoldenCSVBytes(t *testing.T) {
-	ds, err := application.GenerateDataset(random.NewSource(1), request(t))
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(1), request(t))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -31,7 +31,7 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 	for _, seed := range []uint64{1, 42, 7} {
 		seed := seed
 		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
-			ds, err := application.GenerateDataset(random.NewSource(seed), req)
+			ds, err := application.GenerateDataset(t.Context(), random.NewSource(seed), req)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -51,7 +51,7 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 	req := request(t)
 	req.Years = 10
 	req.InitialBookSize = 2000
-	ds, err := application.GenerateDataset(random.NewSource(1), req)
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(1), req)
 	if err != nil {
 		t.Fatal(err)
 	}
