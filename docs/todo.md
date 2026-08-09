@@ -9,28 +9,41 @@ vulnerability review (2026-07-22), and the stage-isolation findings
 Every item was re-verified against the code on 2026-08-09 and then scored
 against `docs/mission.md`: does it make the generated data more useful for a
 reserving demo, make a second line of business cheaper, or protect the people
-who actually run the tool (local, single-user, on a laptop)? Fifteen findings
+who actually run the tool (local, single-user, on a laptop)? Seventeen findings
 failed that test and were dropped; twelve more collapsed into four. They are
 listed at the end so they are not rediscovered from scratch by the next review.
 `go build`, `go test ./...` and `go vet ./...` are clean.
 
-Finding IDs are preserved from the source reviews so older references still
-resolve: **SL** simulation logic, **MF** mission fit, **R** robustness, **RF**
-refactoring, **D** documentation, **L** low-severity security, **F**
-stage isolation. Severity: **high** undermines the mission, **medium** worth
-addressing soon, **low** fix when touching the area. Nothing high-severity is
-open.
+Items are in priority order, weighing mission value against cost. The leading
+number is a position and will change; the finding ID after it is stable and is
+preserved from the source reviews, so older references still resolve: **SL**
+simulation logic, **MF** mission fit, **R** robustness, **RF** refactoring,
+**D** documentation, **L** low-severity security, **UX** and **CI** merged
+items. Severity: **high** undermines the mission, **medium** worth addressing
+soon, **low** fix when touching the area. Nothing high-severity is open.
 
-## Priorities
+## Order
 
-1. **SL-7.** The only open item that changes what a reserving actuary sees in
+1. **SL-7** - the only open item that changes what a reserving actuary sees in
    the data.
-2. **RF-13 and RF-14** before the second line of business - both get more
-   expensive with every parameter and feature added.
-3. **R-1 and UX-1** before the UI is shared with the team.
-4. Cheap and visible when convenient: D-1, MF-3, L2, RF-1.
+2. **R-1** - silent CSV corruption is the one open bug that breaks the MVP
+   promise, and a mutex fixes it.
+3. **D-1** - the README currently advertises defects that were fixed months ago.
+4. **MF-3** - a small change that removes the main friction from the "a new
+   class is just a YAML file" promise.
+5. **UX-1** - needed before the UI is shared with the team.
+6. **RF-13** - gates the second line of business.
+7. **RF-14** - gates the same work, and compounds with every feature added.
+8. **SL-2** - wording, so the realism gate stops claiming more than it measures.
+9. **RF-1** - two constants that can drift apart silently.
+10. **L2** - two lines in `.gitignore`.
+11. **SL-13** - a tooltip.
+12. **CI-1** - gated on the roadmap's "open to the wider community" step.
 
-## SL-7 (medium) - case estimates re-centre on the true ultimate at the first revision
+Items 8 to 11 are each under an hour; batch them into any commit that touches
+the area rather than scheduling them.
+
+## 1. SL-7 (medium) - case estimates re-centre on the true ultimate at the first revision
 
 - Where: `internal/domain/transaction/runoff.go`, `runEpisode`;
   `case_adequacy_mean: 1.0` in `internal/infrastructure/config/motor-personal.yaml`.
@@ -49,8 +62,70 @@ open.
   different remaining-source and floor rule, and a `remaining()` closure plus one
   unconditional keep-open floor removes both the duplication and a boolean
   parameter.
+- Cost note: this is the most expensive item here. It changes generated output,
+  so it needs a golden-hash refresh and a realism-gate re-check, and the preset
+  may need recalibrating.
 
-## RF-13 (medium) - adding one line-of-business parameter touches five places
+## 2. R-1 (medium) - concurrent generate requests can silently corrupt CSV output
+
+- Where: `internal/infrastructure/web/server.go`, `handleGenerate` (no
+  synchronization); `internal/infrastructure/csv/writer.go`, `writeFile`
+  (truncate then buffer-write).
+- Two simultaneous POSTs to `/api/generate` with the same `out_dir` - two tabs,
+  or a script - interleave writes to the same three files while both get 200
+  responses. Corrupt CSVs feeding a reserving demo is exactly the "manual fixes"
+  the MVP success criterion rules out.
+- Action: serialize generation with a mutex on `Server`, write to a temp dir and
+  rename, or reject overlapping runs with 409.
+
+## 3. D-1 (low) - the UI screenshots predate the pricing and windowing work
+
+- Where: `docs/screenshots/`, embedded in `README.md`.
+- The images were last regenerated before target-loss-ratio pricing and claim
+  windowing, so they still show both fixed defects: a header claim count that
+  disagrees with the summary total (27,823 versus 26,150) and per-year loss
+  ratios climbing from 0.693 to 1.010. A current run of the same defaults gives
+  26,040 claims in both places and loss ratios from 0.662 to 0.752. The sidebar
+  also predates the Pricing parameter group, and the realism tab predates the
+  loss-ratio-drift card. The README is the shopfront and it currently
+  advertises fixed bugs.
+- Action, all in one pass: regenerate with `tools/screenshots` (start the UI on
+  port 8093, `npm install`, `node screenshots.js`; needs a local Chrome,
+  `CHROME_PATH` to override the location); add the missing Pricing group to the
+  README's Browser UI paragraph (old D-2); and while in `tools/screenshots`,
+  commit `package-lock.json` and pin `puppeteer-core` to an exact version
+  instead of `^24.0.0` (old L3), which is the repo's one supply-chain weakness.
+
+## 4. MF-3 (medium) - sub-blocks must validate even when switched off
+
+- Where: `internal/domain/lob/lob.go`, `RecoveryTypeParams.validate` and
+  `SeverityParams.validate`.
+- A recovery type with `probability: 0` still has to supply a `mean_share` in
+  the open interval (0, 1), a positive concentration and a positive lag median.
+  A new-class YAML author is forced to invent parameters for features they
+  turned off, which cuts against the "a new class is a YAML file" promise.
+- Action: skip validation of a sub-block whose probability or weight is 0.
+
+## 5. UX-1 (medium) - a long or mistyped run hangs the UI with no way out
+
+Merges the old L1, R-2 and R-4: one user-facing problem, not a security finding
+plus two robustness findings.
+
+- Where: `internal/infrastructure/web/server.go`, `handleGenerate`;
+  `internal/application/generate.go`;
+  `internal/infrastructure/web/static/app.js`.
+- Validation enforces only lower bounds, and book size compounds by the growth
+  factor per year, so `years: 100` with growth 1.5 explodes to billions of
+  policies. The handler ignores `r.Context()`, so the run cannot be cancelled.
+  Feedback during generation is only the disabled button label: no elapsed-time
+  hint, no cancel, no fetch timeout. After an error the previous run's results
+  stay fully rendered beneath the banner, next to the new parameters.
+- Action: cap `years` and `initial_book_size` server-side (mirrored as `max=` on
+  the inputs), plumb the request context into generation, add an
+  AbortController-backed cancel and an elapsed-time indicator, and dim or mark
+  results as stale while generating or after an error.
+
+## 6. RF-13 (medium) - adding one line-of-business parameter touches five places
 
 - Where: the domain struct plus validation (`internal/domain/lob/lob.go`), the
   config DTO plus `ToDomain` (`internal/infrastructure/config/config.go`), the
@@ -73,7 +148,7 @@ open.
   `NewBookSimulator(book, pricing)` already shows it working - it takes a
   purpose-built `PricingParams` and structurally cannot read claims knobs.
 
-## RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
+## 7. RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
 
 Merges the old F3 and F6, which describe the same problem from the parameter
 side.
@@ -102,48 +177,7 @@ side.
   the claims stage to `recovery.go`, because only the severity draw knows the
   claim type and recovery eligibility genuinely depends on it.
 
-## MF-3 (medium) - sub-blocks must validate even when switched off
-
-- Where: `internal/domain/lob/lob.go`, `RecoveryTypeParams.validate` and
-  `SeverityParams.validate`.
-- A recovery type with `probability: 0` still has to supply a `mean_share` in
-  the open interval (0, 1), a positive concentration and a positive lag median.
-  A new-class YAML author is forced to invent parameters for features they
-  turned off, which cuts against the "a new class is a YAML file" promise.
-- Action: skip validation of a sub-block whose probability or weight is 0.
-
-## R-1 (medium) - concurrent generate requests can silently corrupt CSV output
-
-- Where: `internal/infrastructure/web/server.go`, `handleGenerate` (no
-  synchronization); `internal/infrastructure/csv/writer.go`, `writeFile`
-  (truncate then buffer-write).
-- Two simultaneous POSTs to `/api/generate` with the same `out_dir` - two tabs,
-  or a script - interleave writes to the same three files while both get 200
-  responses. Corrupt CSVs feeding a reserving demo is exactly the "manual fixes"
-  the MVP success criterion rules out.
-- Action: serialize generation with a mutex on `Server`, write to a temp dir and
-  rename, or reject overlapping runs with 409.
-
-## UX-1 (medium) - a long or mistyped run hangs the UI with no way out
-
-Merges the old L1, R-2 and R-4: one user-facing problem, not a security finding
-plus two robustness findings.
-
-- Where: `internal/infrastructure/web/server.go`, `handleGenerate`;
-  `internal/application/generate.go`;
-  `internal/infrastructure/web/static/app.js`.
-- Validation enforces only lower bounds, and book size compounds by the growth
-  factor per year, so `years: 100` with growth 1.5 explodes to billions of
-  policies. The handler ignores `r.Context()`, so the run cannot be cancelled.
-  Feedback during generation is only the disabled button label: no elapsed-time
-  hint, no cancel, no fetch timeout. After an error the previous run's results
-  stay fully rendered beneath the banner, next to the new parameters.
-- Action: cap `years` and `initial_book_size` server-side (mirrored as `max=` on
-  the inputs), plumb the request context into generation, add an
-  AbortController-backed cancel and an elapsed-time indicator, and dim or mark
-  results as stale while generating or after an error.
-
-## SL-2 (low) - the realism gate's "ultimate loss ratio" is not one
+## 8. SL-2 (low) - the realism gate's "ultimate loss ratio" is not one
 
 - Where: `internal/domain/triangle/compare.go` (`lossRatio` = latest diagonal
   over total earned premium, used for both sides); wording in
@@ -157,7 +191,7 @@ plus two robustness findings.
   band and force a preset recalibration - not worth it to remove a known,
   directional bias that the wording can state instead.
 
-## RF-1 (low) - `developmentYears` is defined twice
+## 9. RF-1 (low) - `developmentYears` is defined twice
 
 - Where: `internal/application/realism.go` and
   `internal/infrastructure/web/viewmodel.go`, which also builds the display
@@ -170,25 +204,7 @@ plus two robustness findings.
   the development-year depth ever needs to come from the reference sets rather
   than a constant.
 
-## D-1 (low) - the UI screenshots predate the pricing and windowing work
-
-- Where: `docs/screenshots/`, embedded in `README.md`.
-- The images were last regenerated before target-loss-ratio pricing and claim
-  windowing, so they still show both fixed defects: a header claim count that
-  disagrees with the summary total (27,823 versus 26,150) and per-year loss
-  ratios climbing from 0.693 to 1.010. A current run of the same defaults gives
-  26,040 claims in both places and loss ratios from 0.662 to 0.752. The sidebar
-  also predates the Pricing parameter group, and the realism tab predates the
-  loss-ratio-drift card. The README is the shopfront and it currently
-  advertises fixed bugs.
-- Action, all in one pass: regenerate with `tools/screenshots` (start the UI on
-  port 8093, `npm install`, `node screenshots.js`; needs a local Chrome,
-  `CHROME_PATH` to override the location); add the missing Pricing group to the
-  README's Browser UI paragraph (old D-2); and while in `tools/screenshots`,
-  commit `package-lock.json` and pin `puppeteer-core` to an exact version
-  instead of `^24.0.0` (old L3), which is the repo's one supply-chain weakness.
-
-## L2 (low) - agent-artifact ignore rules are not in the tracked gitignore
+## 10. L2 (low) - agent-artifact ignore rules are not in the tracked gitignore
 
 - Where: `.gitignore`, which covers only `/output/`, `/claimsgen`, `*.exe`,
   `tools/screenshots/node_modules/` and `tools/screenshots/package-lock.json`.
@@ -200,7 +216,7 @@ plus two robustness findings.
   such artifact is currently tracked - this is preventive.
 - Action: add the two patterns. Two lines.
 
-## SL-13 (low) - the "Nil claims" column does not say "at first close"
+## 11. SL-13 (low) - the "Nil claims" column does not say "at first close"
 
 - Where: the summary column label in
   `internal/infrastructure/web/static/app.js`, versus the `YearSummary` doc
@@ -211,7 +227,7 @@ plus two robustness findings.
 - Action: a tooltip. (The rest of the original finding, claim-type-dependent
   reopen propensity, is dropped - see below.)
 
-## CI-1 (low) - no CI and no dependency scanning
+## 12. CI-1 (low) - no CI and no dependency scanning
 
 Merges the old R-13 and I2.
 
