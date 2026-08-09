@@ -404,6 +404,8 @@ The front end (`static/index.html`, `static/app.js`, `static/style.css`) is a si
 
 `refdata` embeds the Schedule P datasets so the binary can assess realism without repository access. `Files embed.FS` (`//go:embed "schedule p/ppauto_pos98-07/*.json"`) holds the 96 curated private-passenger-auto companies for accident years 1998-2007, and `const PersonalMotorDir = "schedule p/ppauto_pos98-07"` names the directory. `runUI` loads them via `schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)`.
 
+`data/reference/schedule p/` also holds curated companies for the other five Schedule P lines (commercial auto, other liability, workers compensation, products liability, medical malpractice), tracked against `data/reference/gr-code-list.md` and applied with `tools/prune-dec2025.ps1`. They are not embedded and nothing reads them today; they are staged for per-line-of-business calibration (see `docs/roadmap.md`).
+
 ## 13. CLI (`cmd/claimsgen/main.go`)
 
 A single verb-first binary: `claimsgen <command> [flags]`.

@@ -1,3 +1,5 @@
+> **OUT OF CONTEXT - do not read (2026-08-09):** historical design record, kept for provenance only. Agents must not load this file into context or treat it as a source of truth; it records decisions as of its own date and may not match current behaviour. For how the system works today see `README.md`, `AGENTS.md`, and `docs/detailed-architecture.md`.
+
 > **Superseded (2026-07-20):** the sep2011 vintage was removed and the reference pool is now single-vintage (dec2025, hand-curated). See `docs/superpowers/specs/2026-07-20-reference-pruning-realism-bands-design.md`. Kept for historical context.
 
 # Merge the sep2011 personal motor reference data into the app's reference pool

@@ -38,7 +38,7 @@ The layout is domain-driven. Respect the dependency direction: `domain` depends 
 - `internal/application/` - use cases: `GenerateDataset`, summary stats, histograms, and the realism check.
 - `internal/infrastructure/` - adapters: `config` (YAML plus the embedded motor preset), `csv` (writer), `schedulep` (reference-data reader), `random` (gonum-backed source), `web` (server, view models, static assets).
 - `data/reference/` - embedded Schedule P reference companies and the curation list.
-- `docs/` - mission, roadmap, and design specs/plans under `docs/superpowers/`.
+- `docs/` - mission, roadmap, architecture notes, and `todo.md` (the consolidated open-work backlog). `docs/superpowers/specs/` holds historical design records that are explicitly out of context (see "Design and process docs").
 
 ## Build, run, test
 
@@ -70,7 +70,9 @@ The maintainer prefers **domain-driven design** and **event sourcing where appro
 
 ## Design and process docs
 
-Substantial features are specced before implementation. Specs live in `docs/superpowers/specs/` and plans in `docs/superpowers/plans/`, dated and named per feature. Read the relevant spec before changing an area it covers, and keep `docs/roadmap.md` current when shipping or planning work.
+`docs/superpowers/specs/` is **out of context**. Every file there carries an "OUT OF CONTEXT - do not read" banner: they are historical design records, kept for provenance only. Do not read them, do not load them into context, and do not cite them as current behaviour - they describe decisions as of their own dates. The implementation plans that accompanied them (`docs/superpowers/plans/`) have been removed; recover them from git history if ever needed.
+
+Treat the code, `README.md`, this file, and `docs/detailed-architecture.md` as the sources of truth. Keep `docs/roadmap.md` and `docs/todo.md` current when shipping or planning work: the roadmap carries direction and sequencing, `todo.md` carries the open findings from the code, security and stage-isolation reviews (IDs preserved, so a fixed item should be moved to its "Resolved, for provenance" list rather than silently deleted).
 
 ## Writing style (docs and comments)
 
