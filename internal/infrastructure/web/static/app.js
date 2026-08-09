@@ -28,6 +28,7 @@ const FIELD_GROUPS = [
       { path: ["pricing", "reopen_probability"], label: "Assumed reopen probability", tip: "Assumed reopen chance feeding the pricing uplift." },
       { path: ["pricing", "reopen_estimate_factor"], label: "Assumed reopen estimate factor", tip: "Assumed reopen estimate factor feeding the pricing uplift." },
       { path: ["pricing", "inflation_mean"], label: "Assumed inflation trend", tip: "Assumed mean annual claims-inflation trend used for pricing." },
+      { path: ["pricing", "case_adequacy_mean"], label: "Assumed case adequacy", tip: "Assumed ultimate over first case estimate, for pricing; mirrors the runoff knob of the same name." },
     ],
   },
   {

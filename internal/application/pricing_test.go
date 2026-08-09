@@ -54,3 +54,46 @@ func TestUnderpricingRaisesRealizedLossRatio(t *testing.T) {
 		t.Fatalf("underpriced loss ratio %.3f not clearly above target %.3f", lrUnder, base.Pricing.TargetLossRatio)
 	}
 }
+
+// Case adequacy raises every claim's ultimate above the estimate it opened at.
+// Because pricing carries the same assumption, premium rises with it and the
+// realized loss ratio does not move: the knob buys IBNER signal in the incurred
+// triangle without silently repricing the book.
+func TestMatchedCaseAdequacyLeavesTheLossRatioAlone(t *testing.T) {
+	base, err := config.MotorPersonal()
+	if err != nil {
+		t.Fatalf("MotorPersonal: %v", err)
+	}
+	req := application.GenerateRequest{LOB: base, StartYear: 1998, Years: 10, InitialBookSize: 4000}
+
+	lrAt := func(adequacy float64) float64 {
+		l := base
+		l.Runoff.CaseAdequacyMean = adequacy
+		l.Pricing.CaseAdequacyMean = adequacy
+		r := req
+		r.LOB = l
+		ds, err := application.GenerateDataset(t.Context(), random.NewSource(1), r)
+		if err != nil {
+			t.Fatalf("generate at adequacy %v: %v", adequacy, err)
+		}
+		return pooledLossRatio(application.Summarize(ds, 1998, 10))
+	}
+
+	lrFlat, lrInadequate := lrAt(1.0), lrAt(1.3)
+	if diff := lrInadequate - lrFlat; diff < -0.005 || diff > 0.005 {
+		t.Fatalf("loss ratio moved with matched case adequacy: %.4f at 1.0 vs %.4f at 1.3", lrFlat, lrInadequate)
+	}
+
+	// Left out of pricing, the same uplift is pure adverse experience.
+	unpriced := base
+	unpriced.Runoff.CaseAdequacyMean = 1.3
+	reqUnpriced := req
+	reqUnpriced.LOB = unpriced
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(1), reqUnpriced)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lr := pooledLossRatio(application.Summarize(ds, 1998, 10)); lr <= lrFlat+0.05 {
+		t.Fatalf("unpriced case adequacy did not raise the loss ratio: %.4f vs %.4f", lr, lrFlat)
+	}
+}

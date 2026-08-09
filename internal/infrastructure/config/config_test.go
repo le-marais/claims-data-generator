@@ -31,6 +31,7 @@ pricing:
   reopen_probability: 0.04
   reopen_estimate_factor: 0.45
   inflation_mean: 1.04
+  case_adequacy_mean: 1.10
 claims:
   base_frequency: 0.15
   report_lag_median: 2
@@ -247,5 +248,10 @@ func TestMotorPresetPricesToTruth(t *testing.T) {
 	}
 	if l.Pricing.InflationMean != l.Claims.Inflation.Mean {
 		t.Errorf("pricing inflation mean %v != claims %v", l.Pricing.InflationMean, l.Claims.Inflation.Mean)
+	}
+	// Severity prices the estimate a claim opens at, so pricing has to carry the
+	// same case-adequacy uplift the runoff applies to reach the ultimate.
+	if l.Pricing.CaseAdequacyMean != l.Runoff.CaseAdequacyMean {
+		t.Errorf("pricing case adequacy %v != runoff %v", l.Pricing.CaseAdequacyMean, l.Runoff.CaseAdequacyMean)
 	}
 }

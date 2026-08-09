@@ -56,6 +56,12 @@ type PricingParams struct {
 	// inputs: expected extra development is ReopenProbability * ReopenEstimateFactor.
 	ReopenProbability    float64
 	ReopenEstimateFactor float64
+	// CaseAdequacyMean is the assumed ratio of ultimate cost to first case
+	// estimate. The severity assumption above prices the estimate a claim opens
+	// at, so pricing has to carry the same uplift the runoff applies to reach
+	// the ultimate, or a book with inadequate case estimates looks underpriced
+	// when it is not.
+	CaseAdequacyMean float64
 	// InflationMean is the assumed mean annual claims-inflation trend.
 	InflationMean float64
 }
@@ -287,6 +293,7 @@ func (p PricingParams) validate() error {
 		namedFloat{"pricing.reopen_probability", p.ReopenProbability},
 		namedFloat{"pricing.reopen_estimate_factor", p.ReopenEstimateFactor},
 		namedFloat{"pricing.inflation_mean", p.InflationMean},
+		namedFloat{"pricing.case_adequacy_mean", p.CaseAdequacyMean},
 	); err != nil {
 		return err
 	}
@@ -307,6 +314,9 @@ func (p PricingParams) validate() error {
 	}
 	if p.InflationMean <= 0 {
 		return fmt.Errorf("pricing.inflation_mean: must be positive, got %v", p.InflationMean)
+	}
+	if p.CaseAdequacyMean <= 0 {
+		return fmt.Errorf("pricing.case_adequacy_mean: must be positive, got %v", p.CaseAdequacyMean)
 	}
 	return nil
 }

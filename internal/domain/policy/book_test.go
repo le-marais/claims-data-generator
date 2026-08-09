@@ -40,6 +40,7 @@ func pricingParams() lob.PricingParams {
 		},
 		ReopenProbability:    0.04,
 		ReopenEstimateFactor: 0.45,
+		CaseAdequacyMean:     1.10,
 		InflationMean:        1.04,
 	}
 }

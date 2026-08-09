@@ -422,3 +422,106 @@ func TestNilClaimTinyEstimateStillClosesOnCloseDate(t *testing.T) {
 		}
 	}
 }
+
+// incurredAt returns paid plus outstanding case for one claim as at the given
+// number of days after report, replaying its ledger.
+func incurredAt(txs []transaction.Transaction, report shared.Date, day int) (incurred, paid shared.Money) {
+	for _, tx := range txs {
+		if shared.DaysBetween(report, tx.Date) > day {
+			break
+		}
+		if tx.Type == transaction.Payment {
+			paid += tx.Amount
+		} else {
+			incurred += tx.Amount // ESTIMATE rows sum to the outstanding case
+		}
+	}
+	return incurred + paid, paid
+}
+
+// SL-7: with case estimates systematically inadequate, incurred must sit below
+// the ultimate all the way through a claim's life, not just until the first
+// revision. The gap is what IBNER methods are built to detect.
+func TestCaseAdequacyBiasPersistsAndDecays(t *testing.T) {
+	p := params()
+	p.CaseAdequacyMean = 1.25
+	p.CaseAdequacySigma = 0.05 // isolate the systematic bias from individual noise
+	p.RevisionSigma = 0.05
+
+	// One long-running size of claim, so every claim is observed at the same
+	// fractions of its life.
+	const n, duration = 400, 1000
+	claims := make([]claim.Claim, n)
+	report := shared.NewDate(1998, time.March, 1)
+	for i := range claims {
+		claims[i] = claim.Claim{
+			ID: i + 1, PolicyID: i + 1,
+			OccurrenceDate:  report.AddDays(-2),
+			ReportDate:      report,
+			CloseDate:       report.AddDays(duration),
+			InitialEstimate: shared.FromDollars(20000),
+			RiskFactor:      1.0,
+		}
+	}
+	grouped := byClaim(transaction.NewRunoffSimulator(p).Simulate(random.NewSource(5), claims))
+
+	// Ratio of incurred to ultimate, pooled across claims, at each age.
+	ratioAt := func(day int) float64 {
+		var incurred, ultimate shared.Money
+		for _, txs := range grouped {
+			i, _ := incurredAt(txs, report, day)
+			u, _ := incurredAt(txs, report, duration)
+			incurred += i
+			ultimate += u
+		}
+		return float64(incurred) / float64(ultimate)
+	}
+
+	quarter, half, threeQuarters := ratioAt(duration/4), ratioAt(duration/2), ratioAt(3*duration/4)
+	if quarter >= 1 {
+		t.Fatalf("incurred/ultimate at a quarter of the claim's life = %.4f, want below 1 with inadequate cases", quarter)
+	}
+	if !(quarter < half && half < threeQuarters) {
+		t.Fatalf("adequacy gap does not close with age: %.4f, %.4f, %.4f", quarter, half, threeQuarters)
+	}
+	if threeQuarters >= 1 {
+		t.Fatalf("incurred/ultimate at three quarters = %.4f, want still below 1", threeQuarters)
+	}
+	// Every claim closes fully developed, so the gap is gone by the close.
+	if end := ratioAt(duration); math.Abs(end-1) > 1e-9 {
+		t.Fatalf("incurred/ultimate at close = %.9f, want 1", end)
+	}
+}
+
+// A mean of 1 is the unbiased case: no systematic gap at any age.
+func TestCaseAdequacyMeanOneLeavesIncurredUnbiased(t *testing.T) {
+	p := params()
+	p.CaseAdequacySigma = 0.05
+	p.RevisionSigma = 0.05
+
+	const n, duration = 400, 1000
+	claims := make([]claim.Claim, n)
+	report := shared.NewDate(1998, time.March, 1)
+	for i := range claims {
+		claims[i] = claim.Claim{
+			ID: i + 1, PolicyID: i + 1,
+			OccurrenceDate:  report.AddDays(-2),
+			ReportDate:      report,
+			CloseDate:       report.AddDays(duration),
+			InitialEstimate: shared.FromDollars(20000),
+			RiskFactor:      1.0,
+		}
+	}
+	grouped := byClaim(transaction.NewRunoffSimulator(p).Simulate(random.NewSource(5), claims))
+
+	var incurred, ultimate shared.Money
+	for _, txs := range grouped {
+		i, _ := incurredAt(txs, report, duration/2)
+		u, _ := incurredAt(txs, report, duration)
+		incurred += i
+		ultimate += u
+	}
+	if ratio := float64(incurred) / float64(ultimate); math.Abs(ratio-1) > 0.02 {
+		t.Fatalf("incurred/ultimate at half life = %.4f, want ~1 at adequacy mean 1", ratio)
+	}
+}

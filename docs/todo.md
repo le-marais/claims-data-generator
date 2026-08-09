@@ -24,45 +24,22 @@ soon, **low** fix when touching the area. Nothing high-severity is open.
 
 ## Order
 
-1. **SL-7** - the only open item that changes what a reserving actuary sees in
-   the data.
-2. **D-1** - the README currently advertises defects that were fixed months ago.
-3. **MF-3** - a small change that removes the main friction from the "a new
+1. **D-1** - the README currently advertises defects that were fixed months ago,
+   and the screenshots now also predate the case-adequacy calibration.
+2. **MF-3** - a small change that removes the main friction from the "a new
    class is just a YAML file" promise.
-4. **RF-13** - gates the second line of business.
-5. **RF-14** - gates the same work, and compounds with every feature added.
-6. **SL-2** - wording, so the realism gate stops claiming more than it measures.
-7. **RF-1** - two constants that can drift apart silently.
-8. **L2** - two lines in `.gitignore`.
-9. **CI-1** - gated on the roadmap's "open to the wider community" step.
+3. **RF-13** - gates the second line of business.
+4. **RF-14** - gates the same work, and compounds with every feature added.
+5. **SL-2** - wording, so the realism gate stops claiming more than it measures.
+6. **RF-1** - two constants that can drift apart silently.
+7. **L2** - two lines in `.gitignore`.
+8. **CI-1** - gated on the roadmap's "open to the wider community" step.
 
-Items 6 to 8 are each under an hour; batch them into any commit that touches
-the area rather than scheduling them.
+Items 5 to 7 are each under an hour; batch them into any commit that touches
+the area rather than scheduling them. Nothing open now changes what a reserving
+actuary sees in the data.
 
-## 1. SL-7 (medium) - case estimates re-centre on the true ultimate at the first revision
-
-- Where: `internal/domain/transaction/runoff.go`, `runEpisode`;
-  `case_adequacy_mean: 1.0` in `internal/infrastructure/config/motor-personal.yaml`.
-- Every revision targets `(ultimate - paid)` times mean-one lognormal noise
-  whose sigma decays with age. Even with a case adequacy mean away from 1, the
-  first revision (Poisson, about 4/yr) snaps the case to an unbiased view of the
-  truth. Real incurred triangles show persistent case strengthening or weakening
-  that IBNER methods are built to detect; here incurred is unbiased at every
-  age, so incurred-based methods look trivially perfect - the wrong impression
-  for a tool whose job is feeding reserving demos.
-- Already documented in the README and in a code comment. The model change
-  remains.
-- Action: let the adequacy bias decay gradually over the claim's life instead of
-  vanishing at the first revision. While in this function, fold in the old RF-4:
-  the nil branch duplicates the sigma-decay and target computation with a
-  different remaining-source and floor rule, and a `remaining()` closure plus one
-  unconditional keep-open floor removes both the duplication and a boolean
-  parameter.
-- Cost note: this is the most expensive item here. It changes generated output,
-  so it needs a golden-hash refresh and a realism-gate re-check, and the preset
-  may need recalibrating.
-
-## 2. D-1 (low) - the UI screenshots predate the pricing and windowing work
+## 1. D-1 (low) - the UI screenshots predate the pricing and windowing work
 
 - Where: `docs/screenshots/`, embedded in `README.md`.
 - The images were last regenerated before target-loss-ratio pricing and claim
@@ -80,7 +57,7 @@ the area rather than scheduling them.
   commit `package-lock.json` and pin `puppeteer-core` to an exact version
   instead of `^24.0.0` (old L3), which is the repo's one supply-chain weakness.
 
-## 3. MF-3 (medium) - sub-blocks must validate even when switched off
+## 2. MF-3 (medium) - sub-blocks must validate even when switched off
 
 - Where: `internal/domain/lob/lob.go`, `RecoveryTypeParams.validate` and
   `SeverityParams.validate`.
@@ -90,7 +67,7 @@ the area rather than scheduling them.
   turned off, which cuts against the "a new class is a YAML file" promise.
 - Action: skip validation of a sub-block whose probability or weight is 0.
 
-## 4. RF-13 (medium) - adding one line-of-business parameter touches five places
+## 3. RF-13 (medium) - adding one line-of-business parameter touches five places
 
 - Where: the domain struct plus validation (`internal/domain/lob/lob.go`), the
   config DTO plus `ToDomain` (`internal/infrastructure/config/config.go`), the
@@ -99,7 +76,10 @@ the area rather than scheduling them.
   tips restate the YAML comments by hand).
 - This is the main friction for the roadmap's second line of business. The
   2026-07-27 independent-pricing-basis feature added the `pricing` block through
-  exactly this fan-out - a current instance, not a historical one.
+  exactly this fan-out, and the 2026-08-10 case-adequacy pass paid it again for
+  a single float: `pricing.case_adequacy_mean` touched the domain struct, its
+  validation, the DTO, `ToDomain`, the preset YAML, the UI field list, and four
+  test fixtures. A current instance, not a historical one.
 - Action, in increasing order of ambition: (1) document the checklist in a short
   "adding a parameter" note; (2) serve the form metadata from the server - a
   small registry of label, tip and group per field would let `app.js` build the
@@ -113,7 +93,7 @@ the area rather than scheduling them.
   `NewBookSimulator(book, pricing)` already shows it working - it takes a
   purpose-built `PricingParams` and structurally cannot read claims knobs.
 
-## 5. RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
+## 4. RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
 
 Merges the old F3 and F6, which describe the same problem from the parameter
 side.
@@ -142,7 +122,7 @@ side.
   the claims stage to `recovery.go`, because only the severity draw knows the
   claim type and recovery eligibility genuinely depends on it.
 
-## 6. SL-2 (low) - the realism gate's "ultimate loss ratio" is not one
+## 5. SL-2 (low) - the realism gate's "ultimate loss ratio" is not one
 
 - Where: `internal/domain/triangle/compare.go` (`lossRatio` = latest diagonal
   over total earned premium, used for both sides); wording in
@@ -156,7 +136,7 @@ side.
   band and force a preset recalibration - not worth it to remove a known,
   directional bias that the wording can state instead.
 
-## 7. RF-1 (low) - `developmentYears` is defined twice
+## 6. RF-1 (low) - `developmentYears` is defined twice
 
 - Where: `internal/application/realism.go` and
   `internal/infrastructure/web/viewmodel.go`, which also builds the display
@@ -169,7 +149,7 @@ side.
   the development-year depth ever needs to come from the reference sets rather
   than a constant.
 
-## 8. L2 (low) - agent-artifact ignore rules are not in the tracked gitignore
+## 7. L2 (low) - agent-artifact ignore rules are not in the tracked gitignore
 
 - Where: `.gitignore`, which covers only `/output/`, `/claimsgen`, `*.exe`,
   `tools/screenshots/node_modules/` and `tools/screenshots/package-lock.json`.
@@ -181,7 +161,7 @@ side.
   such artifact is currently tracked - this is preventive.
 - Action: add the two patterns. Two lines.
 
-## 9. CI-1 (low) - no CI and no dependency scanning
+## 8. CI-1 (low) - no CI and no dependency scanning
 
 Merges the old R-13 and I2.
 
@@ -272,6 +252,20 @@ in the removed review documents in git history.
 
 Full text and the measurements behind each are in git history.
 
+- **2026-08-10 case adequacy pass**: **SL-7** - the reserver's adequacy bias now
+  decays geometrically over each claim's life (`adequacyBias` in
+  `runoff.go`) instead of vanishing at the first revision, so incurred carries
+  IBNER signal at every age. The old **RF-4** duplication went with it: the nil
+  and paying branches of `runEpisode` are one loop with an `aim()` closure, one
+  unconditional keep-open floor, and no `floorRevisions` boolean. The preset
+  moves to `case_adequacy_mean: 1.10`, which puts incurred ATA age 1-2 on the
+  middle of its Schedule P band. Pricing gained a matching
+  `pricing.case_adequacy_mean`: the severity assumption prices the estimate a
+  claim opens at, so without it a book with inadequate cases would read as
+  underpriced. Golden hash refreshed - claims.csv is byte-identical, premium
+  scales by exactly the adequacy factor, and transactions gained 235 rows
+  (+0.08%) where the new floor keeps a case open to its close date instead of
+  releasing it early.
 - **2026-08-10 web-run reliability pass**: **R-1** (generation runs one at a
   time behind a one-deep slot on `Server`, so two tabs pointed at one `out_dir`
   can no longer interleave writes; the slot is a channel rather than a mutex so

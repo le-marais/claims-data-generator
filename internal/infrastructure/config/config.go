@@ -54,6 +54,7 @@ type PricingParams struct {
 	ReopenProbability    float64        `yaml:"reopen_probability" json:"reopen_probability"`
 	ReopenEstimateFactor float64        `yaml:"reopen_estimate_factor" json:"reopen_estimate_factor"`
 	InflationMean        float64        `yaml:"inflation_mean" json:"inflation_mean"`
+	CaseAdequacyMean     float64        `yaml:"case_adequacy_mean" json:"case_adequacy_mean"`
 }
 
 // ClaimsParams mirrors lob.ClaimParams for YAML/JSON.
@@ -235,6 +236,7 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			ReopenProbability:    d.Pricing.ReopenProbability,
 			ReopenEstimateFactor: d.Pricing.ReopenEstimateFactor,
 			InflationMean:        d.Pricing.InflationMean,
+			CaseAdequacyMean:     d.Pricing.CaseAdequacyMean,
 		},
 		Claims: lob.ClaimParams{
 			BaseFrequency:   d.Claims.BaseFrequency,

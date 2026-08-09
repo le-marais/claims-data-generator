@@ -33,6 +33,11 @@ pricing:
   reopen_probability: 0.04
   reopen_estimate_factor: 0.45
   inflation_mean: 1.04
+  # Assumed ultimate / first case estimate. The severity block above prices the
+  # estimate a claim opens at, so this carries it up to the ultimate the runoff
+  # pays; it mirrors runoff.case_adequacy_mean, and the two matching is what
+  # makes the shipped preset price to target.
+  case_adequacy_mean: 1.10
 claims:
   base_frequency: 0.12
   report_lag_median: 2
@@ -98,7 +103,13 @@ claims:
     lag_median_days: 90
     lag_sigma: 0.7
 runoff:
-  case_adequacy_mean: 1.0
+  # Ultimate over first case estimate: the reserver's systematic bias. Above 1
+  # means first estimates are inadequate and cases strengthen as claims mature.
+  # The bias decays geometrically over each claim's life rather than vanishing
+  # at the first revision, so incurred triangles carry IBNER signal at every
+  # age. 1.10 puts incurred ATA age 1-2 on the middle of its Schedule P band;
+  # pricing.case_adequacy_mean must match, or the book prices off target.
+  case_adequacy_mean: 1.10
   case_adequacy_sigma: 0.35
   payments_per_year: 2.5
   settlement_share: 0.4

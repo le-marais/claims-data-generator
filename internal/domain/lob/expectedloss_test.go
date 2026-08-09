@@ -89,6 +89,7 @@ func TestExpectedPolicyLossScalesWithRiskAndInflation(t *testing.T) {
 		},
 		ReopenProbability:    0.04,
 		ReopenEstimateFactor: 0.45,
+		CaseAdequacyMean:     1.10,
 	}
 	base := p.ExpectedPolicyLoss(20000, 300, 1.0, 1.0, 1.0)
 	if base <= 0 {
@@ -116,6 +117,7 @@ func TestExpectedPolicyLossRebasesAndCapsOwnDamage(t *testing.T) {
 		},
 		ReopenProbability:    0.04,
 		ReopenEstimateFactor: 0.45,
+		CaseAdequacyMean:     1.10,
 	}
 	// De-drift: a larger siDrift (same nominal SI) means a smaller base-year
 	// severity, so the expected loss falls.
@@ -128,7 +130,7 @@ func TestExpectedPolicyLossRebasesAndCapsOwnDamage(t *testing.T) {
 	// above the cap with a tiny siDrift and check the ceiling holds.
 	const si, excess = 20000.0, 300.0
 	reopenUplift := 1 + p.ReopenProbability*p.ReopenEstimateFactor
-	ceiling := p.BaseFrequency * 1.0 * (si - excess) * reopenUplift
+	ceiling := p.BaseFrequency * 1.0 * (si - excess) * reopenUplift * p.CaseAdequacyMean
 	if got := p.ExpectedPolicyLoss(si, excess, 1.0, 1.0, 0.01); got > ceiling {
 		t.Fatalf("capped OD exceeds ceiling: got %.4f, ceiling %.4f", got, ceiling)
 	}

@@ -57,5 +57,7 @@ func (p PricingParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflat
 	tp := stopLossPareto(tpScale, s.ThirdPartyAlpha, excess)
 	perClaim := s.ThirdPartyWeight*tp + (1-s.ThirdPartyWeight)*od
 	reopenUplift := 1 + p.ReopenProbability*p.ReopenEstimateFactor
-	return p.BaseFrequency * riskFactor * perClaim * reopenUplift
+	// The severity assumption prices the estimate a claim opens at; case
+	// adequacy carries it up to the ultimate the runoff will actually pay.
+	return p.BaseFrequency * riskFactor * perClaim * reopenUplift * p.CaseAdequacyMean
 }
