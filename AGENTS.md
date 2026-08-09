@@ -15,6 +15,7 @@ Nothing in the output is real, so there are no data governance concerns. See `do
 ## Preferred workflows
 
 - **Fetch at the start of every session.** When you begin a new Claude session in this repo, run `git fetch` first to check for new work on the remote before doing anything else, so you are working against the latest state and avoid diverging from `origin`.
+- **Ship every chunk of work as a pull request, squash merged to `main`.** Never commit directly to `main`. Work on a branch named for the change (`feature/…`, `docs/…`, `fix/…`), commit as you go with whatever granularity helps review, then open a PR and squash merge it. `main` therefore holds one commit per feature or chunk of work, and the working history stays on the branch. Run `go test ./...` and `go vet ./...` before opening the PR, and say so in its body. Write the PR title and body as the commit message `main` will actually keep - the squash uses them - so lead with what changed and why, not with a list of commits.
 
 ## Tech stack
 
