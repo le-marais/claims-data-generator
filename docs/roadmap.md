@@ -24,7 +24,7 @@ The real-claims-data backlog from the mission is complete (claims inflation, nil
 
 Prove the "one parameterizable engine" differentiator by adding a second short-tail class, most likely **commercial property**. The plumbing is ready - the preset registry, the line-of-business dropdown, and the preset-driven UI form were built so a new class is a YAML file plus a registration line. The real work is:
 
-- **Per-line-of-business reference data and calibration.** The realism gate is motor-only today, and the `ui` command hardcodes the private-passenger-auto reference directory. Reference data needs to be keyed per line of business so each class calibrates against an appropriate Schedule P family (commercial auto, commercial multi-peril).
+- **Per-line-of-business reference data and calibration.** The realism gate is motor-only today, and the `ui` command hardcodes the private-passenger-auto reference directory. Reference data needs to be keyed per line of business so each class calibrates against an appropriate Schedule P family. The curation work is already partly done: `data/reference/schedule p/` holds hand-curated companies for all six Schedule P lines - private passenger auto (embedded, 96 companies), commercial auto (92), other liability (92), workers compensation (61), products liability (13) and medical malpractice (8) - kept against `data/reference/gr-code-list.md`. Only the private-passenger-auto set is embedded and scored today. Note that Schedule P carries liability lines only, so a commercial *property* class has no direct reference family here; commercial auto is the closest short-tail fit.
 - **Any class-specific behavior** commercial property needs that motor does not (for example severity capped harder at sum insured, no third-party tail).
 
 Then open the tool to the wider actuarial community once a second class demonstrates reusability.
@@ -40,5 +40,6 @@ Then open the tool to the wider actuarial community once a second class demonstr
 Small items that make the above cheaper or are worth cleaning up when touched:
 
 - The `ui` command's reference-data directory is hardcoded to private passenger auto; generalising it is a prerequisite for a second line of business's realism view.
-- Reference-data loading should be keyed per line of business (currently a single embedded set).
+- Reference-data loading should be keyed per line of business (currently a single embedded set, though the other five curated families are already in the repo - see above).
 - The nil-claim runoff floors its case release at one cent to guarantee a close-date transaction; if very small initial estimates ever become common, revisit the runoff's sub-cent behavior more broadly.
+- `docs/todo.md` is the live backlog and the best source for "what to clean up next": the open code-review, security-review and stage-isolation findings in one place. The items that most affect this roadmap are the server guardrails (R-1, R-2, M1, L1) before sharing the UI, and the parameter fan-out (RF-13), the `Claim` struct's carry fields (RF-14) and the stage-isolation items F3 to F8 before a second line of business.
