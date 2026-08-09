@@ -1,8 +1,8 @@
 # Background context: claims data simulator
 
-Consolidated from the transcripts in `docs/raw user inputs/transcripts/`. This is the original brief and captures the initial thinking, including open questions since resolved - see `docs/superpowers/specs/` for design decisions and `docs/roadmap.md` for current status.
+Consolidated from the transcripts in `docs/raw user inputs/transcripts/`. This is the original brief and captures the initial thinking, including open questions since resolved - see `docs/roadmap.md` for current status.
 
-> **Historical document, intentionally not updated (reviewed 2026-07-27).** This is a point-in-time record of the original brief and its open questions - the distribution-choice and case-estimate-runoff "recommendation requested" notes below have all since been resolved in the implementation. It is deliberately preserved as written rather than refreshed to match the current code; for how the simulation actually works today see `README.md`, `docs/detailed-architecture.md`, and the specs in `docs/superpowers/specs/`.
+> **Historical document, intentionally not updated (reviewed 2026-07-27).** This is a point-in-time record of the original brief and its open questions - the distribution-choice and case-estimate-runoff "recommendation requested" notes below have all since been resolved in the implementation. It is deliberately preserved as written rather than refreshed to match the current code; for how the simulation actually works today see `README.md` and `docs/detailed-architecture.md`.
 
 ## Purpose
 

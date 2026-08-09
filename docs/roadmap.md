@@ -1,6 +1,6 @@
 # Roadmap
 
-A living view of where claimsgen is and what comes next. Grounded in `mission.md` (see its "Beyond the MVP" section) and decisions recorded in `docs/superpowers/specs/`. Order is a recommendation, not a commitment.
+A living view of where claimsgen is and what comes next. Grounded in `mission.md` (see its "Beyond the MVP" section) and in the shipped code. Order is a recommendation, not a commitment.
 
 ## Shipped
 

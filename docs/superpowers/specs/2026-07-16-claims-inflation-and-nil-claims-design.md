@@ -1,3 +1,5 @@
+> **OUT OF CONTEXT - do not read (2026-08-09):** historical design record, kept for provenance only. Agents must not load this file into context or treat it as a source of truth; it records decisions as of its own date and may not match current behaviour. For how the system works today see `README.md`, `AGENTS.md`, and `docs/detailed-architecture.md`.
+
 # Claims inflation and nil claims design
 
 Date: 2026-07-16
