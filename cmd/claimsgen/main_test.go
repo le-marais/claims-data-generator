@@ -35,12 +35,78 @@ func TestGenerateSameSeedSameBytes(t *testing.T) {
 	if code := run([]string{"generate", "--out", outB, "--years", "2", "--initial-book-size", "100", "--seed", "9"}, &buf, &buf); code != 0 {
 		t.Fatalf("second run failed: %s", buf.String())
 	}
-	for _, name := range []string{"policies.csv", "claims.csv", "transactions.csv"} {
+	for _, name := range []string{"policies.csv", "claims.csv", "transactions.csv", "triangles.csv", "exposure.csv"} {
 		a, _ := os.ReadFile(filepath.Join(outA, name))
 		b, _ := os.ReadFile(filepath.Join(outB, name))
 		if !bytes.Equal(a, b) {
 			t.Errorf("%s differs across identical seeds", name)
 		}
+	}
+}
+
+func TestGenerateWritesTrianglesAndExposure(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "output")
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"generate", "--out", out, "--years", "2", "--initial-book-size", "100", "--seed", "7"}, &stdout, &stderr)
+	if code != 0 {
+		t.Fatalf("exit code = %d, stderr: %s", code, stderr.String())
+	}
+	for _, name := range []string{"policies.csv", "claims.csv", "transactions.csv", "triangles.csv", "exposure.csv"} {
+		if _, err := os.Stat(filepath.Join(out, name)); err != nil {
+			t.Errorf("missing %s: %v", name, err)
+		}
+	}
+	if !strings.Contains(stdout.String(), "triangle rows") {
+		t.Errorf("stdout %q should report the triangle row count", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "exposure rows") {
+		t.Errorf("stdout %q should report the exposure row count", stdout.String())
+	}
+}
+
+func TestGenerateAcceptsBothOriginBases(t *testing.T) {
+	for _, basis := range []string{"accident", "underwriting"} {
+		out := filepath.Join(t.TempDir(), "output")
+		var stdout, stderr bytes.Buffer
+		code := run([]string{"generate", "--out", out, "--years", "2", "--initial-book-size", "100",
+			"--seed", "7", "--origin-basis", basis}, &stdout, &stderr)
+		if code != 0 {
+			t.Fatalf("basis %q: exit code = %d, stderr: %s", basis, code, stderr.String())
+		}
+		if _, err := os.Stat(filepath.Join(out, "triangles.csv")); err != nil {
+			t.Errorf("basis %q: missing triangles.csv: %v", basis, err)
+		}
+	}
+}
+
+func TestGenerateOriginBasesDifferInTheOutput(t *testing.T) {
+	read := func(t *testing.T, basis string) []byte {
+		t.Helper()
+		out := filepath.Join(t.TempDir(), "output")
+		var buf bytes.Buffer
+		if code := run([]string{"generate", "--out", out, "--years", "2", "--initial-book-size", "100",
+			"--seed", "7", "--origin-basis", basis}, &buf, &buf); code != 0 {
+			t.Fatalf("basis %q failed: %s", basis, buf.String())
+		}
+		b, err := os.ReadFile(filepath.Join(out, "triangles.csv"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	if bytes.Equal(read(t, "accident"), read(t, "underwriting")) {
+		t.Error("the two origin bases produced identical triangles.csv; the flag is not wired through")
+	}
+}
+
+func TestGenerateRejectsAnUnknownOriginBasis(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := run([]string{"generate", "--out", filepath.Join(t.TempDir(), "o"), "--origin-basis", "policy"}, &stdout, &stderr)
+	if code == 0 {
+		t.Fatal("expected nonzero exit for an unknown origin basis")
+	}
+	if !strings.Contains(stderr.String(), "origin basis") {
+		t.Errorf("stderr %q should name the origin basis problem", stderr.String())
 	}
 }
 
