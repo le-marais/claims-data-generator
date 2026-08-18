@@ -5,11 +5,8 @@ package triangle
 
 import (
 	"math"
-	"time"
 
 	"github.com/le-marais/claimsgen/internal/domain/claim"
-	"github.com/le-marais/claimsgen/internal/domain/policy"
-	"github.com/le-marais/claimsgen/internal/domain/shared"
 	"github.com/le-marais/claimsgen/internal/domain/transaction"
 )
 
@@ -95,41 +92,6 @@ func aggregate(claims []claim.Claim, txs []transaction.Transaction, startYear, o
 		}
 	}
 	return Triangle{StartYear: startYear, Cells: incremental}
-}
-
-// EarnedPremiumByYear spreads each policy's premium over its cover period
-// and sums the portion earned in each calendar year of the window.
-func EarnedPremiumByYear(policies []policy.Policy, startYear, years int) []float64 {
-	earned := make([]float64, years)
-	for _, p := range policies {
-		termDays := shared.DaysBetween(p.CoverStart, p.CoverEnd) + 1
-		if termDays <= 0 {
-			continue
-		}
-		perDay := p.Premium.Dollars() / float64(termDays)
-		for y := 0; y < years; y++ {
-			overlap := overlapDays(p.CoverStart, p.CoverEnd, startYear+y)
-			earned[y] += perDay * float64(overlap)
-		}
-	}
-	return earned
-}
-
-// overlapDays counts the days of [start, end] (inclusive) falling in year.
-func overlapDays(start, end shared.Date, year int) int {
-	yearStart := shared.NewDate(year, time.January, 1)
-	yearEnd := shared.NewDate(year, time.December, 31)
-	if start.Before(yearStart) {
-		start = yearStart
-	}
-	if end.After(yearEnd) {
-		end = yearEnd
-	}
-	days := shared.DaysBetween(start, end) + 1
-	if days < 0 {
-		return 0
-	}
-	return days
 }
 
 // ATAFactors returns volume-weighted age-to-age development factors:
