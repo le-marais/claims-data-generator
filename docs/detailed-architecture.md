@@ -36,7 +36,7 @@ internal/
   infrastructure/         adapters
     config/               YAML <-> LineOfBusiness mapping, embedded preset registry
     random/               gonum-backed RandomSource implementation
-    csv/                  CSV writer
+    csv/                  CSV writers: the dataset files and the aggregate files
     schedulep/            Schedule P reference-file reader
     web/                  HTTP server + JSON view models for the browser UI
 data/reference/           embedded Schedule P reference companies + refdata package
@@ -62,7 +62,7 @@ seed --> random.NewSource
    application.Dataset{Policies, Claims, Transactions}
 ```
 
-Downstream, `application.Summarize` (the per-year table) and `application.ComputeDistributions` (severity and lag histograms) read the `Dataset` directly. `application.Aggregate` is a fourth read-only pass: it builds the monthly grid, exposure, and the accident-basis annual triangles and earned premium into an `Aggregates`, which `application.EvaluateRealism` scores against the Schedule P reference bands.
+Downstream, three read-only passes consume the `Dataset`. `application.Summarize` builds the per-year table and `application.ComputeDistributions` the severity and lag histograms, both straight off the `Dataset`. `application.Aggregate` is the third: it builds the monthly grid, the monthly exposure, and the accident-basis annual triangles and earned premium into an `Aggregates`, which `application.EvaluateRealism` then scores against the Schedule P reference bands.
 
 The CLI writes the three dataset CSVs plus `triangles.csv` and `exposure.csv` from the `Aggregates`; the web UI additionally serialises the analytics as JSON for the browser.
 

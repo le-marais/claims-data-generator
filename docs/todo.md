@@ -260,7 +260,7 @@ Full text and the measurements behind each are in git history.
 
 | ID | Was | Resolution |
 | --- | --- | --- |
-| RF-1 | `developmentYears` defined twice, with the same two triangles computed in both places | Resolved by the monthly triangles work: `application.Aggregates` builds one monthly grid per run and hands out the annual triangles, so the constant lives only in `internal/application/aggregate.go` and the triangles are computed once. `EvaluateRealism` now takes an `Aggregates`. |
+| RF-1 | `developmentYears` defined twice, with the same two triangles computed in both places | Resolved by the monthly triangles work: `application.Aggregate` performs the run's aggregation once and hands out the annual triangles, so the constant lives only in `internal/application/aggregate.go` and the annual triangles are built once per run instead of once in `realism.go` and again in `viewmodel.go`. `EvaluateRealism` now takes an `Aggregates`. Note that an underwriting-basis run deliberately builds a second, accident-basis grid: the Schedule P reference data is an accident-year presentation, so the annual triangles the realism check scores must stay on the accident basis whatever basis the monthly output uses. |
 
 - **2026-08-10 web-run reliability pass**: **R-1** (generation runs one at a
   time behind a one-deep slot on `Server`, so two tabs pointed at one `out_dir`
