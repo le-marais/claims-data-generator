@@ -306,7 +306,7 @@ Cells are **incremental**: a cell is the movement in that development month. Inc
 
 ### 10.3 `exposure.go` - exposure by month and year
 
-- `ExposureByMonth(policies, startMonth, months, basis) []MonthExposure` - premium, exposure units in policy-years (`days / 365.25`) and policy count per origin month, earned day pro-rata on the accident basis and landed whole at inception on the underwriting basis.
+- `ExposureByMonth(policies, startMonth, months, basis) []MonthExposure` - premium, exposure units in policy-years (`days / 365.25`) and a policy count per origin month, earned day pro-rata on the accident basis and landed whole at inception on the underwriting basis. The count follows the basis too: in force on the accident basis, where a policy counts in every month it covers so the column does not sum to the book's policy count, and inceptions on the underwriting basis, where it does. Exposure outside the window is not counted, so the accident basis thins at both ends while the underwriting basis books a whole policy year at an inception month whose claims are cut off at the window end.
 - `EarnedPremiumByYear(policies, startYear, years) []float64` - the monthly premiums rolled up per calendar year, so the two views agree by construction.
 
 ### 10.4 `triangle.go` - the cumulative triangle and its factors
