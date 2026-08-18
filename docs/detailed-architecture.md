@@ -8,11 +8,13 @@ The prose style avoids em dashes in favour of spaced hyphens. Code comments quot
 
 `claimsgen` is a local CLI (plus an optional browser UI) that generates fully synthetic insurance claims data as dummy input to reserving processes. Nothing in the output is real, so there are no data governance concerns.
 
-One run produces three linked CSV datasets for a class of business:
+One run produces five linked CSV datasets for a class of business:
 
 - **policies.csv** - the book of policies per calendar year: cover dates, sum insured, excess, risk factor, premium.
 - **claims.csv** - claim events with occurrence, report and close dates plus the initial case estimate.
 - **transactions.csv** - each claim's case estimate movements, payments, and recoveries (salvage and subrogation) over its lifetime.
+- **triangles.csv** - incremental monthly development triangles by origin month: paid, paid net of recoveries, incurred, and reported claim counts.
+- **exposure.csv** - exposure by origin month: premium, exposure units in policy-years, and policy count.
 
 Generation is reproducible: the same seed plus the same parameters produce byte-identical output. There is no valuation date; every claim runs to closure, which supports out-of-sample testing of reserving methods.
 
@@ -60,13 +62,9 @@ seed --> random.NewSource
    application.Dataset{Policies, Claims, Transactions}
 ```
 
-Downstream, three read-only analytics consume the `Dataset`:
+Downstream, `application.Summarize` (the per-year table) and `application.ComputeDistributions` (severity and lag histograms) read the `Dataset` directly. `application.Aggregate` is a fourth read-only pass: it builds the monthly grid, exposure, and the accident-basis annual triangles and earned premium into an `Aggregates`, which `application.EvaluateRealism` scores against the Schedule P reference bands.
 
-- `application.Summarize` - the per-year table.
-- `application.ComputeDistributions` - severity and lag histograms.
-- `application.EvaluateRealism` - paid/incurred triangles scored against Schedule P reference bands.
-
-The CLI writes the three CSVs; the web UI additionally serialises the analytics as JSON for the browser.
+The CLI writes the three dataset CSVs plus `triangles.csv` and `exposure.csv` from the `Aggregates`; the web UI additionally serialises the analytics as JSON for the browser.
 
 ## 4. The randomness model
 
@@ -290,18 +288,35 @@ Recoveries are pure cash events on own-damage claims that paid something; they l
 
 `internal/domain/triangle` holds the reserving concepts used both for the UI and for the realism test gate.
 
-### 10.1 `triangle.go` - aggregation and factors
+### 10.1 `monthly.go` - the canonical aggregate
+
+`MonthlyGrid{Basis, StartMonth, DevPeriods, Paid, PaidNet, Incurred [][]float64, Reported [][]int}` is the single aggregation store. Row `o` is origin month `StartMonth.Add(o)`; slice index `d` holds development period `d+1`, so index 0 is the origin month itself. Every row is `DevPeriods` wide.
+
+Cells are **incremental**: a cell is the movement in that development month. Increments sum, so any coarser grain is a plain sum over cells and a cumulative view is a running sum along a row.
+
+- `BuildMonthlyGrid(policies, claims, txs, startMonth, originMonths, basis)` - two passes over the input: one to size the rectangle to the widest development period any in-span claim reaches, one to place every movement. Weights match the annual triangles it replaced: paid counts `PAYMENT` only; net paid subtracts recoveries; incurred adds every case movement and payment and subtracts recoveries, so it is gross case plus net paid. Reported counts a claim in its **report** month. Development runs to full runoff, so the grid holds development after the run window ends.
+- `OriginBasis` (`basis.go`) is the one configuration seam, consulted in exactly two places: a claim's origin month (occurrence month, or its policy's inception month) and a month's exposure (earned in the month, or written in it).
+- `(g MonthlyGrid) Cell(measure, origin, dev)` reads a cell with a 1-based development period.
+
+### 10.2 `coarsen.go` - every coarser grain
+
+- `Coarsen(kind, devPeriods, foldTail)` maps both axes onto the calendar period the month falls in: `originPeriod = index(originMonth) - index(startMonth)` and `devPeriod = index(eventMonth) - index(originMonth) + 1`, for `Monthly`, `Quarterly` or `Annual`. Keying on the calendar period rather than dividing monthly development by twelve is what makes the annual result equal what the annual triangles have always measured: an accident in March 1998 paid in January 1999 is development year 2. Rows are zero-padded to `devPeriods` rather than left ragged, because `ATAFactors` counts an origin at an age only when its row reaches that far.
+- `(s IncrementalSet) Cumulative(measure) Triangle` - the running-sum projection.
+- `(g MonthlyGrid) AnnualTriangles(devYears) AnnualSet` - `Coarsen(Annual, devYears, true)` cumulated into the paid, net paid and incurred triangles the realism gate and the UI read.
+
+### 10.3 `exposure.go` - exposure by month and year
+
+- `ExposureByMonth(policies, startMonth, months, basis) []MonthExposure` - premium, exposure units in policy-years (`days / 365.25`) and policy count per origin month, earned day pro-rata on the accident basis and landed whole at inception on the underwriting basis.
+- `EarnedPremiumByYear(policies, startYear, years) []float64` - the monthly premiums rolled up per calendar year, so the two views agree by construction.
+
+### 10.4 `triangle.go` - the cumulative triangle and its factors
 
 `Triangle{StartYear int, Cells [][]float64}` is a cumulative triangle indexed `[origin][dev]`; rows may be ragged.
 
-- `PaidTriangle`, `NetPaidTriangle`, `IncurredTriangle(claims, txs, startYear, origins, devs)` - the three builders, differing only by a weight function passed to `aggregate`: paid weights `PAYMENT` as +1; net paid weights payments +1 and recoveries -1 (so net paid can develop downward late when recoveries land); incurred weights recoveries -1 and everything else (payments and estimate movements) +1. Schedule P reports paid net of recoveries, so `NetPaidTriangle` is the one the realism comparison scores.
-- `aggregate(...)` (unexported) - maps each transaction to `origin = occurrenceYear - startYear` and `dev = txYear - occurrenceYear`, clamps `dev` into `[0, devs-1]` (late development folds into the last column; out-of-window origins are dropped), sums `weight * amount` into an incremental grid, then cumulates each row left to right.
-- `EarnedPremiumByYear(policies, startYear, years) []float64` - spreads each policy's premium evenly across its inclusive cover term (`perDay = premium / termDays`) and sums the portion earned in each window year via `overlapDays`.
-- `overlapDays(start, end, year)` (unexported) - inclusive days of `[start, end]` inside `year`.
 - `(t Triangle) ATAFactors() []float64` - volume-weighted age-to-age (chain-ladder) factors: `factor[age] = sum(row[age+1]) / sum(row[age])` over rows long enough to have both cells; ages with no data are `NaN`; returns nil when the longest row has fewer than two cells.
 - `(t Triangle) latestDiagonal()` (unexported) - the last cumulative value per non-empty row.
 
-### 10.2 `compare.go` - scoring against reference bands
+### 10.5 `compare.go` - scoring against reference bands
 
 - `ReferenceSet{Name, Paid, Incurred, EarnedPremium}` - one reference company's observed triangles and premium. `Comparison{Paid, Incurred, EarnedPremium}` - the generated data's equivalent.
 - `Band{Lo, Hi, Min, Max}` - `Lo`/`Hi` are the scored P5-P95 pass interval; `Min`/`Max` are the full observed extremes kept for display. `(b Band) contains(v)` is inclusive membership.
@@ -309,7 +324,7 @@ Recoveries are pure cash events on own-damage claims that paid something; they l
 - `Percentile(xs, p)` - linearly interpolated percentile (type-7), non-mutating; `NaN` for empty input.
 - `bandFromValues(xs)` (unexported) - a `Band` from P5/P95 plus scanned min/max; an empty input yields a band that contains nothing.
 - `ATABands(triangles) []Band` - per development age, the band of volume-weighted factors across the triangles.
-- `AgeCheck{Age, Value, Band, Within}` and `Check{Value, Band, Within}` - scored results for an age and for a scalar.
+- `AgeCheck{Age, Value, Band, Within}` and `Check{Value, Band, Within}` - scored results for an age and for a scalar. `Age` is the 1-based development period the factor develops from, so age 1 is the factor from development period 1 to 2.
 - `Report{PaidATA, IncurredATA []AgeCheck, LossRatio, LossRatioDrift Check}` - the comparison outcome. `(r Report) Pass()` requires every age check plus both scalar checks to be within. `(r Report) String()` renders a human-readable, 1-indexed report.
 - `usableRefs(refs)` (unexported) - a backstop that drops reference companies with no scorable signal (non-positive total earned premium or non-positive summed incurred latest diagonal).
 - `CompareToReference(c Comparison, refs) Report` - the main entry point. It filters to usable refs, checks paid and incurred age factors against the reference bands (only ages present in both), scores the ultimate loss ratio against the reference band, and scores loss-ratio drift against a fixed `[1/driftTolerance, driftTolerance]` band (passing vacuously when drift cannot be computed).
@@ -339,10 +354,11 @@ Recoveries are pure cash events on own-damage claims that paid something; they l
 - `minMax(values)` (unexported) - min and max (callers guard non-empty input).
 - `Distributions{Severity, ReportLagDays, CloseLagDays Histogram}` and `ComputeDistributions(ds) Distributions` (with `const histogramBins = 20`) - severity is each claim's total `PAYMENT` amount on a log histogram (so zero-paid/nil claims drop out), report lag is occurrence-to-report days and close lag is report-to-close days, both linear.
 
-### 11.4 `realism.go` - the gate
+### 11.4 `aggregate.go` and `realism.go` - the aggregation pass and the gate
 
-- `const developmentYears = 10` (Schedule P shape).
-- `EvaluateRealism(ds, refs, startYear, years) triangle.Report` - a thin adapter: builds a `Comparison` from `NetPaidTriangle` (net of recoveries, matching Schedule P), `IncurredTriangle`, and `EarnedPremiumByYear`, then returns `CompareToReference`. Used as a test gate (`TestDefaultPresetIsRealistic`).
+- `const developmentYears = 10` (Schedule P shape) - lives only in `aggregate.go` now.
+- `Aggregate(ds, startYear, years, basis) (Aggregates, error)` - one pure aggregation pass per run: the monthly grid and exposure on the requested basis, plus the accident-basis annual triangles and earned premium. `Annual` and `EarnedPremium` are always accident-basis, because Schedule P is an accident-year presentation.
+- `EvaluateRealism(ag, refs) triangle.Report` - a thin adapter: builds a `Comparison` from the aggregate's net paid and incurred triangles and its earned premium, then returns `CompareToReference`. Used as a test gate (`TestDefaultPresetIsRealistic`) and by the UI.
 
 ## 12. Infrastructure layer
 
@@ -360,13 +376,14 @@ The embedded `motor-personal.yaml` is the annotated personal-motor preset, calib
 
 ### 12.2 `random` - covered in section 4.2.
 
-### 12.3 `csv` - the writer
+### 12.3 `csv` - the writers
 
-`internal/infrastructure/csv/writer.go` writes the three CSVs with stable formatting so identical datasets produce byte-identical files. Every column is numeric, an ISO-8601 date, or a fixed enum, so no quoting is needed and `fmt.Sprintf` is safe.
+`internal/infrastructure/csv/writer.go` writes the three dataset CSVs; `internal/infrastructure/csv/monthly.go` writes the two aggregate CSVs. All five use stable formatting so identical datasets produce byte-identical files. Every column is numeric, an ISO-8601 date, or a fixed enum, so no quoting is needed and `fmt.Sprintf` is safe.
 
 - `WriteDataset(dir, ds) error` - creates `dir` (0o755) and writes `policies.csv`, `claims.csv`, `transactions.csv`.
+- `WriteAggregates(dir, ag) error` - writes `triangles.csv` (one row per grid cell, ordered by origin month then development month, zeros included) and `exposure.csv` (one row per origin month). Money is rendered at two decimal places and exposure units at six, with a guard so a value rounding to zero never prints as `-0.00`.
 - `FormatRiskFactor(r) string` - fixed 6-decimal formatting for byte stability.
-- `writeFile(dir, name, header, rows, row func(int) string)` (unexported) - buffered generic writer with a deferred close that surfaces a close error only when there was no prior error.
+- `writeFile(dir, name, header, rows, row func(int) string)` (unexported, `writer.go`) - buffered generic writer with a deferred close that surfaces a close error only when there was no prior error; shared by both writers.
 
 CSV headers:
 
@@ -374,6 +391,8 @@ CSV headers:
 policies.csv:     policy_id,cover_start,cover_end,sum_insured,excess,risk_factor,premium
 claims.csv:       claim_id,policy_id,occurrence_date,report_date,close_date,initial_estimate
 transactions.csv: transaction_id,claim_id,date,type,amount
+triangles.csv:    origin_month,dev_month,paid,paid_net,incurred,reported_count
+exposure.csv:     origin_month,premium,exposure_units,policies
 ```
 
 `transactions.csv` is emitted in claim-registration order, not date order: all of a claim's rows are written together, and because recovery rows can post-date the close, a later claim's rows can carry earlier dates.
@@ -393,12 +412,12 @@ transactions.csv: transaction_id,claim_id,date,type,amount
 
 - `Server{refs, mux}` and `NewServer(refs)` register routes: `GET /api/lobs`, `GET /api/lobs/{id}/preset`, `POST /api/generate`, and `GET /` (a file server over the embedded `static` subtree).
 - `ServeHTTP` is a security front gate before dispatch (the server is loopback-only): it rejects non-local `Host` (403 "forbidden host") and, when an `Origin` header is present, non-local origins (403 "forbidden origin"), guarding against DNS rebinding and cross-site use. `localHost` accepts `127.0.0.1`, `localhost`, `::1` (with optional port); `localOrigin` parses the origin and checks its host.
-- `handleLOBs` returns the preset list as `lobInfoJSON{id, name}`. `handlePreset` returns the raw `LOBParams` for a preset id (404 on unknown). `handleGenerate` caps the body at 1 MiB, decodes a strict `generateRequest{seed string, start_year, years, initial_book_size, out_dir, params}`, parses the seed, requires and absolutises `out_dir`, runs `GenerateDataset`, writes the CSVs, and returns `buildResponse` (validation and domain errors map to 400, CSV write errors to 500).
+- `handleLOBs` returns the preset list as `lobInfoJSON{id, name}`. `handlePreset` returns the raw `LOBParams` for a preset id (404 on unknown). `handleGenerate` caps the body at 1 MiB, decodes a strict `generateRequest{seed string, start_year, years, initial_book_size, out_dir, origin_basis, params}` (an empty `origin_basis` defaults to accident), parses the seed, requires and absolutises `out_dir`, runs `GenerateDataset` and `WriteDataset`, then `application.Aggregate` and `WriteAggregates`, and returns `buildResponse` (validation and domain errors map to 400, CSV write errors to 500).
 - `writeJSON`, `writeError` - JSON response helpers.
 
-`internal/infrastructure/web/viewmodel.go` builds the `/api/generate` response DTOs. `buildResponse(req, ds, refs)` assembles a `generateResponseJSON{run, summary, triangles, distributions, realism}`: it computes paid, net-paid, and incurred triangles (10 development years) and delegates the summary, distributions and realism to the application layer, mapping each into JSON view models. Notable serialisation choices: `LossRatio` and per-age factors are pointers so they serialise as `null` when undefined or `NaN`; the `finite` helper replaces `NaN`/`Inf` band numbers with 0 so the response stays valid JSON.
+`internal/infrastructure/web/viewmodel.go` builds the `/api/generate` response DTOs. `buildResponse(req, ds, ag, refs)` assembles a `generateResponseJSON{run, summary, triangles, distributions, realism}`: `run.origin_basis` echoes `ag.Basis`, the triangles are `ag.Annual`'s paid, net paid and incurred (already coarsened to 10 development years), and the summary, distributions and realism are delegated to the application layer, mapping each into JSON view models. Notable serialisation choices: `LossRatio` and per-age factors are pointers so they serialise as `null` when undefined or `NaN`; the `finite` helper replaces `NaN`/`Inf` band numbers with 0 so the response stays valid JSON.
 
-The front end (`static/index.html`, `static/app.js`, `static/style.css`) is a single-page app: a sidebar form (line-of-business select, run flags, and an editable parameter panel prefilled from the preset) posts to `/api/generate` and renders four tabs - Summary, Triangles (with a Paid gross / Paid net / Incurred toggle and age-to-age factors), Distributions, and Realism.
+The front end (`static/index.html`, `static/app.js`, `static/style.css`) is a single-page app: a sidebar form (line-of-business select, run flags including an origin-basis select, and an editable parameter panel prefilled from the preset) posts to `/api/generate` and renders four tabs - Summary, Triangles (with a Paid gross / Paid net / Incurred toggle and age-to-age factors), Distributions, and Realism. The tabs are unchanged: they read the annual triangles, not the monthly grid, which has no browser view.
 
 ### 12.6 `data/reference/refdata.go`
 
@@ -412,7 +431,7 @@ A single verb-first binary: `claimsgen <command> [flags]`.
 
 - `main()` calls `os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))`.
 - `run(args, stdout, stderr) int` dispatches to `generate` or `ui`; anything else (or no args) prints the usage text to stderr and returns exit code 2.
-- `runGenerate` parses `--config`, `--seed` (default 1), `--out` (default `output`), `--start-year` (default 1998), `--years` (default 10), `--initial-book-size` (default 20000); loads the embedded preset (or a YAML file via `--config`), runs `GenerateDataset(random.NewSource(seed), ...)`, writes the CSVs, and prints a one-line summary. Config errors and generation/write errors return exit code 1; flag-parse errors return 2.
+- `runGenerate` parses `--config`, `--seed` (default 1), `--out` (default `output`), `--start-year` (default 1998), `--years` (default 10), `--initial-book-size` (default 20000), `--origin-basis` (default `accident`, validated against `triangle.OriginBasis`); loads the embedded preset (or a YAML file via `--config`), runs `GenerateDataset(random.NewSource(seed), ...)`, writes the three dataset CSVs, runs `application.Aggregate` on the chosen basis, writes `triangles.csv` and `exposure.csv`, and prints a one-line summary including the triangle and exposure row counts. Config errors and generation/write errors return exit code 1; flag-parse errors return 2.
 - `runUI` parses `--port` (default 8080), loads the embedded reference data, binds a loopback listener on `127.0.0.1:<port>`, prints the URL, and serves `web.NewServer(refs)`.
 
 ## 14. Key invariants and deliberate simplifications

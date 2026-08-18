@@ -1,5 +1,4 @@
-> **Live spec for in-flight work.** Add the standard "OUT OF CONTEXT - do not read"
-> banner that every other file in this directory carries once the feature ships.
+> **OUT OF CONTEXT - do not read (2026-08-18):** historical design record, kept for provenance only. Agents must not load this file into context or treat it as a source of truth; it records decisions as of its own date and may not match current behaviour. For how the system works today see `README.md`, `AGENTS.md`, and `docs/detailed-architecture.md`.
 
 # Monthly triangles and monthly exposure
 

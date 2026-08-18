@@ -32,11 +32,10 @@ soon, **low** fix when touching the area. Nothing high-severity is open.
 4. **RF-13** - gates the second line of business.
 5. **RF-14** - gates the same work, and compounds with every feature added.
 6. **SL-2** - wording, so the realism gate stops claiming more than it measures.
-7. **RF-1** - two constants that can drift apart silently.
 8. **L2** - two lines in `.gitignore`.
 9. **CI-1** - gated on the roadmap's "open to the wider community" step.
 
-Items 6 to 8 are each under an hour; batch them into any commit that touches
+Items 6 and 8 are each under an hour; batch them into any commit that touches
 the area rather than scheduling them.
 
 ## 1. SL-7 (medium) - case estimates re-centre on the true ultimate at the first revision
@@ -156,19 +155,6 @@ side.
   band and force a preset recalibration - not worth it to remove a known,
   directional bias that the wording can state instead.
 
-## 7. RF-1 (low) - `developmentYears` is defined twice
-
-- Where: `internal/application/realism.go` and
-  `internal/infrastructure/web/viewmodel.go`, which also builds the display
-  triangles by calling the domain package directly while `realism.go` recomputes
-  the same two triangles.
-- The double computation is cheap at current scale; the live risk is the two
-  constants drifting silently.
-- Action: dedupe the constant. Extracting an application use case that returns
-  triangles plus the realism report once is optional, and only worth doing if
-  the development-year depth ever needs to come from the reference sets rather
-  than a constant.
-
 ## 8. L2 (low) - agent-artifact ignore rules are not in the tracked gitignore
 
 - Where: `.gitignore`, which covers only `/output/`, `/claimsgen`, `*.exe`,
@@ -197,7 +183,7 @@ Merges the old R-13 and I2.
 
 The security review's low rating depends on the tool staying loopback-only and
 single-user. Today `handleGenerate` takes `out_dir` verbatim and writes the
-three CSVs wherever it points, which is the feature, not a vulnerability: the
+five CSVs wherever it points, which is the feature, not a vulnerability: the
 user is writing their own files to their own disk with their own privileges. The
 same applies to raw error strings echoing local paths, and to serving without
 read or write timeouts.
@@ -271,6 +257,10 @@ in the removed review documents in git history.
 ## Resolved, for provenance
 
 Full text and the measurements behind each are in git history.
+
+| ID | Was | Resolution |
+| --- | --- | --- |
+| RF-1 | `developmentYears` defined twice, with the same two triangles computed in both places | Resolved by the monthly triangles work: `application.Aggregates` builds one monthly grid per run and hands out the annual triangles, so the constant lives only in `internal/application/aggregate.go` and the triangles are computed once. `EvaluateRealism` now takes an `Aggregates`. |
 
 - **2026-08-10 web-run reliability pass**: **R-1** (generation runs one at a
   time behind a one-deep slot on `Server`, so two tabs pointed at one `out_dir`

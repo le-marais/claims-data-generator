@@ -2,11 +2,13 @@
 
 A local CLI app that generates realistic, fully synthetic insurance claims data as dummy input to reserving processes. Nothing in the output is real, so there are no data governance concerns.
 
-One run produces three linked CSV datasets for a class of business:
+One run produces five linked CSV datasets for a class of business:
 
 - **policies.csv** - the book of policies per calendar year: cover dates, sum insured, excess, risk factor, premium
 - **claims.csv** - claim events with occurrence, report and close dates plus the initial case estimate
 - **transactions.csv** - each claim's case estimate movements, payments, and recoveries (salvage and subrogation) over its lifetime
+- **triangles.csv** - incremental monthly development triangles by origin month: paid, paid net of recoveries, incurred, and reported claim counts
+- **exposure.csv** - exposure by origin month: premium, exposure units in policy-years, and policy count
 
 ## Quickstart
 
@@ -24,7 +26,8 @@ claimsgen generate \
   --out ./output \            # output directory
   --start-year 1998 \         # first calendar year of the book
   --years 10 \                # number of calendar years
-  --initial-book-size 20000   # policies written in the first year
+  --initial-book-size 20000 \ # policies written in the first year
+  --origin-basis accident     # monthly origin: accident or underwriting
 ```
 
 ## Browser UI
@@ -33,7 +36,7 @@ claimsgen generate \
 ./claimsgen ui
 ```
 
-Serves a local web UI on `http://127.0.0.1:8080` (`--port` to change). It offers the same run flags as the CLI plus every line of business parameter (prefilled from the preset, editable, including a Recoveries group for the salvage and subrogation probabilities, mean shares, and lags, and a reopen probability and reopen estimate factor for reopened claims), writes the same three CSVs on Generate, and shows the result: per-year summary stats (including a Recovered column and a Reopened column), paid and incurred development triangles with age-to-age factors and a Paid (gross) / Paid (net) / Incurred toggle, severity and lag distributions, and the run's position inside the Schedule P realism bands. The Schedule P reference data is embedded in the binary.
+Serves a local web UI on `http://127.0.0.1:8080` (`--port` to change). It offers the same run flags as the CLI (including an origin basis select for `--origin-basis`) plus every line of business parameter (prefilled from the preset, editable, including a Recoveries group for the salvage and subrogation probabilities, mean shares, and lags, and a reopen probability and reopen estimate factor for reopened claims), writes the same five CSVs on Generate, and shows the result: per-year summary stats (including a Recovered column and a Reopened column), paid and incurred development triangles with age-to-age factors and a Paid (gross) / Paid (net) / Incurred toggle, severity and lag distributions, and the run's position inside the Schedule P realism bands. The Schedule P reference data is embedded in the binary.
 
 A run reports its elapsed time and can be cancelled while it is going; the previous run's results stay on screen, dimmed and labelled, until the new ones arrive. Runs are serialized, so two tabs cannot write over each other's CSVs, and the UI caps run size - years, initial book size, and the projected policy count once the growth factor has compounded - so a mistyped parameter is rejected rather than run. The CLI has no such caps.
 
@@ -69,6 +72,41 @@ Claims inflation is a stochastic path: each calendar year's factor is a mean lev
 Every independent decision is drawn from its own labelled sub-stream keyed by the seed and a label path, so toggling a knob is invisible to unrelated draws: turning nil claims, reopening, salvage, or subrogation on or off never reshuffles the dates or severities of any other claim or stage. (Salvage and subrogation amounts remain linked through the rule that a claim's total recovered stays below its gross paid, which is an accounting constraint, not a random draw.)
 
 There is no valuation date: every claim runs to closure, which supports out-of-sample testing of reserving methods.
+
+### Monthly triangles and exposure
+
+`triangles.csv` is one row per (origin month, development month) cell:
+
+```
+origin_month,dev_month,paid,paid_net,incurred,reported_count
+```
+
+Cells are **incremental**, not cumulative - the movement in that development
+month - so they aggregate up by simple addition: sum cells into quarters or
+years, or take a running sum along a row for the cumulative triangle. Development
+months are numbered from 1, where 1 is the origin month itself, and run to full
+runoff, so the file includes development after the run window ends. For a
+valuation-date view, keep only the rows where `origin_month + dev_month - 1` is
+at or before the valuation month. Every cell is written, zeros included, so the
+grid's extent is explicit.
+
+`paid` is gross of recoveries, `paid_net` subtracts salvage and subrogation, and
+`incurred` is gross case plus net paid. `reported_count` counts claims in the
+development month they were **reported**, not the month they occurred.
+
+`exposure.csv` is one row per origin month on the same axis:
+
+```
+origin_month,premium,exposure_units,policies
+```
+
+`--origin-basis accident` (the default) keys a claim on the month it occurred and
+reports exposure earned in each month, day pro-rata. `--origin-basis
+underwriting` keys a claim on its policy's inception month and reports exposure
+written in that month, so a policy's whole premium and whole term land at
+inception. The basis governs these two files only: the annual triangles and the
+realism check stay on the accident basis, because the Schedule P reference data
+is an accident-year presentation.
 
 ## Parameters per line of business
 
