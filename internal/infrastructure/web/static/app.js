@@ -545,7 +545,7 @@ function bandCard(title, checks) {
   checks.forEach((c, i) => {
     const cy = i * rowH + rowH / 2 + 4;
     const label = svgEl("text", { x: padLeft - 8, y: cy + 3, class: "axis-label", "text-anchor": "end" });
-    label.textContent = c.label ?? `${c.age + 1}→${c.age + 2}`;
+    label.textContent = c.label ?? `${c.age}→${c.age + 1}`;
     const outer = svgEl("rect", {
       x: x(c.min), y: cy - 5, width: Math.max(x(c.max) - x(c.min), 1), height: 10, rx: 5, class: "band-outer",
     });

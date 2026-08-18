@@ -2,6 +2,7 @@ package triangle_test
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -299,5 +300,33 @@ func TestCompareToReferencePassesInsideBands(t *testing.T) {
 	}
 	if report.String() == "" {
 		t.Error("report should describe the comparison")
+	}
+}
+
+func TestAgeChecksAreOneBased(t *testing.T) {
+	refs := []triangle.ReferenceSet{
+		{Name: "a", Paid: triangle.Triangle{Cells: [][]float64{{100, 150, 165}}},
+			Incurred: triangle.Triangle{Cells: [][]float64{{140, 150, 165}}}, EarnedPremium: []float64{200}},
+		{Name: "b", Paid: triangle.Triangle{Cells: [][]float64{{100, 160, 176}}},
+			Incurred: triangle.Triangle{Cells: [][]float64{{150, 160, 176}}}, EarnedPremium: []float64{250}},
+	}
+	c := triangle.Comparison{
+		Paid:          triangle.Triangle{Cells: [][]float64{{100, 155, 170}}},
+		Incurred:      triangle.Triangle{Cells: [][]float64{{145, 155, 170}}},
+		EarnedPremium: []float64{220},
+	}
+	report := triangle.CompareToReference(c, refs)
+	if len(report.PaidATA) != 2 {
+		t.Fatalf("got %d paid checks, want 2", len(report.PaidATA))
+	}
+	// The first factor develops development period 1 to 2, so its age is 1.
+	if report.PaidATA[0].Age != 1 {
+		t.Errorf("first paid check age = %d, want 1", report.PaidATA[0].Age)
+	}
+	if report.PaidATA[1].Age != 2 {
+		t.Errorf("second paid check age = %d, want 2", report.PaidATA[1].Age)
+	}
+	if !strings.Contains(report.String(), "age 1-2") {
+		t.Errorf("report should describe the first factor as age 1-2:\n%s", report.String())
 	}
 }
