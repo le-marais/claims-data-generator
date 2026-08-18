@@ -518,9 +518,9 @@ type MonthExposure struct {
 	Policies      int
 }
 
-// ExposureByMonth returns the exposure of each of the months origin months
-// starting at startMonth. Exposure falling outside that span is not counted,
-// so the last months of a run window are thin.
+// ExposureByMonth returns the exposure of each of the origin months starting
+// at startMonth. Exposure falling outside that span is not counted, so the
+// last months of a run window are thin.
 func ExposureByMonth(policies []policy.Policy, startMonth shared.Month, months int, basis OriginBasis) []MonthExposure {
 	out := make([]MonthExposure, months)
 	for i := range out {
