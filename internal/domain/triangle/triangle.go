@@ -5,8 +5,10 @@ package triangle
 
 import (
 	"math"
+	"time"
 
 	"github.com/le-marais/claimsgen/internal/domain/claim"
+	"github.com/le-marais/claimsgen/internal/domain/shared"
 	"github.com/le-marais/claimsgen/internal/domain/transaction"
 )
 
@@ -18,80 +20,46 @@ type Triangle struct {
 	Cells     [][]float64
 }
 
-// PaidTriangle aggregates gross payments into a cumulative triangle by
+// PaidTriangle aggregates gross payments into a cumulative annual triangle by
 // occurrence year. Development years beyond the last column are accumulated
 // into it.
+//
+// Deprecated: a temporary shim over the monthly grid, removed once
+// application.Aggregates owns the aggregation. Call BuildMonthlyGrid and
+// AnnualTriangles instead.
 func PaidTriangle(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int) Triangle {
-	return aggregate(claims, txs, startYear, origins, devs, func(t transaction.Transaction) float64 {
-		if t.Type == transaction.Payment {
-			return 1
-		}
-		return 0
-	})
+	return annualShim(claims, txs, startYear, origins, devs).Paid
 }
 
 // NetPaidTriangle aggregates payments net of recoveries: salvage and
 // subrogation rows subtract, so cumulative net paid can develop downward at
 // late ages. Schedule P paid losses are net of salvage and subrogation, so
 // this is the triangle the realism comparison uses.
+//
+// Deprecated: a temporary shim over the monthly grid, as PaidTriangle.
 func NetPaidTriangle(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int) Triangle {
-	return aggregate(claims, txs, startYear, origins, devs, func(t transaction.Transaction) float64 {
-		switch {
-		case t.Type == transaction.Payment:
-			return 1
-		case t.Type.IsRecovery():
-			return -1
-		}
-		return 0
-	})
+	return annualShim(claims, txs, startYear, origins, devs).NetPaid
 }
 
 // IncurredTriangle aggregates gross case plus net paid into a cumulative
-// triangle by occurrence year: estimate movements and payments add,
+// annual triangle by occurrence year: estimate movements and payments add,
 // recoveries subtract.
+//
+// Deprecated: a temporary shim over the monthly grid, as PaidTriangle.
 func IncurredTriangle(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int) Triangle {
-	return aggregate(claims, txs, startYear, origins, devs, func(t transaction.Transaction) float64 {
-		if t.Type.IsRecovery() {
-			return -1
-		}
-		return 1
-	})
+	return annualShim(claims, txs, startYear, origins, devs).Incurred
 }
 
-func aggregate(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int, weight func(transaction.Transaction) float64) Triangle {
-	occurrenceYear := make(map[int]int, len(claims))
-	for _, c := range claims {
-		occurrenceYear[c.ID] = c.OccurrenceDate.Year()
+// annualShim builds an accident-month grid over the same window and coarsens
+// it back to years. The error cannot fire for these arguments - the basis is
+// a constant and origins is at least one wherever the callers use it - so a
+// failure yields empty triangles rather than a panic.
+func annualShim(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int) AnnualSet {
+	g, err := BuildMonthlyGrid(nil, claims, txs, shared.NewMonth(startYear, time.January), origins*12, AccidentMonth)
+	if err != nil {
+		return AnnualSet{}
 	}
-	incremental := make([][]float64, origins)
-	for i := range incremental {
-		incremental[i] = make([]float64, devs)
-	}
-	for _, tx := range txs {
-		w := weight(tx)
-		if w == 0 {
-			continue
-		}
-		occ := occurrenceYear[tx.ClaimID]
-		origin := occ - startYear
-		if origin < 0 || origin >= origins {
-			continue
-		}
-		dev := tx.Date.Year() - occ
-		if dev < 0 {
-			dev = 0
-		}
-		if dev >= devs {
-			dev = devs - 1
-		}
-		incremental[origin][dev] += w * tx.Amount.Dollars()
-	}
-	for _, row := range incremental {
-		for d := 1; d < len(row); d++ {
-			row[d] += row[d-1]
-		}
-	}
-	return Triangle{StartYear: startYear, Cells: incremental}
+	return g.AnnualTriangles(devs)
 }
 
 // ATAFactors returns volume-weighted age-to-age development factors:
