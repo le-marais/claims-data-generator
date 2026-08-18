@@ -107,7 +107,9 @@ func ATABands(triangles []Triangle) []Band {
 	return bands
 }
 
-// AgeCheck scores one development age against a band.
+// AgeCheck scores one development age against a band. Age is the 1-based
+// development period the factor develops from, so age 1 is the factor from
+// development period 1 to 2.
 type AgeCheck struct {
 	Age    int
 	Value  float64
@@ -145,7 +147,7 @@ func (r Report) String() string {
 	writeChecks := func(name string, checks []AgeCheck) {
 		for _, c := range checks {
 			fmt.Fprintf(&b, "%s ATA age %d-%d: %.4f in [%.4f, %.4f] = %v\n",
-				name, c.Age+1, c.Age+2, c.Value, c.Band.Lo, c.Band.Hi, c.Within)
+				name, c.Age, c.Age+1, c.Value, c.Band.Lo, c.Band.Hi, c.Within)
 		}
 	}
 	writeChecks("paid", r.PaidATA)
@@ -223,7 +225,7 @@ func checkAges(factors []float64, bands []Band) []AgeCheck {
 			continue
 		}
 		checks = append(checks, AgeCheck{
-			Age: age, Value: f, Band: bands[age], Within: bands[age].contains(f),
+			Age: age + 1, Value: f, Band: bands[age], Within: bands[age].contains(f),
 		})
 	}
 	return checks

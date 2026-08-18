@@ -2,6 +2,7 @@ package triangle_test
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -13,6 +14,17 @@ import (
 )
 
 func approx(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
+
+// annualFrom builds the annual triangles the way the application does: an
+// accident-month grid over the window, coarsened back to years.
+func annualFrom(t *testing.T, claims []claim.Claim, txs []transaction.Transaction, startYear, years, devs int) triangle.AnnualSet {
+	t.Helper()
+	g, err := triangle.BuildMonthlyGrid(nil, claims, txs, shared.NewMonth(startYear, time.January), years*12, triangle.AccidentMonth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return g.AnnualTriangles(devs)
+}
 
 // Two claims: one occurring 1998 paid over 1998-1999, one occurring 1999
 // paid in 1999.
@@ -50,14 +62,15 @@ func fixtures() ([]claim.Claim, []transaction.Transaction) {
 	return claims, txs
 }
 
-func TestPaidTriangleAggregatesCumulativePayments(t *testing.T) {
+func TestAnnualTrianglesPaidAggregatesCumulativePayments(t *testing.T) {
 	claims, txs := fixtures()
-	tri := triangle.PaidTriangle(claims, txs, 1998, 2, 3)
-	// Origin 1998: dev 0 = 600, dev 1 = 1100 (cumulative), dev 2 = 1100.
+	tri := annualFrom(t, claims, txs, 1998, 2, 3).Paid
+	// Origin 1998: development period 1 (slice index 0) = 600, period 2
+	// (index 1) = 1100 (cumulative), period 3 (index 2) = 1100.
 	if !approx(tri.Cells[0][0], 600) || !approx(tri.Cells[0][1], 1100) || !approx(tri.Cells[0][2], 1100) {
 		t.Errorf("origin 1998 = %v, want [600 1100 1100]", tri.Cells[0])
 	}
-	// Origin 1999: dev 0 = 450.
+	// Origin 1999: development period 1 (slice index 0) = 450.
 	if !approx(tri.Cells[1][0], 450) {
 		t.Errorf("origin 1999 dev 0 = %v, want 450", tri.Cells[1][0])
 	}
@@ -66,18 +79,19 @@ func TestPaidTriangleAggregatesCumulativePayments(t *testing.T) {
 	}
 }
 
-func TestIncurredTriangleIsPaidPlusOutstanding(t *testing.T) {
+func TestAnnualTrianglesIncurredIsPaidPlusOutstanding(t *testing.T) {
 	claims, txs := fixtures()
-	tri := triangle.IncurredTriangle(claims, txs, 1998, 2, 3)
-	// Origin 1998 dev 0: paid 600 + outstanding (1000-600+100) = 1100.
+	tri := annualFrom(t, claims, txs, 1998, 2, 3).Incurred
+	// Origin 1998, development period 1 (slice index 0): paid 600 +
+	// outstanding (1000-600+100) = 1100.
 	if !approx(tri.Cells[0][0], 1100) {
 		t.Errorf("origin 1998 dev 0 = %v, want 1100", tri.Cells[0][0])
 	}
-	// Dev 1: claim closed, incurred = paid = 1100.
+	// Development period 2 (slice index 1): claim closed, incurred = paid = 1100.
 	if !approx(tri.Cells[0][1], 1100) {
 		t.Errorf("origin 1998 dev 1 = %v, want 1100", tri.Cells[0][1])
 	}
-	// Origin 1999 dev 0: settled at 450 within the year.
+	// Origin 1999, development period 1 (slice index 0): settled at 450 within the year.
 	if !approx(tri.Cells[1][0], 450) {
 		t.Errorf("origin 1999 dev 0 = %v, want 450", tri.Cells[1][0])
 	}
@@ -117,24 +131,24 @@ func TestATAFactorsAreVolumeWeighted(t *testing.T) {
 	}
 }
 
-func TestNetPaidTriangleSubtractsRecoveries(t *testing.T) {
+func TestAnnualTrianglesNetPaidSubtractsRecoveries(t *testing.T) {
 	claims := []claim.Claim{{ID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1)}}
 	txs := []transaction.Transaction{
 		{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.April, 1), Type: transaction.Payment, Amount: shared.FromDollars(1000)},
 		{ID: 2, ClaimID: 1, Date: shared.NewDate(1999, time.June, 1), Type: transaction.Salvage, Amount: shared.FromDollars(150)},
 		{ID: 3, ClaimID: 1, Date: shared.NewDate(2000, time.June, 1), Type: transaction.Subrogation, Amount: shared.FromDollars(300)},
 	}
-	gross := triangle.PaidTriangle(claims, txs, 1998, 3, 3)
+	gross := annualFrom(t, claims, txs, 1998, 3, 3).Paid
 	if got := gross.Cells[0]; got[0] != 1000 || got[1] != 1000 || got[2] != 1000 {
 		t.Fatalf("gross paid row = %v, want [1000 1000 1000]", got)
 	}
-	net := triangle.NetPaidTriangle(claims, txs, 1998, 3, 3)
+	net := annualFrom(t, claims, txs, 1998, 3, 3).NetPaid
 	if got := net.Cells[0]; got[0] != 1000 || got[1] != 850 || got[2] != 550 {
 		t.Fatalf("net paid row = %v, want [1000 850 550]", got)
 	}
 }
 
-func TestIncurredTriangleSubtractsRecoveries(t *testing.T) {
+func TestAnnualTrianglesIncurredSubtractsRecoveries(t *testing.T) {
 	claims := []claim.Claim{{ID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1)}}
 	txs := []transaction.Transaction{
 		{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.March, 10), Type: transaction.Estimate, Amount: shared.FromDollars(1000)},
@@ -142,7 +156,7 @@ func TestIncurredTriangleSubtractsRecoveries(t *testing.T) {
 		{ID: 3, ClaimID: 1, Date: shared.NewDate(1998, time.April, 1), Type: transaction.Estimate, Amount: shared.FromDollars(-1000)},
 		{ID: 4, ClaimID: 1, Date: shared.NewDate(1999, time.June, 1), Type: transaction.Salvage, Amount: shared.FromDollars(150)},
 	}
-	incurred := triangle.IncurredTriangle(claims, txs, 1998, 2, 2)
+	incurred := annualFrom(t, claims, txs, 1998, 2, 2).Incurred
 	if got := incurred.Cells[0]; got[0] != 1000 || got[1] != 850 {
 		t.Fatalf("incurred row = %v, want [1000 850] (gross case + net paid)", got)
 	}
@@ -299,5 +313,33 @@ func TestCompareToReferencePassesInsideBands(t *testing.T) {
 	}
 	if report.String() == "" {
 		t.Error("report should describe the comparison")
+	}
+}
+
+func TestAgeChecksAreOneBased(t *testing.T) {
+	refs := []triangle.ReferenceSet{
+		{Name: "a", Paid: triangle.Triangle{Cells: [][]float64{{100, 150, 165}}},
+			Incurred: triangle.Triangle{Cells: [][]float64{{140, 150, 165}}}, EarnedPremium: []float64{200}},
+		{Name: "b", Paid: triangle.Triangle{Cells: [][]float64{{100, 160, 176}}},
+			Incurred: triangle.Triangle{Cells: [][]float64{{150, 160, 176}}}, EarnedPremium: []float64{250}},
+	}
+	c := triangle.Comparison{
+		Paid:          triangle.Triangle{Cells: [][]float64{{100, 155, 170}}},
+		Incurred:      triangle.Triangle{Cells: [][]float64{{145, 155, 170}}},
+		EarnedPremium: []float64{220},
+	}
+	report := triangle.CompareToReference(c, refs)
+	if len(report.PaidATA) != 2 {
+		t.Fatalf("got %d paid checks, want 2", len(report.PaidATA))
+	}
+	// The first factor develops development period 1 to 2, so its age is 1.
+	if report.PaidATA[0].Age != 1 {
+		t.Errorf("first paid check age = %d, want 1", report.PaidATA[0].Age)
+	}
+	if report.PaidATA[1].Age != 2 {
+		t.Errorf("second paid check age = %d, want 2", report.PaidATA[1].Age)
+	}
+	if !strings.Contains(report.String(), "age 1-2") {
+		t.Errorf("report should describe the first factor as age 1-2:\n%s", report.String())
 	}
 }

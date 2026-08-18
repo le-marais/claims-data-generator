@@ -245,6 +245,7 @@ async function generate(event) {
       years: Number($("#years").value),
       initial_book_size: Number($("#initial-book-size").value),
       out_dir: $("#out-dir").value,
+      origin_basis: $("#origin-basis").value,
       params: collectParams(),
     };
     const run = await fetchJSON("/api/generate", {
@@ -281,6 +282,7 @@ function renderResults(run) {
 function renderRunHeader(run) {
   $("#run-header").textContent =
     `${run.lob} · seed ${run.seed} · ${run.start_year}–${run.start_year + run.years - 1} · ` +
+    `${run.origin_basis} origin · ` +
     `${fmtInt.format(run.policies)} policies · ${fmtInt.format(run.claims)} claims · ` +
     `${fmtInt.format(run.transactions)} transactions · ${run.out_dir}`;
 }
@@ -545,7 +547,7 @@ function bandCard(title, checks) {
   checks.forEach((c, i) => {
     const cy = i * rowH + rowH / 2 + 4;
     const label = svgEl("text", { x: padLeft - 8, y: cy + 3, class: "axis-label", "text-anchor": "end" });
-    label.textContent = c.label ?? `${c.age + 1}→${c.age + 2}`;
+    label.textContent = c.label ?? `${c.age}→${c.age + 1}`;
     const outer = svgEl("rect", {
       x: x(c.min), y: cy - 5, width: Math.max(x(c.max) - x(c.min), 1), height: 10, rx: 5, class: "band-outer",
     });

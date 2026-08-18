@@ -3,15 +3,7 @@
 // realism comparison of those triangles against reference data.
 package triangle
 
-import (
-	"math"
-	"time"
-
-	"github.com/le-marais/claimsgen/internal/domain/claim"
-	"github.com/le-marais/claimsgen/internal/domain/policy"
-	"github.com/le-marais/claimsgen/internal/domain/shared"
-	"github.com/le-marais/claimsgen/internal/domain/transaction"
-)
+import "math"
 
 // Triangle is a cumulative development triangle: Cells[origin][dev] is the
 // cumulative amount for an origin year at the end of a development year.
@@ -19,117 +11,6 @@ import (
 type Triangle struct {
 	StartYear int
 	Cells     [][]float64
-}
-
-// PaidTriangle aggregates gross payments into a cumulative triangle by
-// occurrence year. Development years beyond the last column are accumulated
-// into it.
-func PaidTriangle(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int) Triangle {
-	return aggregate(claims, txs, startYear, origins, devs, func(t transaction.Transaction) float64 {
-		if t.Type == transaction.Payment {
-			return 1
-		}
-		return 0
-	})
-}
-
-// NetPaidTriangle aggregates payments net of recoveries: salvage and
-// subrogation rows subtract, so cumulative net paid can develop downward at
-// late ages. Schedule P paid losses are net of salvage and subrogation, so
-// this is the triangle the realism comparison uses.
-func NetPaidTriangle(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int) Triangle {
-	return aggregate(claims, txs, startYear, origins, devs, func(t transaction.Transaction) float64 {
-		switch {
-		case t.Type == transaction.Payment:
-			return 1
-		case t.Type.IsRecovery():
-			return -1
-		}
-		return 0
-	})
-}
-
-// IncurredTriangle aggregates gross case plus net paid into a cumulative
-// triangle by occurrence year: estimate movements and payments add,
-// recoveries subtract.
-func IncurredTriangle(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int) Triangle {
-	return aggregate(claims, txs, startYear, origins, devs, func(t transaction.Transaction) float64 {
-		if t.Type.IsRecovery() {
-			return -1
-		}
-		return 1
-	})
-}
-
-func aggregate(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int, weight func(transaction.Transaction) float64) Triangle {
-	occurrenceYear := make(map[int]int, len(claims))
-	for _, c := range claims {
-		occurrenceYear[c.ID] = c.OccurrenceDate.Year()
-	}
-	incremental := make([][]float64, origins)
-	for i := range incremental {
-		incremental[i] = make([]float64, devs)
-	}
-	for _, tx := range txs {
-		w := weight(tx)
-		if w == 0 {
-			continue
-		}
-		occ := occurrenceYear[tx.ClaimID]
-		origin := occ - startYear
-		if origin < 0 || origin >= origins {
-			continue
-		}
-		dev := tx.Date.Year() - occ
-		if dev < 0 {
-			dev = 0
-		}
-		if dev >= devs {
-			dev = devs - 1
-		}
-		incremental[origin][dev] += w * tx.Amount.Dollars()
-	}
-	for _, row := range incremental {
-		for d := 1; d < len(row); d++ {
-			row[d] += row[d-1]
-		}
-	}
-	return Triangle{StartYear: startYear, Cells: incremental}
-}
-
-// EarnedPremiumByYear spreads each policy's premium over its cover period
-// and sums the portion earned in each calendar year of the window.
-func EarnedPremiumByYear(policies []policy.Policy, startYear, years int) []float64 {
-	earned := make([]float64, years)
-	for _, p := range policies {
-		termDays := shared.DaysBetween(p.CoverStart, p.CoverEnd) + 1
-		if termDays <= 0 {
-			continue
-		}
-		perDay := p.Premium.Dollars() / float64(termDays)
-		for y := 0; y < years; y++ {
-			overlap := overlapDays(p.CoverStart, p.CoverEnd, startYear+y)
-			earned[y] += perDay * float64(overlap)
-		}
-	}
-	return earned
-}
-
-// overlapDays counts the days of [start, end] (inclusive) falling in year.
-func overlapDays(start, end shared.Date, year int) int {
-	yearStart := shared.NewDate(year, time.January, 1)
-	yearEnd := shared.NewDate(year, time.December, 31)
-	if start.Before(yearStart) {
-		start = yearStart
-	}
-	if end.After(yearEnd) {
-		end = yearEnd
-	}
-	days := shared.DaysBetween(start, end) + 1
-	if days < 0 {
-		return 0
-	}
-	return days
 }
 
 // ATAFactors returns volume-weighted age-to-age development factors:

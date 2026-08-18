@@ -14,6 +14,7 @@ import (
 	refdata "github.com/le-marais/claimsgen/data/reference"
 	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
+	"github.com/le-marais/claimsgen/internal/domain/triangle"
 	"github.com/le-marais/claimsgen/internal/infrastructure/config"
 	csvout "github.com/le-marais/claimsgen/internal/infrastructure/csv"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
@@ -34,6 +35,7 @@ generate flags:
   --start-year N           first calendar year of the book (default 1998)
   --years N                number of calendar years (default 10)
   --initial-book-size N    policies written in the first year (default 20000)
+  --origin-basis B         monthly triangle origin: accident or underwriting (default accident)
 
 ui flags:
   --port N                 port to listen on (default 8080)
@@ -68,8 +70,15 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	startYear := fs.Int("start-year", 1998, "first calendar year")
 	years := fs.Int("years", 10, "number of calendar years")
 	initialBookSize := fs.Int("initial-book-size", 20000, "policies in the first year")
+	originBasis := fs.String("origin-basis", "accident", "monthly triangle origin basis")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+
+	basis := triangle.OriginBasis(*originBasis)
+	if err := basis.Validate(); err != nil {
+		fmt.Fprintf(stderr, "claimsgen: %v\n", err)
+		return 1
 	}
 
 	var (
@@ -102,8 +111,19 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
-	fmt.Fprintf(stdout, "%s: wrote %d policies, %d claims, %d transactions to %s (seed %d)\n",
-		l.Name, len(ds.Policies), len(ds.Claims), len(ds.Transactions), *out, *seed)
+	ag, err := application.Aggregate(ds, *startYear, *years, basis)
+	if err != nil {
+		fmt.Fprintf(stderr, "claimsgen: %v\n", err)
+		return 1
+	}
+	if err := csvout.WriteAggregates(*out, ag); err != nil {
+		fmt.Fprintf(stderr, "claimsgen: %v\n", err)
+		return 1
+	}
+
+	fmt.Fprintf(stdout, "%s: wrote %d policies, %d claims, %d transactions, %d triangle rows, %d exposure rows to %s (seed %d)\n",
+		l.Name, len(ds.Policies), len(ds.Claims), len(ds.Transactions),
+		ag.Grid.Origins()*ag.Grid.DevPeriods, len(ag.Exposure), *out, *seed)
 	return 0
 }
 

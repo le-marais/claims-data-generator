@@ -7,10 +7,6 @@ import (
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
 )
 
-// scheduleP triangles have ten development years; the UI's triangles match
-// the realism gate's shape.
-const developmentYears = 10
-
 type lobInfoJSON struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -30,6 +26,7 @@ type runInfoJSON struct {
 	StartYear       int    `json:"start_year"`
 	Years           int    `json:"years"`
 	InitialBookSize int    `json:"initial_book_size"`
+	OriginBasis     string `json:"origin_basis"`
 	OutDir          string `json:"out_dir"`
 	Policies        int    `json:"policies"`
 	Claims          int    `json:"claims"`
@@ -108,10 +105,7 @@ type checkJSON struct {
 	Within bool    `json:"within"`
 }
 
-func buildResponse(req generateRequest, ds application.Dataset, refs []triangle.ReferenceSet) generateResponseJSON {
-	paid := triangle.PaidTriangle(ds.Claims, ds.Transactions, req.StartYear, req.Years, developmentYears)
-	incurred := triangle.IncurredTriangle(ds.Claims, ds.Transactions, req.StartYear, req.Years, developmentYears)
-	netPaid := triangle.NetPaidTriangle(ds.Claims, ds.Transactions, req.StartYear, req.Years, developmentYears)
+func buildResponse(req generateRequest, ds application.Dataset, ag application.Aggregates, refs []triangle.ReferenceSet) generateResponseJSON {
 	return generateResponseJSON{
 		Run: runInfoJSON{
 			LOB:             req.Params.Name,
@@ -119,15 +113,20 @@ func buildResponse(req generateRequest, ds application.Dataset, refs []triangle.
 			StartYear:       req.StartYear,
 			Years:           req.Years,
 			InitialBookSize: req.InitialBookSize,
+			OriginBasis:     string(ag.Basis),
 			OutDir:          req.OutDir,
 			Policies:        len(ds.Policies),
 			Claims:          len(ds.Claims),
 			Transactions:    len(ds.Transactions),
 		},
-		Summary:       summaryView(application.Summarize(ds, req.StartYear, req.Years)),
-		Triangles:     trianglesJSON{Paid: triangleView(paid), NetPaid: triangleView(netPaid), Incurred: triangleView(incurred)},
+		Summary: summaryView(application.Summarize(ds, req.StartYear, req.Years)),
+		Triangles: trianglesJSON{
+			Paid:     triangleView(ag.Annual.Paid),
+			NetPaid:  triangleView(ag.Annual.NetPaid),
+			Incurred: triangleView(ag.Annual.Incurred),
+		},
 		Distributions: distributionsView(application.ComputeDistributions(ds)),
-		Realism:       realismView(application.EvaluateRealism(ds, refs, req.StartYear, req.Years)),
+		Realism:       realismView(application.EvaluateRealism(ag, refs)),
 	}
 }
 

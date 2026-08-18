@@ -147,6 +147,7 @@ type generateRequest struct {
 	Years           int              `json:"years"`
 	InitialBookSize int              `json:"initial_book_size"`
 	OutDir          string           `json:"out_dir"`
+	OriginBasis     string           `json:"origin_basis"`
 	Params          config.LOBParams `json:"params"`
 }
 
@@ -174,6 +175,14 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.OutDir = absOut
+	if req.OriginBasis == "" {
+		req.OriginBasis = string(triangle.AccidentMonth)
+	}
+	basis := triangle.OriginBasis(req.OriginBasis)
+	if err := basis.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	line := req.Params.ToDomain()
 	if err := checkRunSize(line, req.Years, req.InitialBookSize); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -207,7 +216,16 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, buildResponse(req, ds, s.refs))
+	ag, err := application.Aggregate(ds, req.StartYear, req.Years, basis)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if err := csvout.WriteAggregates(req.OutDir, ag); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, buildResponse(req, ds, ag, s.refs))
 }
 
 var errTooManyRuns = errors.New("too many generation runs in flight; wait for one to finish")

@@ -212,6 +212,71 @@ func TestGenerateRoundTrip(t *testing.T) {
 	}
 }
 
+func TestGenerateWritesTrianglesAndExposure(t *testing.T) {
+	outDir := t.TempDir()
+	rec := do(t, newTestServer(t), "POST", "/api/generate", generateBody(t, outDir))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	for _, name := range []string{"policies.csv", "claims.csv", "transactions.csv", "triangles.csv", "exposure.csv"} {
+		if _, err := os.Stat(filepath.Join(outDir, name)); err != nil {
+			t.Errorf("missing %s: %v", name, err)
+		}
+	}
+}
+
+func TestGenerateDefaultsToTheAccidentBasis(t *testing.T) {
+	// generateBody carries no origin_basis, so the response must report the
+	// accident default rather than an empty string.
+	rec := do(t, newTestServer(t), "POST", "/api/generate", generateBody(t, t.TempDir()))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Run struct {
+			OriginBasis string `json:"origin_basis"`
+		} `json:"run"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Run.OriginBasis != "accident" {
+		t.Errorf("origin_basis = %q, want \"accident\"", resp.Run.OriginBasis)
+	}
+}
+
+func TestGenerateAcceptsTheUnderwritingBasis(t *testing.T) {
+	body := generateBody(t, t.TempDir())
+	body["origin_basis"] = "underwriting"
+	rec := do(t, newTestServer(t), "POST", "/api/generate", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Run struct {
+			OriginBasis string `json:"origin_basis"`
+		} `json:"run"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Run.OriginBasis != "underwriting" {
+		t.Errorf("origin_basis = %q, want \"underwriting\"", resp.Run.OriginBasis)
+	}
+}
+
+func TestGenerateRejectsAnUnknownOriginBasis(t *testing.T) {
+	body := generateBody(t, t.TempDir())
+	body["origin_basis"] = "policy"
+	rec := do(t, newTestServer(t), "POST", "/api/generate", body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400; body = %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "origin basis") {
+		t.Errorf("body %q should name the origin basis problem", rec.Body.String())
+	}
+}
+
 func TestGenerateResponseIncludesNilCount(t *testing.T) {
 	outDir := t.TempDir()
 	rec := do(t, newTestServer(t), "POST", "/api/generate", generateBody(t, outDir))

@@ -22,6 +22,10 @@
         <label>Years <input type="number" id="years" value="10" min="1" step="1" required></label>
         <label>Initial book size <input type="number" id="initial-book-size" value="20000" min="1" step="1" required></label>
         <label>Output directory <input type="text" id="out-dir" value="output" required></label>
+        <label>Origin basis <select id="origin-basis">
+          <option value="accident" selected>Accident month</option>
+          <option value="underwriting">Underwriting month</option>
+        </select></label>
       </fieldset>
       <details id="params-details">
         <summary>Line of business parameters</summary>

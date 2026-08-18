@@ -4,11 +4,13 @@ Guidance for AI coding agents working in this repository. Human contributors may
 
 ## What this is
 
-`claimsgen` is a local Go CLI (with an optional browser UI) that generates realistic, fully synthetic insurance claims data for reserving demos and tests. One run produces three linked CSVs for a class of business:
+`claimsgen` is a local Go CLI (with an optional browser UI) that generates realistic, fully synthetic insurance claims data for reserving demos and tests. One run produces five linked CSVs for a class of business:
 
 - `policies.csv` - the book of policies per calendar year (cover dates, sum insured, excess, risk factor, premium)
 - `claims.csv` - claim events (occurrence, report and close dates, initial case estimate)
 - `transactions.csv` - each claim's case estimate movements, payments, and recoveries over its lifetime
+- `triangles.csv` - incremental monthly development triangles by origin month (paid, paid net of recoveries, incurred, reported claim counts)
+- `exposure.csv` - exposure by origin month (premium, exposure units in policy-years, policy count)
 
 Nothing in the output is real, so there are no data governance concerns. See `docs/mission.md` for the full pitch and `docs/roadmap.md` for status and sequencing.
 
@@ -45,7 +47,7 @@ The layout is domain-driven. Respect the dependency direction: `domain` depends 
 
 ```bash
 go build ./cmd/claimsgen        # build the binary
-./claimsgen generate            # generate the three CSVs into ./output using the embedded motor preset
+./claimsgen generate            # generate the five CSVs into ./output using the embedded motor preset
 ./claimsgen ui                  # serve the browser UI on http://127.0.0.1:8080 (--port to change)
 
 go test ./...                   # run all tests
@@ -57,8 +59,9 @@ Run both `go test ./...` and `go vet ./...` before claiming work is done.
 ## Conventions and things to know
 
 - **Reproducibility is a hard invariant.** The same seed plus the same config must produce byte-identical output. Randomness flows from a single seeded source split into labelled sub-streams so stages stay independent and repeatable. Never introduce nondeterminism (wall-clock time, map iteration order in output, unseeded randomness) into the generation path.
-- **Golden test.** `internal/application/golden_test.go` pins a SHA-256 of the CSV output. If you intentionally change the generated data or its encoding, the test prints the actual hash - paste it back into the `wantHash` constant. Do not update it to hide an unintended change; understand why the output moved first.
+- **Golden tests.** `internal/application/golden_test.go` pins two SHA-256 digests: `wantHash` over the three dataset CSVs and `wantAggregateHash` over `triangles.csv` and `exposure.csv`. If you intentionally change the generated data or its encoding, the failing test prints the actual hash - paste it back into the constant. Do not update either to hide an unintended change; understand why the output moved first.
 - **Realism gate.** `TestDefaultPresetIsRealistic` scores the shipped preset against the embedded Schedule P bands across several seeds. Changes to the model must keep the default preset inside its P5-P95 bands.
+- **One aggregation store.** `triangle.MonthlyGrid` is the canonical aggregate: incremental cells, origin months down, development months across, running to full runoff. Every coarser grain is `MonthlyGrid.Coarsen`, which keys both axes on the calendar period the month falls in - the annual triangles the realism gate and the UI read are `Coarsen(Annual, 10, true)` cumulated, the `true` folding development past age 10 into the last column. Add new aggregate views by coarsening the grid, never by re-scanning the transactions.
 - **Adding a line of business** is a YAML file for the CLI (`generate --config my-lob.yaml`, no code change); surfacing it in the UI also needs one registration line in the preset registry. See `internal/infrastructure/config/motor-personal.yaml` for the annotated preset.
 - **Testing style.** Tests live beside the code as `_test.go`. Table-driven tests and external test packages (`package foo_test`) are the norm; internal tests use the `_internal_test.go` suffix.
 
@@ -73,7 +76,7 @@ The maintainer prefers **domain-driven design** and **event sourcing where appro
 
 `docs/superpowers/specs/` is **out of context**. Every file there carries an "OUT OF CONTEXT - do not read" banner: they are historical design records, kept for provenance only. Do not read them, do not load them into context, and do not cite them as current behaviour - they describe decisions as of their own dates. The implementation plans that accompanied them (`docs/superpowers/plans/`) have been removed; recover them from git history if ever needed.
 
-Treat the code, `README.md`, this file, and `docs/detailed-architecture.md` as the sources of truth. Keep `docs/roadmap.md` and `docs/todo.md` current when shipping or planning work: the roadmap carries direction and sequencing, `todo.md` carries the open findings from the code, security and stage-isolation reviews (IDs preserved, so a fixed item should be moved to its "Resolved, for provenance" list rather than silently deleted).
+Treat the code, `README.md`, this file, and `docs/detailed-architecture.md` as the sources of truth. Keep `docs/roadmap.md` and `docs/todo.md` current when shipping or planning work: the roadmap carries direction and sequencing, `todo.md` carries the open findings from the code, security and stage-isolation reviews. **`todo.md` lists outstanding work only.** When you fix an item, delete it - do not move it to a resolved or dropped list, and do not leave a gap in the position numbers; renumber them so the list stays dense. The finding IDs themselves stay stable, so an older reference still resolves against git history, which is where the full text of a closed item lives. Say in the shipping commit message which IDs it closes, so the trail is in the history rather than in the file.
 
 ## Writing style (docs and comments)
 

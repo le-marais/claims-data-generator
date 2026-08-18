@@ -1,5 +1,7 @@
-// Package csv writes the generated dataset as three linked CSV files with
-// stable formatting, so identical datasets produce byte-identical files.
+// Package csv writes the generated dataset and its aggregates as CSV files
+// with stable formatting, so identical datasets produce byte-identical files:
+// policies.csv, claims.csv and transactions.csv from WriteDataset, plus
+// triangles.csv and exposure.csv from WriteAggregates.
 package csv
 
 import (
