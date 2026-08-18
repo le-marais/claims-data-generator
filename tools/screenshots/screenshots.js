@@ -7,6 +7,9 @@ const path = require("path");
 
 const OUT = path.join(__dirname, "..", "..", "docs", "screenshots");
 const URL = process.env.CLAIMSGEN_URL || "http://127.0.0.1:8093";
+// Where the screenshotted runs write their CSVs. It shows in the run summary
+// line, so keep it free of anything machine-specific.
+const OUT_DIR = process.env.CLAIMSGEN_OUT_DIR || "/tmp/claimsgen-screenshots";
 
 function defaultChrome() {
   switch (process.platform) {
@@ -55,6 +58,16 @@ async function selectTab(page, tab) {
   await page.setViewport({ width: 1384, height: 905, deviceScaleFactor: 1 });
   await page.goto(URL, { waitUntil: "networkidle0" });
   await page.waitForFunction(() => document.querySelectorAll("#lob-select option").length > 0);
+
+  // Point the run at a neutral directory. The server resolves out_dir to an
+  // absolute path and the UI echoes it in the run summary line, so leaving the
+  // default would bake whoever regenerated these images into a published
+  // screenshot.
+  await page.evaluate((dir) => {
+    const input = document.querySelector("#out-dir");
+    input.value = dir;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  }, OUT_DIR);
 
   await generateAndWait(page);
   await new Promise((r) => setTimeout(r, 300));

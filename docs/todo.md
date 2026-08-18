@@ -24,13 +24,12 @@ soon, **low** fix when touching the area. Nothing high-severity is open.
 
 ## Order
 
-(The leading numbers are stable position IDs, not a dense count - item 7 was
-RF-1, resolved by the monthly triangles work and moved to "Resolved, for
-provenance" below, so the gap between 6 and 8 is expected rather than a typo.)
+(The leading numbers are stable position IDs, not a dense count. Items 2 and 7
+were D-1 and RF-1, both resolved by the monthly triangles work and moved to
+"Resolved, for provenance" below, so the gaps are expected rather than typos.)
 
 1. **SL-7** - the only open item that changes what a reserving actuary sees in
    the data.
-2. **D-1** - the README currently advertises defects that were fixed months ago.
 3. **MF-3** - a small change that removes the main friction from the "a new
    class is just a YAML file" promise.
 4. **RF-13** - gates the second line of business.
@@ -64,24 +63,6 @@ the area rather than scheduling them.
 - Cost note: this is the most expensive item here. It changes generated output,
   so it needs a golden-hash refresh and a realism-gate re-check, and the preset
   may need recalibrating.
-
-## 2. D-1 (low) - the UI screenshots predate the pricing and windowing work
-
-- Where: `docs/screenshots/`, embedded in `README.md`.
-- The images were last regenerated before target-loss-ratio pricing and claim
-  windowing, so they still show both fixed defects: a header claim count that
-  disagrees with the summary total (27,823 versus 26,150) and per-year loss
-  ratios climbing from 0.693 to 1.010. A current run of the same defaults gives
-  26,040 claims in both places and loss ratios from 0.662 to 0.752. The sidebar
-  also predates the Pricing parameter group, and the realism tab predates the
-  loss-ratio-drift card. The README is the shopfront and it currently
-  advertises fixed bugs.
-- Action, all in one pass: regenerate with `tools/screenshots` (start the UI on
-  port 8093, `npm install`, `node screenshots.js`; needs a local Chrome,
-  `CHROME_PATH` to override the location); add the missing Pricing group to the
-  README's Browser UI paragraph (old D-2); and while in `tools/screenshots`,
-  commit `package-lock.json` and pin `puppeteer-core` to an exact version
-  instead of `^24.0.0` (old L3), which is the repo's one supply-chain weakness.
 
 ## 3. MF-3 (medium) - sub-blocks must validate even when switched off
 
@@ -161,8 +142,8 @@ side.
 
 ## 8. L2 (low) - agent-artifact ignore rules are not in the tracked gitignore
 
-- Where: `.gitignore`, which covers only `/output/`, `/claimsgen`, `*.exe`,
-  `tools/screenshots/node_modules/` and `tools/screenshots/package-lock.json`.
+- Where: `.gitignore`, which covers only `/output/`, `/claimsgen`, `*.exe` and
+  `tools/screenshots/node_modules/`.
 - It does not cover `.claude/` or `.superpowers/`, so a contributor running
   Claude Code in a fresh clone would generate session artifacts (prompts,
   scheduled-task metadata, agent memory) that are not ignored. The 2026-07-22
@@ -264,6 +245,7 @@ Full text and the measurements behind each are in git history.
 
 | ID | Was | Resolution |
 | --- | --- | --- |
+| D-1 | UI screenshots predate the pricing and windowing work | Resolved with the monthly triangles work: all five images regenerated, so the header claim count now agrees with the summary total (26,040 in both) and per-year loss ratios read 0.662 to 0.752 rather than climbing to 1.010. Carried its bundled actions too - the README's Browser UI paragraph now names the Pricing group (old D-2), and `puppeteer-core` is pinned to an exact 25.8.0 with `package-lock.json` tracked (old L3), which also clears the three high-severity `extract-zip` advisories that 24.x carried. The screenshot tool now writes to a neutral output directory, because the server resolves `out_dir` to an absolute path that the UI echoes into the image. |
 | RF-1 | `developmentYears` defined twice, with the same two triangles computed in both places | Resolved by the monthly triangles work: `application.Aggregate` performs the run's aggregation once and hands out the annual triangles, so the constant lives only in `internal/application/aggregate.go` and the annual triangles are built once per run instead of once in `realism.go` and again in `viewmodel.go`. `EvaluateRealism` now takes an `Aggregates`. Note that an underwriting-basis run deliberately builds a second, accident-basis grid: the Schedule P reference data is an accident-year presentation, so the annual triangles the realism check scores must stay on the accident basis whatever basis the monthly output uses. |
 
 - **2026-08-10 web-run reliability pass**: **R-1** (generation runs one at a
