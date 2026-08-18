@@ -149,10 +149,10 @@ func TestMonthsBetween(t *testing.T) {
 
 func TestMonthYearMonthAndQuarter(t *testing.T) {
 	cases := []struct {
-		m           shared.Month
-		year        int
-		month       time.Month
-		quarter     int
+		m       shared.Month
+		year    int
+		month   time.Month
+		quarter int
 	}{
 		{shared.NewMonth(1998, time.January), 1998, time.January, 1},
 		{shared.NewMonth(1998, time.March), 1998, time.March, 1},
@@ -1313,9 +1313,9 @@ func TestAnnualTrianglesMatchTheExportedConstructors(t *testing.T) {
 	}
 	set := g.AnnualTriangles(3)
 	cases := []struct {
-		name  string
-		got   triangle.Triangle
-		want  triangle.Triangle
+		name string
+		got  triangle.Triangle
+		want triangle.Triangle
 	}{
 		{"paid", set.Paid, triangle.PaidTriangle(claims, txs, 1998, 2, 3)},
 		{"net paid", set.NetPaid, triangle.NetPaidTriangle(claims, txs, 1998, 2, 3)},
