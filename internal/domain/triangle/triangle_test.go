@@ -15,6 +15,17 @@ import (
 
 func approx(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 
+// annualFrom builds the annual triangles the way the application does: an
+// accident-month grid over the window, coarsened back to years.
+func annualFrom(t *testing.T, claims []claim.Claim, txs []transaction.Transaction, startYear, years, devs int) triangle.AnnualSet {
+	t.Helper()
+	g, err := triangle.BuildMonthlyGrid(nil, claims, txs, shared.NewMonth(startYear, time.January), years*12, triangle.AccidentMonth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return g.AnnualTriangles(devs)
+}
+
 // Two claims: one occurring 1998 paid over 1998-1999, one occurring 1999
 // paid in 1999.
 func fixtures() ([]claim.Claim, []transaction.Transaction) {
@@ -53,7 +64,7 @@ func fixtures() ([]claim.Claim, []transaction.Transaction) {
 
 func TestPaidTriangleAggregatesCumulativePayments(t *testing.T) {
 	claims, txs := fixtures()
-	tri := triangle.PaidTriangle(claims, txs, 1998, 2, 3)
+	tri := annualFrom(t, claims, txs, 1998, 2, 3).Paid
 	// Origin 1998: dev 0 = 600, dev 1 = 1100 (cumulative), dev 2 = 1100.
 	if !approx(tri.Cells[0][0], 600) || !approx(tri.Cells[0][1], 1100) || !approx(tri.Cells[0][2], 1100) {
 		t.Errorf("origin 1998 = %v, want [600 1100 1100]", tri.Cells[0])
@@ -69,7 +80,7 @@ func TestPaidTriangleAggregatesCumulativePayments(t *testing.T) {
 
 func TestIncurredTriangleIsPaidPlusOutstanding(t *testing.T) {
 	claims, txs := fixtures()
-	tri := triangle.IncurredTriangle(claims, txs, 1998, 2, 3)
+	tri := annualFrom(t, claims, txs, 1998, 2, 3).Incurred
 	// Origin 1998 dev 0: paid 600 + outstanding (1000-600+100) = 1100.
 	if !approx(tri.Cells[0][0], 1100) {
 		t.Errorf("origin 1998 dev 0 = %v, want 1100", tri.Cells[0][0])
@@ -125,11 +136,11 @@ func TestNetPaidTriangleSubtractsRecoveries(t *testing.T) {
 		{ID: 2, ClaimID: 1, Date: shared.NewDate(1999, time.June, 1), Type: transaction.Salvage, Amount: shared.FromDollars(150)},
 		{ID: 3, ClaimID: 1, Date: shared.NewDate(2000, time.June, 1), Type: transaction.Subrogation, Amount: shared.FromDollars(300)},
 	}
-	gross := triangle.PaidTriangle(claims, txs, 1998, 3, 3)
+	gross := annualFrom(t, claims, txs, 1998, 3, 3).Paid
 	if got := gross.Cells[0]; got[0] != 1000 || got[1] != 1000 || got[2] != 1000 {
 		t.Fatalf("gross paid row = %v, want [1000 1000 1000]", got)
 	}
-	net := triangle.NetPaidTriangle(claims, txs, 1998, 3, 3)
+	net := annualFrom(t, claims, txs, 1998, 3, 3).NetPaid
 	if got := net.Cells[0]; got[0] != 1000 || got[1] != 850 || got[2] != 550 {
 		t.Fatalf("net paid row = %v, want [1000 850 550]", got)
 	}
@@ -143,7 +154,7 @@ func TestIncurredTriangleSubtractsRecoveries(t *testing.T) {
 		{ID: 3, ClaimID: 1, Date: shared.NewDate(1998, time.April, 1), Type: transaction.Estimate, Amount: shared.FromDollars(-1000)},
 		{ID: 4, ClaimID: 1, Date: shared.NewDate(1999, time.June, 1), Type: transaction.Salvage, Amount: shared.FromDollars(150)},
 	}
-	incurred := triangle.IncurredTriangle(claims, txs, 1998, 2, 2)
+	incurred := annualFrom(t, claims, txs, 1998, 2, 2).Incurred
 	if got := incurred.Cells[0]; got[0] != 1000 || got[1] != 850 {
 		t.Fatalf("incurred row = %v, want [1000 850] (gross case + net paid)", got)
 	}

@@ -6,6 +6,7 @@ import (
 
 	refdata "github.com/le-marais/claimsgen/data/reference"
 	"github.com/le-marais/claimsgen/internal/application"
+	"github.com/le-marais/claimsgen/internal/domain/triangle"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
 )
@@ -35,7 +36,11 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			report := application.EvaluateRealism(ds, refs, req.StartYear, req.Years)
+			ag, err := application.Aggregate(ds, req.StartYear, req.Years, triangle.AccidentMonth)
+			if err != nil {
+				t.Fatal(err)
+			}
+			report := application.EvaluateRealism(ag, refs)
 			if !report.Pass() {
 				t.Errorf("generated data outside Schedule P bands:\n%s", report)
 			}
@@ -55,7 +60,11 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report := application.EvaluateRealism(ds, refs, req.StartYear, req.Years)
+	ag, err := application.Aggregate(ds, req.StartYear, req.Years, triangle.AccidentMonth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := application.EvaluateRealism(ag, refs)
 	if len(report.PaidATA) != 9 {
 		t.Errorf("paid ATA checks = %d, want 9 (10 development years)", len(report.PaidATA))
 	}

@@ -129,36 +129,6 @@ func TestCumulativeReportedCounts(t *testing.T) {
 	}
 }
 
-func TestAnnualTrianglesMatchTheExportedConstructors(t *testing.T) {
-	claims, txs := fixtures()
-	g, err := triangle.BuildMonthlyGrid(nil, claims, txs, jan1998, 24, triangle.AccidentMonth)
-	if err != nil {
-		t.Fatal(err)
-	}
-	set := g.AnnualTriangles(3)
-	cases := []struct {
-		name string
-		got  triangle.Triangle
-		want triangle.Triangle
-	}{
-		{"paid", set.Paid, triangle.PaidTriangle(claims, txs, 1998, 2, 3)},
-		{"net paid", set.NetPaid, triangle.NetPaidTriangle(claims, txs, 1998, 2, 3)},
-		{"incurred", set.Incurred, triangle.IncurredTriangle(claims, txs, 1998, 2, 3)},
-	}
-	for _, c := range cases {
-		if len(c.got.Cells) != len(c.want.Cells) {
-			t.Fatalf("%s: got %d origins, want %d", c.name, len(c.got.Cells), len(c.want.Cells))
-		}
-		for o := range c.want.Cells {
-			for d := range c.want.Cells[o] {
-				if !approx(c.got.Cells[o][d], c.want.Cells[o][d]) {
-					t.Errorf("%s cell (%d, %d) = %v, want %v", c.name, o, d, c.got.Cells[o][d], c.want.Cells[o][d])
-				}
-			}
-		}
-	}
-}
-
 func TestCoarsenEmptyGrid(t *testing.T) {
 	g, err := triangle.BuildMonthlyGrid(nil, nil, nil, jan1998, 12, triangle.AccidentMonth)
 	if err != nil {

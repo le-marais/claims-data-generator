@@ -7,10 +7,6 @@ import (
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
 )
 
-// scheduleP triangles have ten development years; the UI's triangles match
-// the realism gate's shape.
-const developmentYears = 10
-
 type lobInfoJSON struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
@@ -108,10 +104,7 @@ type checkJSON struct {
 	Within bool    `json:"within"`
 }
 
-func buildResponse(req generateRequest, ds application.Dataset, refs []triangle.ReferenceSet) generateResponseJSON {
-	paid := triangle.PaidTriangle(ds.Claims, ds.Transactions, req.StartYear, req.Years, developmentYears)
-	incurred := triangle.IncurredTriangle(ds.Claims, ds.Transactions, req.StartYear, req.Years, developmentYears)
-	netPaid := triangle.NetPaidTriangle(ds.Claims, ds.Transactions, req.StartYear, req.Years, developmentYears)
+func buildResponse(req generateRequest, ds application.Dataset, ag application.Aggregates, refs []triangle.ReferenceSet) generateResponseJSON {
 	return generateResponseJSON{
 		Run: runInfoJSON{
 			LOB:             req.Params.Name,
@@ -124,10 +117,14 @@ func buildResponse(req generateRequest, ds application.Dataset, refs []triangle.
 			Claims:          len(ds.Claims),
 			Transactions:    len(ds.Transactions),
 		},
-		Summary:       summaryView(application.Summarize(ds, req.StartYear, req.Years)),
-		Triangles:     trianglesJSON{Paid: triangleView(paid), NetPaid: triangleView(netPaid), Incurred: triangleView(incurred)},
+		Summary: summaryView(application.Summarize(ds, req.StartYear, req.Years)),
+		Triangles: trianglesJSON{
+			Paid:     triangleView(ag.Annual.Paid),
+			NetPaid:  triangleView(ag.Annual.NetPaid),
+			Incurred: triangleView(ag.Annual.Incurred),
+		},
 		Distributions: distributionsView(application.ComputeDistributions(ds)),
-		Realism:       realismView(application.EvaluateRealism(ds, refs, req.StartYear, req.Years)),
+		Realism:       realismView(application.EvaluateRealism(ag, refs)),
 	}
 }
 

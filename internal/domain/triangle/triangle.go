@@ -3,14 +3,7 @@
 // realism comparison of those triangles against reference data.
 package triangle
 
-import (
-	"math"
-	"time"
-
-	"github.com/le-marais/claimsgen/internal/domain/claim"
-	"github.com/le-marais/claimsgen/internal/domain/shared"
-	"github.com/le-marais/claimsgen/internal/domain/transaction"
-)
+import "math"
 
 // Triangle is a cumulative development triangle: Cells[origin][dev] is the
 // cumulative amount for an origin year at the end of a development year.
@@ -18,48 +11,6 @@ import (
 type Triangle struct {
 	StartYear int
 	Cells     [][]float64
-}
-
-// PaidTriangle aggregates gross payments into a cumulative annual triangle by
-// occurrence year. Development years beyond the last column are accumulated
-// into it.
-//
-// Deprecated: a temporary shim over the monthly grid, removed once
-// application.Aggregates owns the aggregation. Call BuildMonthlyGrid and
-// AnnualTriangles instead.
-func PaidTriangle(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int) Triangle {
-	return annualShim(claims, txs, startYear, origins, devs).Paid
-}
-
-// NetPaidTriangle aggregates payments net of recoveries: salvage and
-// subrogation rows subtract, so cumulative net paid can develop downward at
-// late ages. Schedule P paid losses are net of salvage and subrogation, so
-// this is the triangle the realism comparison uses.
-//
-// Deprecated: a temporary shim over the monthly grid, as PaidTriangle.
-func NetPaidTriangle(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int) Triangle {
-	return annualShim(claims, txs, startYear, origins, devs).NetPaid
-}
-
-// IncurredTriangle aggregates gross case plus net paid into a cumulative
-// annual triangle by occurrence year: estimate movements and payments add,
-// recoveries subtract.
-//
-// Deprecated: a temporary shim over the monthly grid, as PaidTriangle.
-func IncurredTriangle(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int) Triangle {
-	return annualShim(claims, txs, startYear, origins, devs).Incurred
-}
-
-// annualShim builds an accident-month grid over the same window and coarsens
-// it back to years. The error cannot fire for these arguments - the basis is
-// a constant and origins is at least one wherever the callers use it - so a
-// failure yields empty triangles rather than a panic.
-func annualShim(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int) AnnualSet {
-	g, err := BuildMonthlyGrid(nil, claims, txs, shared.NewMonth(startYear, time.January), origins*12, AccidentMonth)
-	if err != nil {
-		return AnnualSet{}
-	}
-	return g.AnnualTriangles(devs)
 }
 
 // ATAFactors returns volume-weighted age-to-age development factors:
