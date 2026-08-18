@@ -3074,7 +3074,7 @@ Remove the RF-1 mention from the "Known enablers and technical debt" list if one
 Move item `RF-1` ("`developmentYears` is defined twice") out of the open findings and into the file's "Resolved, for provenance" table, with the resolution:
 
 ```markdown
-| RF-1 | `developmentYears` defined twice, with the same two triangles computed in both places | Resolved by the monthly triangles work: `application.Aggregates` builds one monthly grid per run and hands out the annual triangles, so the constant lives only in `internal/application/aggregate.go` and the triangles are computed once. `EvaluateRealism` now takes an `Aggregates`. |
+| RF-1 | `developmentYears` defined twice, with the same two triangles computed in both places | Resolved by the monthly triangles work: `application.Aggregate` performs the run's aggregation once and hands out the annual triangles, so the constant lives only in `internal/application/aggregate.go` and the annual triangles are built once per run instead of once in `realism.go` and again in `viewmodel.go`. `EvaluateRealism` now takes an `Aggregates`. Note that an underwriting-basis run deliberately builds a second, accident-basis grid: the Schedule P reference data is an accident-year presentation, so the annual triangles the realism check scores must stay on the accident basis whatever basis the monthly output uses. |
 ```
 
 Delete the RF-1 section from the open findings and renumber nothing else - the IDs are stable by convention.
