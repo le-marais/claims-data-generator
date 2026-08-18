@@ -1755,7 +1755,7 @@ Build the grid once, hand out the annual triangles, the monthly grid and the exp
 
 **Files:**
 - Create: `internal/application/aggregate.go`
-- Create: `internal/application/aggregate_test.go`
+- Create: `internal/application/aggregate_test.go` - including the run-once oracle, which step 8 deletes again before the commit
 - Modify: `internal/application/realism.go` - `EvaluateRealism` takes an `Aggregates`; the local `developmentYears` constant goes
 - Modify: `internal/application/realism_test.go` - two call sites
 - Modify: `internal/infrastructure/web/viewmodel.go` - `buildResponse` reads the aggregate; the local `developmentYears` constant goes
@@ -1786,10 +1786,14 @@ import (
 )
 
 // legacyTriangle is a verbatim copy of the pre-refactor annual aggregation,
-// kept as an oracle: the grid-derived annual triangles must equal it cell for
-// cell. It is the strongest available evidence that re-expressing the annual
-// triangles as a coarsened monthly grid changed nothing, and so that the
-// realism bands and the shipped preset's calibration still hold.
+// used as a one-shot oracle: the grid-derived annual triangles must equal it
+// cell for cell. It is the strongest available evidence that re-expressing the
+// annual triangles as a coarsened monthly grid changed nothing, and so that
+// the realism bands and the shipped preset's calibration still hold.
+//
+// It is deliberately temporary. Step 8 of this task deletes it once it has
+// passed, so no duplicated aggregation logic lands on main - see "the oracle is
+// run-once" below.
 func legacyTriangle(claims []claim.Claim, txs []transaction.Transaction, startYear, origins, devs int, weight func(transaction.Transaction) float64) [][]float64 {
 	occurrenceYear := make(map[int]int, len(claims))
 	for _, c := range claims {
@@ -2008,6 +2012,8 @@ func TestAggregateRejectsBadArguments(t *testing.T) {
 }
 ```
 
+**The oracle is run-once.** `legacyTriangle`, its three weight functions and `TestAggregateAnnualMatchesTheLegacyAggregation` prove the refactor and are then deleted in step 8, in the same commit, so main never carries a duplicate of the old aggregation logic. The other tests in `aggregate_test.go` stay. Do not skip running it - the whole point of Task 4's shims and this oracle is to catch a coarsening that is not faithful before anything is built on it.
+
 The spec also lists a test that aggregating-then-cumulating commutes with cumulating-then-aggregating. `TestAggregateAnnualMatchesTheLegacyAggregation` subsumes it: the legacy oracle aggregates incremental cells and then cumulates, and the new path does the same through `Coarsen` and `Cumulative`, so equality across every cell of a generated dataset is the stronger statement. No separate test is needed.
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -2199,10 +2205,14 @@ Then in each test replace the constructor call, keeping every assertion exactly 
 - `TestNetPaidTriangleSubtractsRecoveries`: `gross := annualFrom(t, claims, txs, 1998, 3, 3).Paid` and `net := annualFrom(t, claims, txs, 1998, 3, 3).NetPaid`
 - `TestIncurredTriangleSubtractsRecoveries`: `incurred := annualFrom(t, claims, txs, 1998, 2, 2).Incurred`
 
-- [ ] **Step 8: Run the whole suite**
+- [ ] **Step 8: Run the whole suite, then retire the oracle**
 
 Run: `go test ./... && go vet ./...`
 Expected: all PASS. The oracle test proves the annual triangles are unchanged on a generated dataset; `TestDefaultPresetIsRealistic` still passes on all three seeds; the golden hash is untouched because no generated CSV changed.
+
+Only once that run is green, delete the oracle from `internal/application/aggregate_test.go`: `legacyTriangle`, `legacyPaid`, `legacyNetPaid`, `legacyIncurred` and `TestAggregateAnnualMatchesTheLegacyAggregation`, plus the now-unused `claim` and `transaction` imports. Keep every other test in the file. Then run `go test ./... && go vet ./...` again and confirm it is still green.
+
+Report both runs in the report file: the green run **with** the oracle (quoting its result) is the behaviour-preservation evidence, and the green run after removing it is the state that gets committed. If the oracle fails, do not delete it and do not commit - the coarsening is not faithful; fix that first.
 
 - [ ] **Step 9: Commit**
 
