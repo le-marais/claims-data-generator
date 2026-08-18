@@ -165,15 +165,19 @@ weights exactly, so the derived annual triangles are unchanged.
 
 Extent. `originMonths` is `years * 12`, counted from January of the run's start
 year, matching the origin axis of the annual triangles and of the monthly
-exposure. Development runs to **full runoff**:
+exposure. Development runs to **full runoff**: `DevPeriods` is the largest
+development period any in-grid claim actually reaches,
 
 ```
-DevPeriods = MonthsBetween(StartMonth, lastEventMonth) + 1
+DevPeriods = max over in-grid events of
+                 MonthsBetween(originMonth(claim), eventMonth) + 1
 ```
 
-where `lastEventMonth` is the latest transaction or report month among events
-whose origin falls inside the grid, so an event skipped for an out-of-range
-origin cannot stretch the rectangle.
+floored at 1 so an empty dataset still yields a one-column grid. Events belonging
+to a claim whose origin falls outside the grid are skipped and cannot stretch it.
+Measuring the widest development actually observed, rather than reserving room
+for the earliest origin to reach the dataset's last event month, keeps the
+rectangle as narrow as the data allows while still dropping no movement.
 The grid is a rectangle: every origin gets `DevPeriods` columns. Origin 1 fills
 that width; later origins carry trailing zeros for development months that lie
 past the data. `DevPeriods` is at least 1 even for an empty dataset.
@@ -406,11 +410,12 @@ Formatting:
 - Counts as plain integers.
 
 Every cell is emitted, zeros included, so the file states the grid's exact
-extent and every consumer reads the same rectangle. Cost: a default ten-year run
-gives 120 origin months by roughly 215 development months, so about 26,000 rows
-and a little over a megabyte. Row count scales with the square of the run
-length - at the UI's `maxYears` of 100 the file would reach order 1.5 million
-rows and tens of megabytes. That is a
+extent and every consumer reads the same rectangle. Cost for a default ten-year
+run: 120 origin months by however many development months the longest motor
+claim lifetime plus report lag reaches, on the order of 140, so roughly 17,000
+rows and about a megabyte. Row count grows with both the run length and the
+tail, so a long-tail class or a long run costs more - at the UI's `maxYears` of
+100 the file would reach order a million rows and tens of megabytes. That is a
 consequence of the run size the user asked for, the same way `transactions.csv`
 is; `checkRunSize` is not extended here, but the generate output line reports
 the row count so the size is never a surprise.
