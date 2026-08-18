@@ -26,6 +26,7 @@ type runInfoJSON struct {
 	StartYear       int    `json:"start_year"`
 	Years           int    `json:"years"`
 	InitialBookSize int    `json:"initial_book_size"`
+	OriginBasis     string `json:"origin_basis"`
 	OutDir          string `json:"out_dir"`
 	Policies        int    `json:"policies"`
 	Claims          int    `json:"claims"`
@@ -112,6 +113,7 @@ func buildResponse(req generateRequest, ds application.Dataset, ag application.A
 			StartYear:       req.StartYear,
 			Years:           req.Years,
 			InitialBookSize: req.InitialBookSize,
+			OriginBasis:     string(ag.Basis),
 			OutDir:          req.OutDir,
 			Policies:        len(ds.Policies),
 			Claims:          len(ds.Claims),

@@ -245,6 +245,7 @@ async function generate(event) {
       years: Number($("#years").value),
       initial_book_size: Number($("#initial-book-size").value),
       out_dir: $("#out-dir").value,
+      origin_basis: $("#origin-basis").value,
       params: collectParams(),
     };
     const run = await fetchJSON("/api/generate", {
@@ -281,6 +282,7 @@ function renderResults(run) {
 function renderRunHeader(run) {
   $("#run-header").textContent =
     `${run.lob} · seed ${run.seed} · ${run.start_year}–${run.start_year + run.years - 1} · ` +
+    `${run.origin_basis} origin · ` +
     `${fmtInt.format(run.policies)} policies · ${fmtInt.format(run.claims)} claims · ` +
     `${fmtInt.format(run.transactions)} transactions · ${run.out_dir}`;
 }
