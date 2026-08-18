@@ -67,16 +67,21 @@ func TestMonthsBetween(t *testing.T) {
 
 func TestMonthYearMonthAndQuarter(t *testing.T) {
 	cases := []struct {
-		m           shared.Month
-		year        int
-		month       time.Month
-		quarter     int
+		m       shared.Month
+		year    int
+		month   time.Month
+		quarter int
 	}{
 		{shared.NewMonth(1998, time.January), 1998, time.January, 1},
 		{shared.NewMonth(1998, time.March), 1998, time.March, 1},
 		{shared.NewMonth(1998, time.April), 1998, time.April, 2},
 		{shared.NewMonth(1998, time.September), 1998, time.September, 3},
 		{shared.NewMonth(2007, time.December), 2007, time.December, 4},
+		// A negative year index must round-trip: Year, Month and Quarter use
+		// floor division, not Go's truncating division, so an index before
+		// year 0 does not land on a nonexistent month-of-year.
+		{shared.NewMonth(-1, time.January), -1, time.January, 1},
+		{shared.NewMonth(-1, time.October), -1, time.October, 4},
 	}
 	for _, c := range cases {
 		if got := c.m.Year(); got != c.year {

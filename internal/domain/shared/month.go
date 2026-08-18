@@ -22,14 +22,35 @@ func (d Date) Month() Month {
 	return NewMonth(d.t.Year(), d.t.Month())
 }
 
-// Year returns the calendar year.
-func (m Month) Year() int { return m.index / 12 }
+// Year returns the calendar year. Division is floored, not truncated, so a
+// negative index (a month before year 0) round-trips through Year and Month
+// rather than landing on a nonexistent month-of-year.
+func (m Month) Year() int { return floorDiv(m.index, 12) }
 
 // Month returns the month of the year.
-func (m Month) Month() time.Month { return time.Month(m.index%12 + 1) }
+func (m Month) Month() time.Month { return time.Month(floorMod(m.index, 12) + 1) }
 
 // Quarter returns the calendar quarter, 1 to 4.
-func (m Month) Quarter() int { return m.index%12/3 + 1 }
+func (m Month) Quarter() int { return floorMod(m.index, 12)/3 + 1 }
+
+// floorDiv is integer division rounded toward negative infinity, unlike Go's
+// truncating /.
+func floorDiv(a, b int) int {
+	q := a / b
+	if (a%b != 0) && ((a < 0) != (b < 0)) {
+		q--
+	}
+	return q
+}
+
+// floorMod is a%b with the sign of b, unlike Go's truncating %.
+func floorMod(a, b int) int {
+	r := a % b
+	if r != 0 && (r < 0) != (b < 0) {
+		r += b
+	}
+	return r
+}
 
 // Add returns the month n months later; n may be negative.
 func (m Month) Add(n int) Month { return Month{index: m.index + n} }

@@ -14,7 +14,7 @@ One run produces five linked CSV datasets for a class of business:
 - **claims.csv** - claim events with occurrence, report and close dates plus the initial case estimate.
 - **transactions.csv** - each claim's case estimate movements, payments, and recoveries (salvage and subrogation) over its lifetime.
 - **triangles.csv** - incremental monthly development triangles by origin month: paid, paid net of recoveries, incurred, and reported claim counts.
-- **exposure.csv** - exposure by origin month: premium, exposure units in policy-years, and policy count.
+- **exposure.csv** - exposure by origin month: premium, exposure units in policy-years, and a policy count that is an in-force count on the accident basis (so it does not sum to the book's policy count) and an inception count on the underwriting basis (so it does).
 
 Generation is reproducible: the same seed plus the same parameters produce byte-identical output. There is no valuation date; every claim runs to closure, which supports out-of-sample testing of reserving methods.
 

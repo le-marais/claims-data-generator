@@ -62,14 +62,15 @@ func fixtures() ([]claim.Claim, []transaction.Transaction) {
 	return claims, txs
 }
 
-func TestPaidTriangleAggregatesCumulativePayments(t *testing.T) {
+func TestAnnualTrianglesPaidAggregatesCumulativePayments(t *testing.T) {
 	claims, txs := fixtures()
 	tri := annualFrom(t, claims, txs, 1998, 2, 3).Paid
-	// Origin 1998: dev 0 = 600, dev 1 = 1100 (cumulative), dev 2 = 1100.
+	// Origin 1998: development period 1 (slice index 0) = 600, period 2
+	// (index 1) = 1100 (cumulative), period 3 (index 2) = 1100.
 	if !approx(tri.Cells[0][0], 600) || !approx(tri.Cells[0][1], 1100) || !approx(tri.Cells[0][2], 1100) {
 		t.Errorf("origin 1998 = %v, want [600 1100 1100]", tri.Cells[0])
 	}
-	// Origin 1999: dev 0 = 450.
+	// Origin 1999: development period 1 (slice index 0) = 450.
 	if !approx(tri.Cells[1][0], 450) {
 		t.Errorf("origin 1999 dev 0 = %v, want 450", tri.Cells[1][0])
 	}
@@ -78,18 +79,19 @@ func TestPaidTriangleAggregatesCumulativePayments(t *testing.T) {
 	}
 }
 
-func TestIncurredTriangleIsPaidPlusOutstanding(t *testing.T) {
+func TestAnnualTrianglesIncurredIsPaidPlusOutstanding(t *testing.T) {
 	claims, txs := fixtures()
 	tri := annualFrom(t, claims, txs, 1998, 2, 3).Incurred
-	// Origin 1998 dev 0: paid 600 + outstanding (1000-600+100) = 1100.
+	// Origin 1998, development period 1 (slice index 0): paid 600 +
+	// outstanding (1000-600+100) = 1100.
 	if !approx(tri.Cells[0][0], 1100) {
 		t.Errorf("origin 1998 dev 0 = %v, want 1100", tri.Cells[0][0])
 	}
-	// Dev 1: claim closed, incurred = paid = 1100.
+	// Development period 2 (slice index 1): claim closed, incurred = paid = 1100.
 	if !approx(tri.Cells[0][1], 1100) {
 		t.Errorf("origin 1998 dev 1 = %v, want 1100", tri.Cells[0][1])
 	}
-	// Origin 1999 dev 0: settled at 450 within the year.
+	// Origin 1999, development period 1 (slice index 0): settled at 450 within the year.
 	if !approx(tri.Cells[1][0], 450) {
 		t.Errorf("origin 1999 dev 0 = %v, want 450", tri.Cells[1][0])
 	}
@@ -129,7 +131,7 @@ func TestATAFactorsAreVolumeWeighted(t *testing.T) {
 	}
 }
 
-func TestNetPaidTriangleSubtractsRecoveries(t *testing.T) {
+func TestAnnualTrianglesNetPaidSubtractsRecoveries(t *testing.T) {
 	claims := []claim.Claim{{ID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1)}}
 	txs := []transaction.Transaction{
 		{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.April, 1), Type: transaction.Payment, Amount: shared.FromDollars(1000)},
@@ -146,7 +148,7 @@ func TestNetPaidTriangleSubtractsRecoveries(t *testing.T) {
 	}
 }
 
-func TestIncurredTriangleSubtractsRecoveries(t *testing.T) {
+func TestAnnualTrianglesIncurredSubtractsRecoveries(t *testing.T) {
 	claims := []claim.Claim{{ID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1)}}
 	txs := []transaction.Transaction{
 		{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.March, 10), Type: transaction.Estimate, Amount: shared.FromDollars(1000)},

@@ -19,12 +19,20 @@ type MonthExposure struct {
 	Month         shared.Month
 	Premium       float64
 	ExposureUnits float64 // policy-years
-	Policies      int
+	// Policies is an in-force count on the accident basis - a policy counts
+	// in every month it covers, so the column does not sum to a policy count -
+	// and an inception count on the underwriting basis, where it does.
+	Policies int
 }
 
-// ExposureByMonth returns the exposure of each of the months origin months
-// starting at startMonth. Exposure falling outside that span is not counted,
-// so the last months of a run window are thin.
+// ExposureByMonth returns the exposure of each of the origin months starting
+// at startMonth. Exposure falling outside that span is not counted, so the
+// last months of a run window are thin on the accident basis. On the
+// underwriting basis a policy's whole premium and whole term are written in
+// full at its inception month, while the claim occurrences scored against
+// that exposure stop at the run window's end, so the final twelve origin
+// months are immature by construction: incurred against premium there
+// understates the eventual ratio.
 func ExposureByMonth(policies []policy.Policy, startMonth shared.Month, months int, basis OriginBasis) []MonthExposure {
 	out := make([]MonthExposure, months)
 	for i := range out {

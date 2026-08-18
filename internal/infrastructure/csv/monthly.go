@@ -47,21 +47,25 @@ func WriteAggregates(dir string, ag application.Aggregates) error {
 		})
 }
 
-// formatAmount renders a money amount at fixed precision. A value that rounds
-// to zero is written as a positive zero, so a cell whose movements cancel
-// reads "0.00" rather than "-0.00".
-func formatAmount(v float64) string {
-	if math.Round(v*100) == 0 {
-		return "0.00"
+// format rounds v to prec decimal places with a single rounding rule and
+// renders the already-rounded value. Rounding once, with math.Round (half
+// away from zero), and then formatting the result avoids FormatFloat
+// rounding the raw value a second time with its own rule (half to even): at
+// an exact tie the two rules can disagree, which previously let a value the
+// zero-guard was meant to catch reach the tie-breaking rule unrounded and
+// print as a signed zero. A value that rounds to zero is normalised to a
+// positive zero, so a cell whose movements cancel reads "0.00" rather than
+// "-0.00".
+func format(v float64, prec int, scale float64) string {
+	r := math.Round(v*scale) / scale
+	if r == 0 {
+		r = 0
 	}
-	return strconv.FormatFloat(v, 'f', 2, 64)
+	return strconv.FormatFloat(r, 'f', prec, 64)
 }
 
-// formatUnits renders exposure units at fixed precision, with the same
-// negative-zero guard.
-func formatUnits(v float64) string {
-	if math.Round(v*1e6) == 0 {
-		return "0.000000"
-	}
-	return strconv.FormatFloat(v, 'f', 6, 64)
-}
+// formatAmount renders a money amount at fixed precision.
+func formatAmount(v float64) string { return format(v, 2, 100) }
+
+// formatUnits renders exposure units at fixed precision.
+func formatUnits(v float64) string { return format(v, 6, 1e6) }

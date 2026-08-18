@@ -24,6 +24,10 @@ soon, **low** fix when touching the area. Nothing high-severity is open.
 
 ## Order
 
+(The leading numbers are stable position IDs, not a dense count - item 7 was
+RF-1, resolved by the monthly triangles work and moved to "Resolved, for
+provenance" below, so the gap between 6 and 8 is expected rather than a typo.)
+
 1. **SL-7** - the only open item that changes what a reserving actuary sees in
    the data.
 2. **D-1** - the README currently advertises defects that were fixed months ago.

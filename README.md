@@ -8,7 +8,7 @@ One run produces five linked CSV datasets for a class of business:
 - **claims.csv** - claim events with occurrence, report and close dates plus the initial case estimate
 - **transactions.csv** - each claim's case estimate movements, payments, and recoveries (salvage and subrogation) over its lifetime
 - **triangles.csv** - incremental monthly development triangles by origin month: paid, paid net of recoveries, incurred, and reported claim counts
-- **exposure.csv** - exposure by origin month: premium, exposure units in policy-years, and policy count
+- **exposure.csv** - exposure by origin month: premium, exposure units in policy-years, and a policy count that is an in-force count on the accident basis (so it does not sum to the book's policy count) and an inception count on the underwriting basis (so it does)
 
 ## Quickstart
 
@@ -107,6 +107,13 @@ written in that month, so a policy's whole premium and whole term land at
 inception. The basis governs these two files only: the annual triangles and the
 realism check stay on the accident basis, because the Schedule P reference data
 is an accident-year presentation.
+
+On the underwriting basis, exposure is written in full at inception while the
+claim occurrences scored against it stop at the run window's end, so the final
+twelve origin months carry a full policy-year of premium against a fraction of
+a policy-year of claims and read as immature by construction. The accident
+basis does not have this asymmetry: exposure and claims are both truncated the
+same way at the end of the window.
 
 ## Parameters per line of business
 

@@ -48,8 +48,8 @@ type IncrementalSet struct {
 // Coarsen aggregates the incremental monthly grid onto a coarser grain. When
 // devPeriods is positive every origin row is exactly devPeriods wide, and
 // development beyond it is folded into the last period when foldTail is set
-// and dropped otherwise. When devPeriods is zero rows take the grain's
-// natural extent.
+// and dropped otherwise. When devPeriods is non-positive rows take the
+// grain's natural extent.
 //
 // Both axes are keyed on the calendar period the month falls in, not on whole
 // multiples of the monthly development period. An accident in March 1998 paid
