@@ -20,6 +20,11 @@ type Policy struct {
 	Excess     shared.Money
 	RiskFactor float64
 	Premium    shared.Money
+	// ThirdPartyPremium is the third-party liability section of Premium,
+	// priced the same way on that section's expected loss. The realism gate
+	// scores the liability claims against it, because the Schedule P
+	// reference is a liability line. Never written to CSV.
+	ThirdPartyPremium shared.Money
 }
 
 // BookSimulator generates the policy book for a run.
@@ -93,7 +98,8 @@ func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, year int, me
 	riskFactor := src.Gamma(1/spread2, spread2)
 
 	excess := s.drawExcess(src)
-	premium := s.pricing.ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflation, siDrift) / s.pricing.TargetLossRatio
+	ownDamageLoss, thirdPartyLoss := s.pricing.ExpectedSectionLoss(sumInsured, excess, riskFactor, inflation, siDrift)
+	premium := (ownDamageLoss + thirdPartyLoss) / s.pricing.TargetLossRatio
 
 	return Policy{
 		ID:         id,
@@ -103,6 +109,8 @@ func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, year int, me
 		Excess:     shared.FromDollars(excess),
 		RiskFactor: riskFactor,
 		Premium:    shared.FromDollars(premium),
+
+		ThirdPartyPremium: shared.FromDollars(thirdPartyLoss / s.pricing.TargetLossRatio),
 	}
 }
 

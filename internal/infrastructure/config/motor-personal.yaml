@@ -1,8 +1,12 @@
 # Personal motor insurance preset.
-# Values are calibrated so that generated development triangles fall within
-# the P5-P95 bands observed across the curated Schedule P private passenger
-# auto reference data (data/reference/schedule p/ppauto_pos98-07, 96
-# hand-curated companies).
+# The third-party (liability) section is calibrated so its development
+# triangles fall within the P5-P95 bands observed across the curated
+# Schedule P private passenger auto reference data
+# (data/reference/schedule p/ppauto_pos98-07, 96 hand-curated companies).
+# That reference is a liability line with no physical damage in it, so the
+# realism gate scores third-party claims against their share of premium and
+# leaves own damage out; own-damage settlement is set as a short-tail class
+# instead of being bent to liability speed.
 name: motor-personal
 book:
   growth_factor: 1.03
@@ -44,20 +48,21 @@ claims:
     third_party_scale: 4000
     third_party_alpha: 2.2
   # Report-to-close lag. The base shape/mean_days (with the size stretch)
-  # govern own-damage claims, which settle fast; third_party_shape and
-  # third_party_mean_days give third-party (bodily-injury) claims a much
-  # slower tail, so paid development continues into later ages as in the
-  # Schedule P reference companies. Paid ATA age 2-3 is the tightest-margin
-  # metric in the realism gate - re-check it after any change to paid
-  # development.
+  # govern own-damage claims, which settle in weeks; these are judgement
+  # values, since no 10-year physical damage reference exists to score them
+  # against. third_party_shape and third_party_mean_days give third-party
+  # (liability) claims their own regime, calibrated to the Schedule P
+  # reference: a shape below 1 settles many claims quickly while keeping a
+  # long tail, so paid development continues into later ages. Re-run the
+  # realism gate after any change to third-party paid development.
   close_lag:
     shape: 1.2
-    mean_days: 120
+    mean_days: 40
     size_threshold: 20000
-    size_multiplier: 6
+    size_multiplier: 3
     risk_loading: 0.3
-    third_party_shape: 1.2
-    third_party_mean_days: 680
+    third_party_shape: 0.8
+    third_party_mean_days: 425
   # Claims inflation applied by occurrence year to every claim's ground-up
   # loss. Stochastic: each year's factor is `mean` times lognormal noise of
   # sigma `volatility`, compounded from 1.0 in the start year.

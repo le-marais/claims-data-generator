@@ -515,8 +515,12 @@ function renderRealism(r) {
   banner.textContent = r.pass
     ? "✓ Pass - every metric inside the Schedule P P5-P95 reference band"
     : "✗ Fail - some metrics fall outside the Schedule P P5-P95 reference band";
+  const scope = document.createElement("p");
+  scope.className = "empty-note";
+  scope.textContent = "Scored on third-party liability claims against their share of premium: the Schedule P private passenger auto reference is a liability line with no own damage in it.";
   panel.append(
     banner,
+    scope,
     bandCard("Paid age-to-age factors vs reference P5-P95 (min/max faint)", r.paid_ata || []),
     bandCard("Incurred age-to-age factors vs reference P5-P95 (min/max faint)", r.incurred_ata || []),
     bandCard("Net loss ratio vs Schedule P P5-P95 (min/max faint)", [{ ...r.loss_ratio, label: "Net LR" }]),

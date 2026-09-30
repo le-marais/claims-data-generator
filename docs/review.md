@@ -11,30 +11,16 @@ reopening, case runoff, recoveries, pricing, triangles, realism gate) and ran
 controlled experiments: the shipped preset over 1998-2007 with a 40k initial
 book, seed 1 unless stated, toggling one feature at a time to isolate each
 effect. It also analysed the 96 embedded Schedule P companies directly.
+Figures are as measured then. Since then MR-1 and MR-2 have shipped: the
+realism gate now scores the third-party liability section alone, and the
+preset's own-damage close lag is shorter (mean 40 days, 3x above the size
+threshold). Findings whose numbers predate that say so.
 
 IDs are **MR** (model review). Severity uses the `docs/todo.md` scale: **high**
 undermines the mission, **medium** worth addressing soon, **low** fix when
 touching the area.
 
-## 1. MR-2 (high) - the realism reference is liability-only, but the preset is 80% own damage
-
-- Where: `data/reference/schedule p/ppauto_pos98-07`,
-  `internal/application/realism.go`, the `close_lag` block of
-  `internal/infrastructure/config/motor-personal.yaml`.
-- The CAS `ppauto` set is Schedule P's private passenger auto liability/medical
-  line: it holds no physical damage. The preset's claims are 79.6% own damage.
-- To fit liability-speed paid development, own damage is slowed to a mean of
-  148 days from report to close (P90 307, P99 1,014), with a 6x mean (about
-  720 days) above $20k. Even so, the generated book pays faster than 88-93% of
-  reference companies at the first three age-to-age factors (paid 24-36 factor
-  1.076 against a reference median of 1.18).
-- "Realistic" therefore means "develops like a US auto liability book", with
-  a product mix that book does not contain.
-- Action: score the third-party (liability) component alone against `ppauto`,
-  on its share of premium, and free own-damage settlement from the liability
-  calibration.
-
-## 2. MR-3 (medium) - pricing leaves out nil claims and lags inflation by half a year
+## 1. MR-3 (medium) - pricing leaves out nil claims and lags inflation by half a year
 
 - Where: `internal/domain/lob/expectedloss.go` (`ExpectedPolicyLoss` has no nil
   term); `internal/domain/policy/book.go` (premium trended by
@@ -55,7 +41,7 @@ touching the area.
   inflation over the cover term, `Mean^y x (1 - f + f x Mean)` where `f` is the
   share of cover in the next year.
 
-## 3. MR-4 (medium) - generated incurred is compared against reference incurred that includes IBNR
+## 2. MR-4 (medium) - generated incurred is compared against reference incurred that includes IBNR
 
 - Where: `internal/infrastructure/schedulep/reader.go` (reads only
   `PaidTriangle` and `IncurredTriangle`); `internal/domain/triangle/compare.go`
@@ -64,8 +50,10 @@ touching the area.
   bulk and IBNR): the median 12-24 factor is 0.974 and incurred converges on
   paid by age 10. Generated incurred is case plus paid, with no IBNR.
 - Generated incurred also lands below 1, for an unrelated reason: nil-claim
-  case releases and post-close recoveries. The 12-24 factor is 0.928 with the
-  preset, 0.954 with nil claims off, and 1.019 with recoveries also off. The
+  case releases and post-close recoveries. On the whole book the 12-24 factor
+  was 0.928 with the preset, 0.954 with nil claims off, and 1.019 with
+  recoveries also off. The liability section the gate now scores has no
+  recoveries, so nil releases alone put its 12-24 factor at 0.982. The
   gate would penalise realistic reporting delays, whose IBNR emergence pushes
   case-incurred factors above a band centred below 1.
 - The "ultimate loss ratio" metric (formerly SL-2) scores a fully developed
@@ -80,9 +68,11 @@ touching the area.
   either add IBNR to the generated incurred for the comparison or state in the
   realism wording that the incurred check compares different quantities.
 
-## 4. MR-5 (medium) - a fixed-dollar size threshold creates a hidden trend in settlement speed
+## 3. MR-5 (medium) - a fixed-dollar size threshold creates a hidden trend in settlement speed
 
 - Where: `internal/domain/claim/claim.go`, `closeLagRegime`.
+- Measured before MR-2 recalibrated the stretch from 6x to 3x; the mechanism
+  is unchanged, only its size.
 - The own-damage close-lag stretch applies above a nominal $20k, while claims
   inflate at 4% a year. The share of own-damage claims above it grows from
   2.4% (AY1998) to 5.8% (AY2007).
@@ -94,7 +84,7 @@ touching the area.
   the threshold, and consider a smooth size relationship such as
   `mean x (size/threshold)^beta`.
 
-## 5. MR-6 (medium) - the first accident year behaves like a start-up book
+## 4. MR-6 (medium) - the first accident year behaves like a start-up book
 
 - Where: `internal/domain/policy/book.go` (no policies in force at the window
   start); the comment on `ExposureByMonth` in
@@ -102,23 +92,25 @@ touching the area.
   section 10.3.
 - AY1998 exposure ramps from 77 exposure units in January to about 1,700 a
   month, and its claims are back-loaded (571 in January-June against 1,667 in
-  July-December). AY1998 pays 0.42 of ultimate in development year 1, against
-  about 0.53 for later years. On a valuation-date cut, the late-age factors
+  July-December). AY1998 paid 0.42 of ultimate in development year 1, against
+  about 0.53 for later years, before MR-2 shortened own-damage settlement;
+  the ramp-up itself is unchanged. On a valuation-date cut, the late-age factors
   come from exactly this row.
 - The docs say the accident basis also thins at the end of the window. It does
   not: December 2007 carries a normal month (2,295 units).
 - Action: simulate a warm-up underwriting year before the window and keep only
   its in-window occurrences; correct the docs.
 
-## 6. MR-7 (low) - salvage is not tied to total losses
+## 5. MR-7 (low) - salvage is not tied to total losses
 
 - Where: `internal/domain/transaction/recovery.go`, `simulateClaim`.
 - 98% of salvage rows (3,723 of 3,798) land on partially damaged vehicles.
   Salvage comes from selling a written-off vehicle.
 - Action: make salvage eligibility depend on the claim reaching the sum-insured
-  cap, and size it off the sum insured.
+  cap (`Claim.Ultimate == Claim.CoverLimit` since MR-1), and size it off the
+  sum insured.
 
-## 7. MR-8 (low) - third-party severity is a bare Pareto
+## 6. MR-8 (low) - third-party severity is a bare Pareto
 
 - Where: `internal/domain/claim/claim.go`, `drawGroundUpLoss`.
 - No third-party claim is below about $3,050 after excess, the mode sits at the
@@ -127,7 +119,7 @@ touching the area.
 - Action: a lognormal body with a Pareto tail, an optional liability limit, and
   a switch for applying the excess to third-party claims.
 
-## 8. MR-9 (low) - there is almost no pure IBNR, and third-party close lag ignores size
+## 7. MR-9 (low) - there is almost no pure IBNR, and third-party close lag ignores size
 
 - Where: `internal/domain/claim/claim.go` (one report lag for both claim types;
   `closeLagRegime` applies the size stretch to own damage only).
@@ -139,7 +131,7 @@ touching the area.
 - Action: a third-party report lag, and a size link in the third-party close
   lag.
 
-## 9. MR-10 (low) - inflation steps up about 4% every 1 January
+## 8. MR-10 (low) - inflation steps up about 4% every 1 January
 
 - Where: `internal/domain/claim/inflation.go`, `InflationIndex.For`.
 - The index is constant within a calendar year and jumps at each year end,
@@ -147,7 +139,7 @@ touching the area.
 - Action: interpolate the index by occurrence date. This pairs with the
   cover-term pricing in MR-3.
 
-## 10. MR-11 (low) - off-by-one in the exposed fraction
+## 9. MR-11 (low) - off-by-one in the exposed fraction
 
 - Where: `internal/domain/claim/claim.go`, `exposedFraction`.
 - It divides in-window days by 364 (`DaysBetween(CoverStart, CoverEnd)`)
@@ -156,7 +148,7 @@ touching the area.
   of 1 instead of 364/365.
 - Action: divide by the number of cover days.
 
-## 11. MR-12 (low) - one setting drives two kinds of variation
+## 10. MR-12 (low) - one setting drives two kinds of variation
 
 - Where: `internal/domain/policy/book.go`, `simulatePolicy`.
 - `spread` sets both the sum-insured lognormal sigma and the risk-factor

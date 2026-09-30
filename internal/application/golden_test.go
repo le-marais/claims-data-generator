@@ -19,7 +19,7 @@ import (
 // It guards against unintended changes to the generated data or its CSV
 // encoding. If a change to the output is intentional, regenerate this digest
 // by running the test once (it prints the actual value) and paste it back in.
-const wantHash = "5989cc7f098543ae9058fc6395785acdfb8ef6d0c0e566c6b89e188683f7b309"
+const wantHash = "9e21dd60d37ae72f12a09387c1309acb163013ca47dfcb8761d94147b2327e01"
 
 func TestGoldenCSVBytes(t *testing.T) {
 	ds, err := application.GenerateDataset(t.Context(), random.NewSource(1), request(t))
@@ -48,7 +48,7 @@ func TestGoldenCSVBytes(t *testing.T) {
 // small deterministic dataset. Regenerate it the same way as wantHash: run the
 // test once, it prints the actual value, paste it back in. Do not update it to
 // hide an unintended change.
-const wantAggregateHash = "76a287fbdbc13ef5c7707d835aad93da22c5c41fee39b787098afc2cccc6c5ab"
+const wantAggregateHash = "9a2caff92b5f69ff04811f2df7f6436235c90ea80337563a274ba19be151bede"
 
 func TestGoldenAggregateCSVBytes(t *testing.T) {
 	req := request(t)
@@ -79,7 +79,8 @@ func TestGoldenAggregateCSVBytes(t *testing.T) {
 }
 
 // wantAnnualHash pins ag.Annual's three cumulative triangles - Paid, NetPaid
-// and Incurred - for the same small deterministic dataset. It exists because
+// and Incurred - plus the liability section's triangles and earned premium
+// that the realism gate scores, for the same small deterministic dataset. It exists because
 // the annual triangles are a coarsened view of the monthly grid, derived by
 // Coarsen keying both axes on calendar period rather than computed directly,
 // and the branch that introduced that derivation stated as an invariant that
@@ -91,7 +92,7 @@ func TestGoldenAggregateCSVBytes(t *testing.T) {
 // Regenerate it the same way as wantHash: run the test once, it prints the
 // actual value, paste it back in. Do not update it to hide an unintended
 // change.
-const wantAnnualHash = "02792b30629e465df41475fdf03ce9cfd839ff79eebb6dfb1c8cea30681636e7"
+const wantAnnualHash = "5f03b0dca909dbaab886a2c193d2e1c814f7d68c2a60cee628f9a578cd30de41"
 
 func TestGoldenAnnualTriangles(t *testing.T) {
 	req := request(t)
@@ -104,12 +105,18 @@ func TestGoldenAnnualTriangles(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := sha256.New()
-	for _, tri := range []triangle.Triangle{ag.Annual.Paid, ag.Annual.NetPaid, ag.Annual.Incurred} {
+	for _, tri := range []triangle.Triangle{
+		ag.Annual.Paid, ag.Annual.NetPaid, ag.Annual.Incurred,
+		ag.Liability.Paid, ag.Liability.NetPaid, ag.Liability.Incurred,
+	} {
 		for o, row := range tri.Cells {
 			for d, v := range row {
 				fmt.Fprintf(h, "%d,%d,%s\n", o, d, strconv.FormatFloat(v, 'f', 2, 64))
 			}
 		}
+	}
+	for y, ep := range ag.LiabilityEarnedPremium {
+		fmt.Fprintf(h, "ep,%d,%s\n", y, strconv.FormatFloat(ep, 'f', 2, 64))
 	}
 	got := hex.EncodeToString(h.Sum(nil))
 	if got != wantAnnualHash {

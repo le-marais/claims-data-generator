@@ -133,3 +133,32 @@ func TestExpectedPolicyLossRebasesAndCapsOwnDamage(t *testing.T) {
 		t.Fatalf("capped OD exceeds ceiling: got %.4f, ceiling %.4f", got, ceiling)
 	}
 }
+
+func TestExpectedSectionLossSplitsThePolicyLoss(t *testing.T) {
+	p := PricingParams{
+		BaseFrequency: 0.12,
+		Severity: SeverityParams{
+			ThirdPartyWeight:        0.2,
+			OwnDamageMedianFraction: 0.12,
+			OwnDamageSigma:          1.0,
+			ThirdPartyScale:         4000,
+			ThirdPartyAlpha:         2.2,
+		},
+		ReopenProbability:    0.04,
+		ReopenEstimateFactor: 0.45,
+	}
+	od, tp := p.ExpectedSectionLoss(20000, 300, 1.3, 1.1, 1.05)
+	if od <= 0 || tp <= 0 {
+		t.Fatalf("both sections should carry loss: own damage %v, third party %v", od, tp)
+	}
+	if total := p.ExpectedPolicyLoss(20000, 300, 1.3, 1.1, 1.05); math.Abs(od+tp-total) > 1e-9*total {
+		t.Fatalf("sections %v + %v do not add up to the policy loss %v", od, tp, total)
+	}
+	for _, w := range []float64{0, 1} {
+		p.Severity.ThirdPartyWeight = w
+		od, tp := p.ExpectedSectionLoss(20000, 300, 1.0, 1.0, 1.0)
+		if (w == 0 && tp != 0) || (w == 1 && od != 0) {
+			t.Fatalf("third-party weight %v: own damage %v, third party %v", w, od, tp)
+		}
+	}
+}
