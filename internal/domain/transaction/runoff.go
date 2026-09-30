@@ -1,10 +1,11 @@
 // Package transaction simulates each claim's case estimate runoff and
 // derives payment transactions (steps 3-4 of the simulation).
 //
-// The design is ultimate-first: the claim's true ultimate cost is drawn up
-// front, payments split it over the claim's life, and the case estimate is
-// a noisy assessor's view of the remaining cost that converges to zero at
-// close. The initial estimate is emitted as the first ESTIMATE row, so a
+// The design is ultimate-first: the claim stage fixes each claim's true
+// ultimate cost, the case-estimate stage (CaseEstimator) sets the case it
+// opens at, payments split the ultimate over the claim's life, and the case
+// estimate is a noisy assessor's view of the remaining cost that converges to
+// zero at close. The initial estimate is emitted as the first ESTIMATE row, so a
 // claim's outstanding case at any time is the running sum of its ESTIMATE
 // amounts. Runoff is developed in episodes: a normal claim runs one episode
 // to close, while a reopened claim runs a first episode to its first close,
@@ -13,7 +14,6 @@ package transaction
 
 import (
 	"fmt"
-	"math"
 	"sort"
 
 	"github.com/le-marais/claimsgen/internal/domain/claim"
@@ -82,24 +82,24 @@ func (s *RunoffSimulator) simulateClaim(src shared.RandomSource, c claim.Claim) 
 	if c.Reopened() {
 		firstClose = c.FirstCloseDate
 	}
-	s.runEpisode(src, e, c.ReportDate, firstClose, c.InitialEstimate, c.Nil, false)
+	s.runEpisode(src, e, c.ReportDate, firstClose, c.Ultimate, c.Nil, false)
 
 	if c.Reopened() {
 		// The case is re-raised on the reopen date, then a second, smaller
-		// episode develops and pays the reopen estimate.
+		// episode develops and pays the reopen's additional cost.
 		e.reviseTo(shared.DaysBetween(c.ReportDate, c.ReopenDate), c.ReopenEstimate)
-		s.runEpisode(src, e, c.ReopenDate, c.CloseDate, c.ReopenEstimate, false, true)
+		s.runEpisode(src, e, c.ReopenDate, c.CloseDate, c.ReopenUltimate, false, true)
 	}
 	return e.txs
 }
 
 // runEpisode develops one open-close episode: interim payments and pure
-// revisions between start and close, a final settlement at close, and the
-// outstanding case released to exactly zero. A nil episode emits no
-// payments. floorRevisions keeps every revision target at least one cent
-// (the nil path's guard), used for reopen episodes whose opening estimates
-// can be tiny.
-func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, start, close shared.Date, opening shared.Money, isNil, floorRevisions bool) {
+// revisions between start and close, a final settlement at close that brings
+// total paid in the episode to exactly ultimate, and the outstanding case
+// released to exactly zero. A nil episode emits no payments and ignores
+// ultimate. floorRevisions keeps every revision target at least one cent (the
+// nil path's guard), used for reopen episodes whose costs can be tiny.
+func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, start, close shared.Date, ultimate shared.Money, isNil, floorRevisions bool) {
 	base := shared.DaysBetween(e.report, start)
 	duration := shared.DaysBetween(start, close)
 	years := float64(duration) / 365
@@ -122,7 +122,9 @@ func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, start,
 		return
 	}
 
-	ultimate := s.drawUltimate(src, opening)
+	if ultimate < shared.OneCent {
+		ultimate = shared.OneCent // guards hand-built claims; generated claims always cost something
+	}
 	interims := s.drawInterimPayments(src, ultimate, duration, years)
 	events := append(s.drawRevisions(src, duration, years), interims...)
 	sort.SliceStable(events, func(i, j int) bool {
@@ -140,7 +142,7 @@ func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, start,
 			continue
 		}
 		// The first revision re-centres the case on (ultimate - paid), so
-		// case-adequacy bias vanishes after it and incurred development carries
+		// the opening case's adequacy bias vanishes after it and incurred development carries
 		// little systematic IBNER signal thereafter.
 		remaining := (ultimate - paid).Dollars()
 		sigma := s.params.RevisionSigma * (1 - float64(ev.offset)/float64(duration))
@@ -155,16 +157,6 @@ func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, start,
 	// to exactly zero.
 	e.pay(base+duration, ultimate-paid)
 	e.reviseTo(base+duration, 0)
-}
-
-func (s *RunoffSimulator) drawUltimate(src shared.RandomSource, initial shared.Money) shared.Money {
-	sigma := s.params.CaseAdequacySigma
-	mu := math.Log(s.params.CaseAdequacyMean) - sigma*sigma/2
-	ultimate := initial.MulFloat(src.LogNormal(mu, sigma))
-	if ultimate < shared.OneCent {
-		ultimate = shared.OneCent
-	}
-	return ultimate
 }
 
 // drawInterimPayments splits (1 - settlement share) of the ultimate across

@@ -127,11 +127,12 @@ type ReopeningParams struct {
 	// Probability is the chance a closed claim reopens once; 0 switches
 	// reopening off.
 	Probability float64
-	// EstimateFactor is the mean of the reopen case estimate as a factor of
-	// the claim's original initial estimate; it may exceed 1.
+	// EstimateFactor is the mean additional cost of the reopen episode as a
+	// factor of the claim's ultimate; it may exceed 1. Own-damage reopens are
+	// capped at the cover the claim has left.
 	EstimateFactor float64
 	// EstimateSigma is the sigma of the mean-1 lognormal noise on the
-	// reopen estimate.
+	// reopen's additional cost.
 	EstimateSigma float64
 	// LagMedianDays is the median days from first close to reopen.
 	LagMedianDays float64
@@ -176,10 +177,12 @@ type CloseLagParams struct {
 
 // RunoffParams drives steps 3-4, the case estimate path and payments.
 type RunoffParams struct {
-	// CaseAdequacyMean is the mean of ultimate / initial estimate:
-	// systematic over- or under-reserving.
+	// CaseAdequacyMean is the true ultimate over the expected opening case
+	// estimate: above 1 cases open deficient (under-reserving), below 1
+	// redundant. It moves case reserves only, never the loss cost.
 	CaseAdequacyMean float64
-	// CaseAdequacySigma is how wrong individual initial estimates are.
+	// CaseAdequacySigma is the sigma of the mean-one lognormal noise on each
+	// opening case estimate: how wrong individual estimates are.
 	CaseAdequacySigma float64
 	// PaymentsPerYear is the Poisson intensity of interim payments over the
 	// claim's open duration.

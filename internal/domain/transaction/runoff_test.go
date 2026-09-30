@@ -1,7 +1,6 @@
 package transaction_test
 
 import (
-	"math"
 	"testing"
 	"time"
 
@@ -24,7 +23,8 @@ func params() lob.RunoffParams {
 	}
 }
 
-// testClaims builds n claims with varying sizes and durations.
+// testClaims builds n claims with varying sizes and durations, each opening
+// at its true cost.
 func testClaims(n int) []claim.Claim {
 	claims := make([]claim.Claim, n)
 	for i := range claims {
@@ -37,6 +37,7 @@ func testClaims(n int) []claim.Claim {
 			OccurrenceDate:  report.AddDays(-2),
 			ReportDate:      report,
 			CloseDate:       report.AddDays(durations[i%5]),
+			Ultimate:        shared.FromDollars(estimates[(i+2)%5]),
 			InitialEstimate: shared.FromDollars(estimates[(i+2)%5]),
 			RiskFactor:      1.0,
 		}
@@ -127,23 +128,23 @@ func TestEveryPaymentHasMatchingEstimateReduction(t *testing.T) {
 	}
 }
 
-func TestTotalPaidCentersOnCaseAdequacy(t *testing.T) {
-	claims := testClaims(4000)
-	sim := transaction.NewRunoffSimulator(params())
-	txs := sim.Simulate(random.NewSource(3), claims)
-	paidByClaim := map[int]float64{}
+func TestTotalPaidIsExactlyTheUltimate(t *testing.T) {
+	claims := testClaims(400)
+	// Open every case well away from the truth: payments must not follow it.
+	for i := range claims {
+		claims[i].InitialEstimate = claims[i].Ultimate.MulFloat(0.5)
+	}
+	txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(3), claims)
+	paid := map[int]shared.Money{}
 	for _, tx := range txs {
 		if tx.Type == transaction.Payment {
-			paidByClaim[tx.ClaimID] += tx.Amount.Dollars()
+			paid[tx.ClaimID] += tx.Amount
 		}
 	}
-	sumRatio := 0.0
 	for _, c := range claims {
-		sumRatio += paidByClaim[c.ID] / c.InitialEstimate.Dollars()
-	}
-	mean := sumRatio / float64(len(claims))
-	if math.Abs(mean-1.0) > 0.05 {
-		t.Errorf("mean paid/initial = %v, want ~1.0 (case adequacy)", mean)
+		if paid[c.ID] != c.Ultimate {
+			t.Fatalf("claim %d paid %v, want its ultimate %v", c.ID, paid[c.ID], c.Ultimate)
+		}
 	}
 }
 
@@ -153,6 +154,7 @@ func TestSameDayCloseSettlesInFull(t *testing.T) {
 		OccurrenceDate:  shared.NewDate(1998, time.May, 1),
 		ReportDate:      shared.NewDate(1998, time.May, 3),
 		CloseDate:       shared.NewDate(1998, time.May, 3),
+		Ultimate:        shared.FromDollars(1000),
 		InitialEstimate: shared.FromDollars(1000),
 		RiskFactor:      1.0,
 	}
@@ -275,7 +277,9 @@ func reopenedClaim(isNil bool) claim.Claim {
 		FirstCloseDate:  shared.NewDate(2000, time.June, 1),
 		ReopenDate:      shared.NewDate(2000, time.September, 1),
 		CloseDate:       shared.NewDate(2001, time.February, 1),
+		Ultimate:        shared.FromDollars(8000),
 		InitialEstimate: shared.FromDollars(8000),
+		ReopenUltimate:  shared.FromDollars(3000),
 		ReopenEstimate:  shared.FromDollars(3000),
 		RiskFactor:      1.0,
 		Nil:             isNil,
@@ -335,8 +339,8 @@ func TestReopenedNilClaimPaysOnlyInEpisodeTwo(t *testing.T) {
 	if paidBeforeReopen != 0 {
 		t.Fatalf("reopened nil claim paid %v before the reopen, want 0", paidBeforeReopen)
 	}
-	if paidAfterReopen <= 0 {
-		t.Fatalf("reopened nil claim paid %v in episode 2, want positive", paidAfterReopen)
+	if paidAfterReopen != c.ReopenUltimate {
+		t.Fatalf("reopened nil claim paid %v in episode 2, want its reopen ultimate %v", paidAfterReopen, c.ReopenUltimate)
 	}
 }
 
@@ -346,6 +350,7 @@ func TestReopenedClaimRowsChronological(t *testing.T) {
 		if i%4 == 0 {
 			claims[i].FirstCloseDate = claims[i].CloseDate
 			claims[i].ReopenDate = claims[i].CloseDate.AddDays(60)
+			claims[i].ReopenUltimate = shared.FromDollars(2000)
 			claims[i].ReopenEstimate = shared.FromDollars(2000)
 			claims[i].CloseDate = claims[i].ReopenDate.AddDays(90)
 		}
@@ -362,7 +367,8 @@ func TestReopenedClaimRowsChronological(t *testing.T) {
 
 func TestTinyReopenEstimateStillClosesOnFinalCloseDate(t *testing.T) {
 	c := reopenedClaim(false)
-	c.ReopenEstimate = shared.Money(2) // two cents over a five-month episode
+	c.ReopenUltimate = shared.Money(2) // two cents over a five-month episode
+	c.ReopenEstimate = shared.Money(2)
 	for seed := uint64(1); seed <= 25; seed++ {
 		txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(seed), []claim.Claim{c})
 		outstanding := shared.Money(0)

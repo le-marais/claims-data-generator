@@ -51,6 +51,9 @@ than scheduling it.
   that IBNER methods are built to detect; here incurred is unbiased at every
   age, so incurred-based methods look trivially perfect - the wrong impression
   for a tool whose job is feeding reserving demos.
+- The opening case's adequacy bias is set by `transaction.CaseEstimator`
+  (`internal/domain/transaction/estimate.go`), which draws the case around the
+  claim's true cost; the runoff then removes that bias at the first revision.
 - Already documented in the README and in a code comment. The model change
   remains.
 - Action: let the adequacy bias decay gradually over the claim's life instead of
