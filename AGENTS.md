@@ -42,7 +42,7 @@ The layout is domain-driven. Respect the dependency direction: `domain` depends 
 - `internal/application/` - use cases: `GenerateDataset`, summary stats, histograms, and the realism check.
 - `internal/infrastructure/` - adapters: `config` (YAML plus the embedded motor preset), `csv` (writer), `schedulep` (reference-data reader), `random` (gonum-backed source), `web` (server, view models, static assets).
 - `data/reference/` - embedded Schedule P reference companies and the curation list.
-- `docs/` - mission, roadmap, architecture notes, and `todo.md` (the consolidated open-work backlog). `docs/superpowers/specs/` holds historical design records that are explicitly out of context (see "Design and process docs").
+- `docs/` - mission, roadmap, architecture notes, `todo.md` (the consolidated open-work backlog), and `review.md` (the open findings from the model review of the simulation logic). `docs/superpowers/specs/` holds historical design records that are explicitly out of context (see "Design and process docs").
 - `tools/` - dev-only helpers, not part of the binary: `prune-dec2025.ps1` (reference-data curation) and `screenshots/` (a Node script that regenerates the README screenshots). The Node dependency there does not contradict the no-build-step UI.
 
 ## Build, run, test
@@ -81,6 +81,8 @@ The maintainer prefers **domain-driven design** and **event sourcing where appro
 `docs/background-context.md` and `docs/raw user inputs/` are the original brief and the transcripts behind it. They are historical and intentionally not updated; read them for the original intent, not for current behaviour.
 
 Treat the code, `README.md`, this file, and `docs/detailed-architecture.md` as the sources of truth. Keep `docs/roadmap.md` and `docs/todo.md` current when shipping or planning work: the roadmap carries direction and sequencing, `todo.md` carries the open findings from the code, security and stage-isolation reviews. **`todo.md` lists outstanding work only.** When you fix an item, delete it - do not move it to a resolved or dropped list, and do not leave a gap in the position numbers; renumber them so the list stays dense. The finding IDs themselves stay stable, so an older reference still resolves against git history, which is where the full text of a closed item lives. Say in the shipping commit message which IDs it closes, so the trail is in the history rather than in the file.
+
+**Record review findings in `docs/review.md`.** When you review the model or the code, write each finding there with a stable ID (**MR** for the model review), a severity on the `todo.md` scale, where it lives, the evidence, and the action. `review.md` follows the same rule as `todo.md`: it lists open, unresolved findings only. When a finding is fixed, delete it and renumber the positions so the list stays dense; do not keep a resolved list, because git history is where closed findings live. Name the closed IDs in the shipping commit message. A finding that supersedes a `todo.md` item replaces it: delete the `todo.md` item and say so in the finding.
 
 ## Writing style (docs and comments)
 

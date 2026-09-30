@@ -21,8 +21,10 @@ number is a position and will change; the finding ID after it is stable and is
 preserved from the source reviews, so older references still resolve: **SL**
 simulation logic, **MF** mission fit, **R** robustness, **RF** refactoring,
 **D** documentation, **L** low-severity security, **UX** and **CI** merged
-items. Severity: **high** undermines the mission, **medium** worth addressing
-soon, **low** fix when touching the area. Nothing high-severity is open.
+items. Findings from the model review of the simulation logic live in
+`docs/review.md` under **MR** IDs. Severity: **high** undermines the mission,
+**medium** worth addressing soon, **low** fix when touching the area. Nothing
+high-severity is open.
 
 ## Order
 
@@ -32,12 +34,11 @@ soon, **low** fix when touching the area. Nothing high-severity is open.
    class is just a YAML file" promise.
 3. **RF-13** - gates the second line of business.
 4. **RF-14** - gates the same work, and compounds with every feature added.
-5. **SL-2** - wording, so the realism gate stops claiming more than it measures.
-6. **L2** - two lines in `.gitignore`.
-7. **CI-1** - gated on the roadmap's "open to the wider community" step.
+5. **L2** - two lines in `.gitignore`.
+6. **CI-1** - gated on the roadmap's "open to the wider community" step.
 
-Items 5 and 6 are each under an hour; batch them into any commit that touches
-the area rather than scheduling them.
+Item 5 is under an hour; batch it into any commit that touches the area rather
+than scheduling it.
 
 ## 1. SL-7 (medium) - case estimates re-centre on the true ultimate at the first revision
 
@@ -124,21 +125,7 @@ side.
   the claims stage to `recovery.go`, because only the severity draw knows the
   claim type and recovery eligibility genuinely depends on it.
 
-## 5. SL-2 (low) - the realism gate's "ultimate loss ratio" is not one
-
-- Where: `internal/domain/triangle/compare.go` (`lossRatio` = latest diagonal
-  over total earned premium, used for both sides); wording in
-  `internal/application/realism.go` and the UI.
-- The generated incurred triangle is fully developed, so its latest diagonal is
-  a true ultimate. Reference triangles are ragged: their latest diagonal for
-  recent origins is immature case-incurred excluding IBNR. The reference band is
-  therefore biased low relative to true ultimates.
-- Action: rename and document the metric so the gate does not claim more than it
-  measures. Chain-ladder-completing the reference diagonals would shift every
-  band and force a preset recalibration - not worth it to remove a known,
-  directional bias that the wording can state instead.
-
-## 6. L2 (low) - agent-artifact ignore rules are not in the tracked gitignore
+## 5. L2 (low) - agent-artifact ignore rules are not in the tracked gitignore
 
 - Where: `.gitignore`, which covers only `/output/`, `/claimsgen`, `*.exe` and
   `tools/screenshots/node_modules/`.
@@ -150,7 +137,7 @@ side.
   such artifact is currently tracked - this is preventive.
 - Action: add the two patterns. Two lines.
 
-## 7. CI-1 (low) - no CI and no dependency scanning
+## 6. CI-1 (low) - no CI and no dependency scanning
 
 Merges the old R-13 and I2.
 
