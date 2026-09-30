@@ -16,12 +16,13 @@ Nothing in the output is real, so there are no data governance concerns. See `do
 
 ## Preferred workflows
 
-- **Fetch at the start of every session.** When you begin a new Claude session in this repo, run `git fetch` first to check for new work on the remote before doing anything else, so you are working against the latest state and avoid diverging from `origin`.
-- **Ship every chunk of work as a pull request, squash merged to `main`.** Never commit directly to `main`. Work on a branch named for the change (`feature/…`, `docs/…`, `fix/…`), commit as you go with whatever granularity helps review, then open a PR and squash merge it. `main` therefore holds one commit per feature or chunk of work, and the working history stays on the branch. Run `go test ./...` and `go vet ./...` before opening the PR, and say so in its body. Write the PR title and body as the commit message `main` will actually keep - the squash uses them - so lead with what changed and why, not with a list of commits.
+- **Fetch at the start of every session.** Run `git fetch` before doing anything else, so you are working against the latest state and avoid diverging from `origin`.
+- **Ship every chunk of work as a pull request, squash merged to `main`.** Never commit directly to `main`. Work on a branch named for the change (`feature/…`, `docs/…`, `fix/…`), commit as you go with whatever granularity helps review, then open a PR. `main` therefore holds one commit per feature or chunk of work, and the working history stays on the branch. Run `go test ./...` and `go vet ./...` before opening the PR, and say so in its body. Write the PR title and body as the commit message `main` will actually keep - the squash uses them - so lead with what changed and why, not with a list of commits.
+- **The maintainer approves and merges every PR.** Open the PR and stop there. Do not merge it, approve it, or enable auto-merge yourself.
 
 ## Tech stack
 
-- **Language:** Go 1.26 (see `go.mod`; module path `github.com/le-marais/claimsgen`)
+- **Language:** Go 1.26.4 or later (see `go.mod`; module path `github.com/le-marais/claimsgen`)
 - **Dependencies:** kept deliberately small - `gonum.org/v1/gonum` (distributions and randomness) and `gopkg.in/yaml.v3` (config). Prefer the standard library; do not add dependencies without a clear reason.
 - **UI:** a self-contained web server (`net/http`) serving embedded static assets (plain HTML/CSS/JS, no framework or build step)
 - **Data:** Schedule P reference data and the motor preset are embedded in the binary via `go:embed`, so the built binary is fully self-contained.
@@ -42,6 +43,7 @@ The layout is domain-driven. Respect the dependency direction: `domain` depends 
 - `internal/infrastructure/` - adapters: `config` (YAML plus the embedded motor preset), `csv` (writer), `schedulep` (reference-data reader), `random` (gonum-backed source), `web` (server, view models, static assets).
 - `data/reference/` - embedded Schedule P reference companies and the curation list.
 - `docs/` - mission, roadmap, architecture notes, and `todo.md` (the consolidated open-work backlog). `docs/superpowers/specs/` holds historical design records that are explicitly out of context (see "Design and process docs").
+- `tools/` - dev-only helpers, not part of the binary: `prune-dec2025.ps1` (reference-data curation) and `screenshots/` (a Node script that regenerates the README screenshots). The Node dependency there does not contradict the no-build-step UI.
 
 ## Build, run, test
 
@@ -54,15 +56,15 @@ go test ./...                   # run all tests
 go vet ./...                    # vet
 ```
 
-Run both `go test ./...` and `go vet ./...` before claiming work is done.
+Run both before claiming work is done.
 
 ## Conventions and things to know
 
 - **Reproducibility is a hard invariant.** The same seed plus the same config must produce byte-identical output. Randomness flows from a single seeded source split into labelled sub-streams so stages stay independent and repeatable. Never introduce nondeterminism (wall-clock time, map iteration order in output, unseeded randomness) into the generation path.
-- **Golden tests.** `internal/application/golden_test.go` pins two SHA-256 digests: `wantHash` over the three dataset CSVs and `wantAggregateHash` over `triangles.csv` and `exposure.csv`. If you intentionally change the generated data or its encoding, the failing test prints the actual hash - paste it back into the constant. Do not update either to hide an unintended change; understand why the output moved first.
+- **Golden tests.** `internal/application/golden_test.go` pins three SHA-256 digests: `wantHash` over the three dataset CSVs, `wantAggregateHash` over `triangles.csv` and `exposure.csv`, and `wantAnnualHash` over the annual triangles. `wantAnnualHash` matters most: the realism bands are wide enough to absorb a real shift in the annual cells, so it is the only guard on the cells the realism gate and the preset's calibration depend on. If you intentionally change the generated data or its encoding, the failing test prints the actual hash - paste it back into the constant. Do not update any of them to hide an unintended change; understand why the output moved first.
 - **Realism gate.** `TestDefaultPresetIsRealistic` scores the shipped preset against the embedded Schedule P bands across several seeds. Changes to the model must keep the default preset inside its P5-P95 bands.
 - **One aggregation store.** `triangle.MonthlyGrid` is the canonical aggregate: incremental cells, origin months down, development months across, running to full runoff. Every coarser grain is `MonthlyGrid.Coarsen`, which keys both axes on the calendar period the month falls in - the annual triangles the realism gate and the UI read are `Coarsen(Annual, 10, true)` cumulated, the `true` folding development past age 10 into the last column. Add new aggregate views by coarsening the grid, never by re-scanning the transactions.
-- **Adding a line of business** is a YAML file for the CLI (`generate --config my-lob.yaml`, no code change); surfacing it in the UI also needs one registration line in the preset registry. See `internal/infrastructure/config/motor-personal.yaml` for the annotated preset.
+- **Adding a line of business** is a YAML file for the CLI (`generate --config my-lob.yaml`, no code change); surfacing it in the UI means embedding the YAML in `internal/infrastructure/config/config.go` with a `//go:embed` line and registering it in both `presetInfos` and `presetYAML` there. See `internal/infrastructure/config/motor-personal.yaml` for the annotated preset.
 - **Testing style.** Tests live beside the code as `_test.go`. Table-driven tests and external test packages (`package foo_test`) are the norm; internal tests use the `_internal_test.go` suffix.
 
 ## Architectural preferences
@@ -74,7 +76,9 @@ The maintainer prefers **domain-driven design** and **event sourcing where appro
 
 ## Design and process docs
 
-`docs/superpowers/specs/` is **out of context**. Every file there carries an "OUT OF CONTEXT - do not read" banner: they are historical design records, kept for provenance only. Do not read them, do not load them into context, and do not cite them as current behaviour - they describe decisions as of their own dates. The implementation plans that accompanied them (`docs/superpowers/plans/`) have been removed; recover them from git history if ever needed.
+`docs/superpowers/specs/` is **out of context**. Every file there carries an "OUT OF CONTEXT - do not read" banner: they are historical design records, kept for provenance only. Do not read them, do not load them into context, and do not cite them as current behaviour - they describe decisions as of their own dates. Implementation plans (`docs/superpowers/plans/`) are deleted once the work they describe ships; recover them from git history if ever needed. Any file added under `docs/superpowers/` must carry the same banner.
+
+`docs/background-context.md` and `docs/raw user inputs/` are the original brief and the transcripts behind it. They are historical and intentionally not updated; read them for the original intent, not for current behaviour.
 
 Treat the code, `README.md`, this file, and `docs/detailed-architecture.md` as the sources of truth. Keep `docs/roadmap.md` and `docs/todo.md` current when shipping or planning work: the roadmap carries direction and sequencing, `todo.md` carries the open findings from the code, security and stage-isolation reviews. **`todo.md` lists outstanding work only.** When you fix an item, delete it - do not move it to a resolved or dropped list, and do not leave a gap in the position numbers; renumber them so the list stays dense. The finding IDs themselves stay stable, so an older reference still resolves against git history, which is where the full text of a closed item lives. Say in the shipping commit message which IDs it closes, so the trail is in the history rather than in the file.
 
