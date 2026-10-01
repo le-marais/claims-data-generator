@@ -152,9 +152,9 @@ The `RandomSource` interface, covered in section 4.1.
 - **`BookParams`** (step 1): `GrowthFactor` (year-on-year policy-count trend), `SizeVolatility` (sigma of mean-1 size noise), `Spread` (heterogeneity knob reused for both the sum-insured lognormal sigma and the risk-factor coefficient of variation), `SumInsuredMedian`, `SumInsuredInflation` (annual median drift), `ExcessChoices []ExcessChoice`.
 - **`ExcessChoice`**: `Value` (deductible dollars), `Weight` (unnormalised selection weight).
 - **`PricingParams`** (premium): the insurer's assumed loss cost, independent of the claims model. `TargetLossRatio` (premium = assumed expected loss / this), `AdequacyVolatility` (sigma of mean-one lognormal noise on each underwriting year's target loss ratio; 0 switches it off), `BaseFrequency`, `Severity SeverityParams`, `NilProbability`, `ReopenProbability`, `ReopenEstimateFactor`, `InflationMean` (all assumed values). Carries the `ExpectedPolicyLoss` and `ExpectedSectionLoss` methods (in `expectedloss.go`). The target sets premium only; the realized loss ratio emerges from the claims model. The preset starts these assumptions from the true claims values, so its loss ratio lands around the target; deviating them models underpricing or adverse experience.
-- **`ClaimParams`** (step 2): `BaseFrequency`, `ReportLagMedian`, `ReportLagSigma`, `Severity SeverityParams`, `CloseLag CloseLagParams`, `Inflation InflationParams`, `NilProbability`, `Recoveries RecoveryParams`, `Reopening ReopeningParams`.
+- **`ClaimParams`** (step 2): `BaseFrequency`, `ReportLagMedian`, `ReportLagSigma`, `ThirdPartyReportLagMedian`/`ThirdPartyReportLagSigma` (third-party claims' own lognormal report lag; a median of 0 keeps the shared lag), `Severity SeverityParams`, `CloseLag CloseLagParams`, `Inflation InflationParams`, `NilProbability`, `Recoveries RecoveryParams`, `Reopening ReopeningParams`.
 - **`SeverityParams`**: `ThirdPartyWeight` (probability a claim is third party), `OwnDamageMedianFraction` (own-damage median as a fraction of sum insured), `OwnDamageSigma`, `ThirdPartyScale` (Pareto minimum), `ThirdPartyAlpha` (Pareto tail index, must exceed 1 for a finite mean).
-- **`CloseLagParams`**: `Shape`, `MeanDays` (own-damage gamma base), `SizeThreshold`/`SizeMultiplier` (stretch the mean lag for own-damage claims above the threshold in start-year dollars), `RiskLoading` (exponent applied to the risk factor), `ThirdPartyShape`/`ThirdPartyMeanDays` (the slower bodily-injury regime, not size-stretched).
+- **`CloseLagParams`**: `Shape`, `MeanDays` (own-damage gamma base), `SizeThreshold`/`SizeMultiplier` (stretch the mean lag for own-damage claims above the threshold in start-year dollars), `RiskLoading` (exponent applied to the risk factor), `ThirdPartyShape`/`ThirdPartyMeanDays` (the slower bodily-injury regime), `ThirdPartySizeElasticity`/`ThirdPartySizeReference` (a third-party claim costing `s` in start-year dollars has mean lag `ThirdPartyMeanDays * (s / ThirdPartySizeReference)^ThirdPartySizeElasticity`; an elasticity of 0 switches it off).
 - **`InflationParams`**: `Mean` (average annual claims-inflation factor), `Volatility` (sigma of mean-1 noise per year).
 - **`RecoveryParams`**: `Salvage`, `Subrogation`, each a `RecoveryTypeParams`.
 - **`RecoveryTypeParams`**: `Probability` (0 switches the type off), `MeanShare` (mean recovery as a share of gross paid), `Concentration` (Beta concentration), `LagMedianDays`, `LagSigma` (lognormal close-to-receipt lag).
@@ -231,7 +231,7 @@ Core generation:
 - `Simulate(src, book []policy.Policy) []Claim` - for each policy, splits a `claims-policy-<id>` stream, draws a Poisson count with mean `BaseFrequency * RiskFactor * exposedFraction(pol)`, and calls `simulateClaim` that many times (appending only reportable ones). It then stable-sorts by report date, then policy ID, then occurrence date - resembling a claims-system registration order - and assigns 1-based sequential IDs after sorting.
 - `simulateClaim(src, pol) (Claim, bool)` - draws one claim in a fixed order so draw counts stay constant:
   1. Occurrence date: uniform over `occurrenceSpan(pol)`, one uniform draw whether or not the window clips the cover.
-  2. Report lag: lognormal `(log(ReportLagMedian), ReportLagSigma)`, rounded to days.
+  2. Report lag: one normal deviate is drawn here (as `log(LogNormal(0, 1))`), before the severity draw decides the claim type, and the lag is set after it with the type's median and sigma (`ThirdPartyReportLag*` for third-party claims when set, the shared ones otherwise), rounded to days. Drawing the deviate first keeps the draw order the same for both types, so a third-party lag never moves an own-damage claim.
   3. Ground-up loss: `drawGroundUpLoss`.
   4. Claims inflation: multiply the loss by `inflation.For(occurrenceDate)` (applies to both severity components).
   5. Own-damage cap: if own damage and the loss exceeds the drifted `SumInsured`, cap it (a total loss).
@@ -242,7 +242,7 @@ Core generation:
 
 Shared close-lag logic, reused by the reopen pass:
 
-- `closeLagRegime(cl, baseSize, riskFactor, ownDamage) (shape, mean float64)` - selects the gamma parameters. `baseSize` is the claim's cost in start-year dollars. Own damage uses `Shape`/`MeanDays`, stretched by `SizeMultiplier` when `baseSize` exceeds `SizeThreshold`; third party uses the slower `ThirdPartyShape`/`ThirdPartyMeanDays` with no size stretch. Both scale the mean by `riskFactor^RiskLoading`.
+- `closeLagRegime(cl, baseSize, riskFactor, ownDamage) (shape, mean float64)` - selects the gamma parameters. `baseSize` is the claim's cost in start-year dollars. Own damage uses `Shape`/`MeanDays`, stretched by `SizeMultiplier` when `baseSize` exceeds `SizeThreshold`; third party uses the slower `ThirdPartyShape`/`ThirdPartyMeanDays`, the mean scaled by `(baseSize / ThirdPartySizeReference)^ThirdPartySizeElasticity` when the elasticity is set. Both scale the mean by `riskFactor^RiskLoading`.
 - `drawCloseLag(src, cl, baseSize, riskFactor, ownDamage) float64` - draws `Gamma(shape, mean/shape)`, giving expected value `mean`.
 
 ### 8.2 `inflation.go` - the claims-inflation path
@@ -300,7 +300,7 @@ Recoveries are pure cash events on own-damage claims that paid something; they l
 
 ### 10.1 `monthly.go` - the canonical aggregate
 
-`MonthlyGrid{Basis, StartMonth, DevPeriods, Paid, PaidNet, Incurred [][]float64, Reported [][]int}` is the single aggregation store. Row `o` is origin month `StartMonth.Add(o)`; slice index `d` holds development period `d+1`, so index 0 is the origin month itself. Every row is `DevPeriods` wide.
+`MonthlyGrid{Basis, StartMonth, DevPeriods, Paid, PaidNet, Incurred [][]float64, Reported [][]int, IBNR [][]float64}` is the single aggregation store. `IBNR` is pure IBNR at its true value: each claim's `Cost()` is booked in its occurrence month and released in its report month (skipped when they coincide), so its running sum at a valuation is the cost of claims occurred but not yet reported. It is not written to `triangles.csv`. Row `o` is origin month `StartMonth.Add(o)`; slice index `d` holds development period `d+1`, so index 0 is the origin month itself. Every row is `DevPeriods` wide.
 
 Cells are **incremental**: a cell is the movement in that development month. Increments sum, so any coarser grain is a plain sum over cells and a cumulative view is a running sum along a row.
 
@@ -312,7 +312,7 @@ Cells are **incremental**: a cell is the movement in that development month. Inc
 
 - `Coarsen(kind, devPeriods, foldTail)` maps both axes onto the calendar period the month falls in: `originPeriod = index(originMonth) - index(startMonth)` and `devPeriod = index(eventMonth) - index(originMonth) + 1`, for `Monthly`, `Quarterly` or `Annual`. Keying on the calendar period rather than dividing monthly development by twelve is what makes the annual result equal what the annual triangles have always measured: an accident in March 1998 paid in January 1999 is development year 2. Rows are zero-padded to `devPeriods` rather than left ragged, because `ATAFactors` counts an origin at an age only when its row reaches that far.
 - `(s IncrementalSet) Cumulative(measure) Triangle` - the running-sum projection.
-- `(g MonthlyGrid) AnnualTriangles(devYears) AnnualSet` - `Coarsen(Annual, devYears, true)` cumulated into the paid, net paid and incurred triangles the realism gate and the UI read.
+- `(g MonthlyGrid) AnnualTriangles(devYears) AnnualSet` - `Coarsen(Annual, devYears, true)` cumulated into the paid, net paid and incurred triangles the realism gate and the UI read, plus `TotalIncurred` (incurred plus pure IBNR), the counterpart of Schedule P total incurred.
 
 ### 10.3 `exposure.go` - exposure by month and year
 
@@ -368,7 +368,7 @@ Cells are **incremental**: a cell is the movement in that development month. Inc
 
 - `const developmentYears = 10` (Schedule P shape) - lives only in `aggregate.go` now.
 - `Aggregate(ds, startYear, years, basis) (Aggregates, error)` - one pure aggregation pass per run: the monthly grid and exposure on the requested basis, plus the accident-basis annual triangles and earned premium. `Annual` and `EarnedPremium` are always accident-basis, because Schedule P is an accident-year presentation.
-- `LiabilityComparison(ds, startYear, years) (triangle.Comparison, error)` - what the realism gate scores: the accident-basis annual net paid and incurred triangles and earned premium of the third-party liability section alone. `liabilitySection` narrows the dataset to the third-party claims and gives each policy its `ThirdPartyPremium` as premium; the result is then built like every other aggregate view, as the monthly grid coarsened to annual. The Schedule P private passenger auto reference is a liability line with no physical damage, so own damage is not scored. It lives with the gate rather than in `Aggregates`, so a run that does not score realism (the CLI) never builds it.
+- `LiabilityComparison(ds, startYear, years) (triangle.Comparison, error)` - what the realism gate scores: the accident-basis annual net paid and total incurred (incurred plus pure IBNR) triangles and earned premium of the third-party liability section alone. `liabilitySection` narrows the dataset to the third-party claims and gives each policy its `ThirdPartyPremium` as premium; the result is then built like every other aggregate view, as the monthly grid coarsened to annual. The Schedule P private passenger auto reference is a liability line with no physical damage, so own damage is not scored. It lives with the gate rather than in `Aggregates`, so a run that does not score realism (the CLI) never builds it.
 - `EvaluateRealism(ds, startYear, years, refs) (triangle.Report, error)` - a thin adapter: builds the `LiabilityComparison`, then returns `CompareToReference`. Used as a test gate (`TestDefaultPresetIsRealistic`) and by the UI.
 
 ## 12. Infrastructure layer

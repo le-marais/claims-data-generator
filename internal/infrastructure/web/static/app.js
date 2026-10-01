@@ -38,6 +38,8 @@ const FIELD_GROUPS = [
       { path: ["claims", "base_frequency"], label: "Base frequency", tip: "Expected reported claims per policy-year." },
       { path: ["claims", "report_lag_median"], label: "Report lag median", tip: "Median occurrence-to-report lag in days." },
       { path: ["claims", "report_lag_sigma"], label: "Report lag sigma", tip: "Sigma of the lognormal report lag." },
+      { path: ["claims", "third_party_report_lag_median"], label: "Third-party report lag median", tip: "Median occurrence-to-report lag in days for third-party claims; 0 uses the shared report lag." },
+      { path: ["claims", "third_party_report_lag_sigma"], label: "Third-party report lag sigma", tip: "Sigma of the third-party lognormal report lag." },
       { path: ["claims", "severity", "third_party_weight"], label: "Third party weight", tip: "Probability a claim is third party." },
       { path: ["claims", "severity", "own_damage_median_fraction"], label: "Own damage median fraction", tip: "Median loss as a fraction of sum insured." },
       { path: ["claims", "severity", "own_damage_sigma"], label: "Own damage sigma", tip: "Sigma of the own damage lognormal." },
@@ -49,7 +51,9 @@ const FIELD_GROUPS = [
       { path: ["claims", "close_lag", "size_multiplier"], label: "Close lag size multiplier", tip: "Stretch factor for large claims." },
       { path: ["claims", "close_lag", "risk_loading"], label: "Close lag risk loading", tip: "Exponent on the policy risk factor." },
       { path: ["claims", "close_lag", "third_party_shape"], label: "Third-party close lag shape", tip: "Gamma shape of the close lag for third-party (long-tail) claims." },
-      { path: ["claims", "close_lag", "third_party_mean_days"], label: "Third-party close lag mean days", tip: "Mean report-to-close lag for third-party (long-tail) claims." },
+      { path: ["claims", "close_lag", "third_party_mean_days"], label: "Third-party close lag mean days", tip: "Mean report-to-close lag for a third-party claim costing the size reference." },
+      { path: ["claims", "close_lag", "third_party_size_elasticity"], label: "Third-party close lag size elasticity", tip: "Mean lag scales by (size / reference) to this power, so larger claims settle slower; 0 switches it off." },
+      { path: ["claims", "close_lag", "third_party_size_reference"], label: "Third-party close lag size reference", tip: "Claim cost in start-year dollars that settles in the third-party mean days." },
       { path: ["claims", "inflation", "mean"], label: "Claims inflation", tip: "Average annual claims inflation factor, applied by occurrence date (1.0 = flat)." },
       { path: ["claims", "nil_probability"], label: "Nil claim probability", tip: "Probability a claim closes without payment at its first close; 0 switches nil claims off." },
       { path: ["claims", "reopening", "probability"], label: "Reopen probability", tip: "Chance a closed claim reopens once; 0 switches reopening off." },
@@ -519,7 +523,7 @@ function renderRealism(r) {
     : "✗ Fail - some metrics fall outside the Schedule P P5-P95 reference band";
   const scope = document.createElement("p");
   scope.className = "empty-note";
-  scope.textContent = "Scored on third-party liability claims against their share of premium: the Schedule P private passenger auto reference is a liability line with no own damage in it. The loss ratio band uses each company's loss ratio developed to age 10. Schedule P incurred includes bulk and IBNR reserves and generated incurred does not, so the incurred factors are a loose sanity bound.";
+  scope.textContent = "Scored on third-party liability claims against their share of premium: the Schedule P private passenger auto reference is a liability line with no own damage in it. The loss ratio band uses each company's loss ratio developed to age 10. Generated incurred adds pure IBNR at its true value but no bulk reserve, while Schedule P incurred includes both, so the incurred factors are a loose sanity bound.";
   panel.append(
     banner,
     scope,

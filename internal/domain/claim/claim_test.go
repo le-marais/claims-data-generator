@@ -2,6 +2,7 @@ package claim_test
 
 import (
 	"math"
+	"sort"
 	"testing"
 	"time"
 
@@ -309,5 +310,46 @@ func TestOwnDamageFlagFollowsSeverityMixture(t *testing.T) {
 		if c.OwnDamage {
 			t.Fatalf("claim %d flagged own-damage with third_party_weight 1", c.ID)
 		}
+	}
+}
+
+// MR-9: third-party claims take their own report lag, and setting it moves no
+// own-damage claim, because the lag's normal deviate is drawn before the
+// claim type is known.
+func TestThirdPartyReportLag(t *testing.T) {
+	book := fixedBook(20000, 20000, 300, 1.0)
+	common := claim.NewClaimSimulator(params()).Simulate(random.NewSource(5), book)
+	p := params()
+	p.ThirdPartyReportLagMedian, p.ThirdPartyReportLagSigma = 20, 1.6
+	own := claim.NewClaimSimulator(p).Simulate(random.NewSource(5), book)
+	if len(own) != len(common) {
+		t.Fatalf("claim count moved: %d, want %d", len(own), len(common))
+	}
+	type key struct {
+		policy   int
+		occurred string
+		cost     int64
+	}
+	before := map[key]claim.Claim{}
+	for _, c := range common {
+		before[key{c.PolicyID, c.OccurrenceDate.String(), int64(c.Ultimate)}] = c
+	}
+	var tpLags []int
+	for _, c := range own {
+		b, ok := before[key{c.PolicyID, c.OccurrenceDate.String(), int64(c.Ultimate)}]
+		if !ok {
+			t.Fatalf("claim on policy %d occurring %s has no counterpart without the third-party lag", c.PolicyID, c.OccurrenceDate)
+		}
+		if c.OwnDamage {
+			if c.ReportDate != b.ReportDate || c.CloseDate != b.CloseDate {
+				t.Fatalf("own-damage claim on policy %d moved: reported %s, want %s", c.PolicyID, c.ReportDate, b.ReportDate)
+			}
+			continue
+		}
+		tpLags = append(tpLags, shared.DaysBetween(c.OccurrenceDate, c.ReportDate))
+	}
+	sort.Ints(tpLags)
+	if median := tpLags[len(tpLags)/2]; median < 16 || median > 24 {
+		t.Fatalf("third-party median report lag %d days, want about 20", median)
 	}
 }
