@@ -13,60 +13,42 @@ import (
 
 func approxf(a, b float64) bool { return a-b < 1e-9 && b-a < 1e-9 }
 
-func TestCloseLagRegimeSelectsByComponent(t *testing.T) {
-	cl := lob.CloseLagParams{
-		Shape: 1.2, MeanDays: 120, SizeThreshold: 20000, SizeMultiplier: 6,
-		RiskLoading: 0, ThirdPartyShape: 1.0, ThirdPartyMeanDays: 1200,
+// MR-9: settlement time grows smoothly with size and with risk.
+func TestCloseLagMeanScalesWithSizeAndRisk(t *testing.T) {
+	cl := lob.CloseLagParams{Shape: 1, MeanDays: 300, SizeReference: 5000, SizeElasticity: 0.5}
+	for _, c := range []struct{ size, want float64 }{{5000, 300}, {20000, 600}, {1250, 150}} {
+		if m := closeLagMean(cl, c.size, 1); !approxf(m, c.want) {
+			t.Errorf("size %v: mean %v, want %v", c.size, m, c.want)
+		}
 	}
-	// Own damage, small: base params, no stretch.
-	if s, m := closeLagRegime(cl, 5000, 1, true); !approxf(s, 1.2) || !approxf(m, 120) {
-		t.Errorf("own-damage small = (%v, %v), want (1.2, 120)", s, m)
+	cl.RiskLoading = 0.5
+	if m := closeLagMean(cl, 5000, 2); !approxf(m, 300*math.Sqrt(2)) {
+		t.Errorf("risk-loaded mean %v, want %v", m, 300*math.Sqrt(2))
 	}
-	// Own damage, large: base shape, stretched mean.
-	if s, m := closeLagRegime(cl, 50000, 1, true); !approxf(s, 1.2) || !approxf(m, 720) {
-		t.Errorf("own-damage large = (%v, %v), want (1.2, 720)", s, m)
-	}
-	// Third party: long-tail params, no size stretch even when large.
-	if s, m := closeLagRegime(cl, 50000, 1, false); !approxf(s, 1.0) || !approxf(m, 1200) {
-		t.Errorf("third-party = (%v, %v), want (1.0, 1200)", s, m)
-	}
-	// Third party with risk loading: mean stretches by riskFactor^RiskLoading.
-	clRisk := lob.CloseLagParams{
-		Shape: 1.2, MeanDays: 120, SizeThreshold: 20000, SizeMultiplier: 6,
-		RiskLoading: 0.5, ThirdPartyShape: 1.0, ThirdPartyMeanDays: 1200,
-	}
-	if s, m := closeLagRegime(clRisk, 50000, 2, false); !approxf(s, 1.0) || !approxf(m, 1200*math.Sqrt(2)) {
-		t.Errorf("third-party risk-loaded = (%v, %v), want (1.0, %v)", s, m, 1200*math.Sqrt(2))
+	cl.SizeElasticity, cl.RiskLoading = 0, 0
+	if m := closeLagMean(cl, 20000, 1); !approxf(m, 300) {
+		t.Errorf("elasticity 0: mean %v, want the flat 300", m)
 	}
 }
 
-// sizeStretchParams is an own-damage-only class whose median claim sits at
-// half the size threshold before inflation, so about a quarter of claims are
-// stretched in the start year.
+// sizeStretchParams is a single-section class whose close lag doubles for
+// every fourfold rise in claim size, with its median claim at twice the size
+// reference in start-year dollars.
 func sizeStretchParams() lob.ClaimParams {
-	return lob.ClaimParams{
-		BaseFrequency:   1,
-		ReportLagMedian: 1,
-		ReportLagSigma:  0.1,
-		Severity: lob.SeverityParams{
-			ThirdPartyWeight: 0, OwnDamageMedianFraction: 0.002, OwnDamageSigma: 1,
-		},
-		CloseLag: lob.CloseLagParams{
-			Shape: 1.2, MeanDays: 40, SizeThreshold: 40000, SizeMultiplier: 3,
-			ThirdPartyShape: 1, ThirdPartyMeanDays: 400,
-		},
-		Reopening: lob.ReopeningParams{Probability: 0.9, EstimateFactor: 1, LagMedianDays: 30, LagSigma: 0.1},
-	}
+	p := ownDamageOnly(1, 0.002, 1, lob.CloseLagParams{Shape: 1.2, MeanDays: 40, SizeReference: 10000, SizeElasticity: 0.5})
+	p.Sections[0].ReportLag = lob.ReportLagParams{Median: 1, Sigma: 0.1}
+	p.Reopening = lob.ReopeningParams{Probability: 0.9, EstimateFactor: 1, LagMedianDays: 30, LagSigma: 0.1}
+	return p
 }
 
 // steepInflation compounds 30% a year, so by 2007 the index is about 10 and
-// nominal claim costs sit far above the threshold.
+// nominal claim costs sit far above their start-year size.
 func steepInflation() InflationIndex {
 	return NewInflationIndex(random.NewSource(1), lob.InflationParams{Mean: 1.3}, 1998, 10)
 }
 
-// MR-5: the size stretch compares start-year dollars with the threshold, so
-// claims inflation does not slow own-damage settlement year on year.
+// MR-5: the close lag reads claim size in start-year dollars, so claims
+// inflation does not slow settlement year on year.
 func TestSizeStretchIgnoresClaimsInflation(t *testing.T) {
 	var book []policy.Policy
 	for i := 0; i < 8000; i++ {
@@ -103,14 +85,13 @@ func TestReopenSizeStretchIgnoresClaimsInflation(t *testing.T) {
 		claims = append(claims, Claim{
 			ID:             i + 1,
 			OccurrenceDate: occurred,
-			// Nominally 100k, about 10k in start-year dollars: under the threshold.
+			// Nominally 100k, about 10k in start-year dollars: the size reference.
 			Episodes: []Episode{{
 				Open:     occurred,
 				Close:    occurred.AddDays(30),
 				Ultimate: shared.FromDollars(100000),
 			}},
 			RiskFactor: 1,
-			OwnDamage:  true,
 		})
 	}
 	secondLag := func(sim *ReopenSimulator) float64 {
@@ -128,23 +109,5 @@ func TestReopenSizeStretchIgnoresClaimsInflation(t *testing.T) {
 	deflated := secondLag(NewReopenSimulator(sizeStretchParams()).WithInflation(steepInflation()))
 	if deflated > 50 || nominal < 100 {
 		t.Fatalf("second close lag %.1f days deflated, %.1f nominal; want about 40 and 120", deflated, nominal)
-	}
-}
-
-// MR-9: third-party settlement time grows smoothly with size.
-func TestThirdPartyCloseLagScalesWithSize(t *testing.T) {
-	cl := lob.CloseLagParams{
-		Shape: 1.2, MeanDays: 40, SizeThreshold: 20000, SizeMultiplier: 3,
-		ThirdPartyShape: 1, ThirdPartyMeanDays: 300,
-		ThirdPartySizeElasticity: 0.5, ThirdPartySizeReference: 5000,
-	}
-	for _, c := range []struct{ size, want float64 }{{5000, 300}, {20000, 600}, {1250, 150}} {
-		if _, m := closeLagRegime(cl, c.size, 1, false); !approxf(m, c.want) {
-			t.Errorf("size %v: mean %v, want %v", c.size, m, c.want)
-		}
-	}
-	cl.ThirdPartySizeElasticity = 0
-	if _, m := closeLagRegime(cl, 20000, 1, false); !approxf(m, 300) {
-		t.Errorf("elasticity 0: mean %v, want the flat 300", m)
 	}
 }

@@ -74,20 +74,35 @@ function numberInput(value, path) {
   return input;
 }
 
+// A group with a sections path is shown once per section in the preset, its
+// field paths relative to the section; a field with a kind applies only to
+// sections whose severity is of that kind.
 function buildParamsForm() {
   const root = $("#params-form");
   root.replaceChildren();
   for (const group of fieldGroups) {
-    const heading = document.createElement("h3");
-    heading.textContent = group.label;
-    root.append(heading);
-    for (const f of group.fields) {
-      const label = document.createElement("label");
-      label.title = f.tip;
-      label.append(f.label, numberInput(getPath(preset, f.path), f.path));
-      root.append(label);
+    if (group.sections) {
+      getPath(preset, group.sections).forEach((section, i) => {
+        const fields = group.fields.filter((f) => !f.kind || f.kind === section.severity.kind);
+        appendFieldGroup(root, `${group.label}: ${section.name.replaceAll("_", " ")}`, fields, [...group.sections, i]);
+      });
+    } else {
+      appendFieldGroup(root, group.label, group.fields, []);
     }
     if (group.label === "Book") root.append(buildExcessTable());
+  }
+}
+
+function appendFieldGroup(root, title, fields, prefix) {
+  const heading = document.createElement("h3");
+  heading.textContent = title;
+  root.append(heading);
+  for (const f of fields) {
+    const path = [...prefix, ...f.path];
+    const label = document.createElement("label");
+    label.title = f.tip;
+    label.append(f.label, numberInput(getPath(preset, path), path));
+    root.append(label);
   }
 }
 
@@ -451,7 +466,10 @@ function renderRealism(r) {
     : "✗ Fail - some metrics fall outside the Schedule P P5-P95 reference band";
   const scope = document.createElement("p");
   scope.className = "empty-note";
-  scope.textContent = "Scored on third-party liability claims against their share of premium: the Schedule P private passenger auto reference is a liability line with no own damage in it. The loss ratio band uses each company's loss ratio developed to age 10. Generated incurred adds pure IBNR at its true value but no bulk reserve, while Schedule P incurred includes both, so the incurred factors are a loose sanity bound.";
+  const scored = r.section
+    ? `Scored on the ${r.section.replaceAll("_", " ")} section alone, its claims against its share of premium: the Schedule P private passenger auto reference is a liability line, and the line of business marks this section to score against it.`
+    : "Scored on the whole book against the Schedule P private passenger auto liability reference.";
+  scope.textContent = `${scored} The loss ratio band uses each company's loss ratio developed to age 10. Generated incurred adds pure IBNR at its true value but no bulk reserve, while Schedule P incurred includes both, so the incurred factors are a loose sanity bound.`;
   panel.append(
     banner,
     scope,

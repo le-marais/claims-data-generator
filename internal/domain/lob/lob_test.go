@@ -26,37 +26,32 @@ func validMotor() LineOfBusiness {
 		},
 		Pricing: PricingParams{
 			TargetLossRatio: 0.72,
-			BaseFrequency:   0.15,
-			Severity: SeverityParams{
-				ThirdPartyWeight:        0.15,
-				OwnDamageMedianFraction: 0.15,
-				OwnDamageSigma:          1.0,
-				ThirdPartyScale:         5000,
-				ThirdPartyAlpha:         2.0,
+			Sections: []PricingSectionParams{
+				{Name: "own_damage", BaseFrequency: 0.1275, Severity: SeverityParams{Kind: SumInsuredLognormal, MedianFraction: 0.15, Sigma: 1.0}},
+				{Name: "third_party", BaseFrequency: 0.0225, Severity: SeverityParams{Kind: Pareto, Scale: 5000, Alpha: 2.0}},
 			},
 			ReopenProbability:    0.04,
 			ReopenEstimateFactor: 0.45,
 			InflationMean:        1.0,
 		},
 		Claims: ClaimParams{
-			BaseFrequency:   0.15,
-			ReportLagMedian: 2,
-			ReportLagSigma:  1.0,
-			Severity: SeverityParams{
-				ThirdPartyWeight:        0.15,
-				OwnDamageMedianFraction: 0.15,
-				OwnDamageSigma:          1.0,
-				ThirdPartyScale:         5000,
-				ThirdPartyAlpha:         2.0,
-			},
-			CloseLag: CloseLagParams{
-				Shape:              1.5,
-				MeanDays:           60,
-				SizeThreshold:      20000,
-				SizeMultiplier:     4,
-				RiskLoading:        0.5,
-				ThirdPartyShape:    1.0,
-				ThirdPartyMeanDays: 900,
+			Sections: []SectionParams{
+				{
+					Name:          "own_damage",
+					BaseFrequency: 0.1275,
+					Severity:      SeverityParams{Kind: SumInsuredLognormal, MedianFraction: 0.15, Sigma: 1.0},
+					ReportLag:     ReportLagParams{Median: 2, Sigma: 1.0},
+					CloseLag:      CloseLagParams{Shape: 1.5, MeanDays: 60, SizeReference: 3000, SizeElasticity: 0.2, RiskLoading: 0.5},
+					Recoveries:    true,
+				},
+				{
+					Name:          "third_party",
+					BaseFrequency: 0.0225,
+					Severity:      SeverityParams{Kind: Pareto, Scale: 5000, Alpha: 2.0},
+					ReportLag:     ReportLagParams{Median: 20, Sigma: 1.5},
+					CloseLag:      CloseLagParams{Shape: 1.0, MeanDays: 900, RiskLoading: 0.5},
+					Scored:        true,
+				},
 			},
 			Inflation: InflationParams{Mean: 1.0, Volatility: 0.0},
 			Recoveries: RecoveryParams{
@@ -99,36 +94,37 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"book.excess_choices", func(l *LineOfBusiness) { l.Book.ExcessChoices[0].Value = -100 }},
 		{"pricing.target_loss_ratio", func(l *LineOfBusiness) { l.Pricing.TargetLossRatio = 0 }},
 		{"pricing.adequacy_volatility", func(l *LineOfBusiness) { l.Pricing.AdequacyVolatility = -0.1 }},
-		{"pricing.base_frequency", func(l *LineOfBusiness) { l.Pricing.BaseFrequency = 0 }},
-		{"pricing.severity.third_party_alpha", func(l *LineOfBusiness) { l.Pricing.Severity.ThirdPartyAlpha = 1.0 }},
+		{"pricing.sections[0].base_frequency", func(l *LineOfBusiness) { l.Pricing.Sections[0].BaseFrequency = -0.1 }},
+		{"pricing.sections[1].severity.alpha", func(l *LineOfBusiness) { l.Pricing.Sections[1].Severity.Alpha = 1.0 }},
+		{"pricing.sections", func(l *LineOfBusiness) { l.Pricing.Sections = l.Pricing.Sections[:1] }},
+		{"pricing.sections[1].name", func(l *LineOfBusiness) { l.Pricing.Sections[1].Name = "liability" }},
 		{"pricing.nil_probability", func(l *LineOfBusiness) { l.Pricing.NilProbability = 1.0 }},
 		{"pricing.nil_probability", func(l *LineOfBusiness) { l.Pricing.NilProbability = -0.1 }},
 		{"pricing.reopen_probability", func(l *LineOfBusiness) { l.Pricing.ReopenProbability = 1.5 }},
 		{"pricing.reopen_estimate_factor", func(l *LineOfBusiness) { l.Pricing.ReopenEstimateFactor = 0 }},
 		{"pricing.inflation_mean", func(l *LineOfBusiness) { l.Pricing.InflationMean = 0 }},
-		{"claims.base_frequency", func(l *LineOfBusiness) { l.Claims.BaseFrequency = 0 }},
-		{"claims.report_lag_median", func(l *LineOfBusiness) { l.Claims.ReportLagMedian = 0 }},
-		{"claims.report_lag_sigma", func(l *LineOfBusiness) { l.Claims.ReportLagSigma = 0 }},
-		{"claims.third_party_report_lag_median", func(l *LineOfBusiness) { l.Claims.ThirdPartyReportLagMedian = -1 }},
-		{"claims.third_party_report_lag_sigma", func(l *LineOfBusiness) {
-			l.Claims.ThirdPartyReportLagMedian, l.Claims.ThirdPartyReportLagSigma = 20, 0
+		{"claims.sections", func(l *LineOfBusiness) { l.Claims.Sections, l.Pricing.Sections = nil, nil }},
+		{"claims.sections", func(l *LineOfBusiness) { l.Claims.Sections[0].Scored = true }},
+		{"claims.sections", func(l *LineOfBusiness) {
+			l.Claims.Sections[0].BaseFrequency, l.Claims.Sections[1].BaseFrequency = 0, 0
 		}},
-		{"claims.close_lag.third_party_size_elasticity", func(l *LineOfBusiness) { l.Claims.CloseLag.ThirdPartySizeElasticity = -0.1 }},
-		{"claims.close_lag.third_party_size_reference", func(l *LineOfBusiness) {
-			l.Claims.CloseLag.ThirdPartySizeElasticity, l.Claims.CloseLag.ThirdPartySizeReference = 0.3, 0
+		{"claims.sections[0].name", func(l *LineOfBusiness) { l.Claims.Sections[0].Name, l.Pricing.Sections[0].Name = "", "" }},
+		{"claims.sections[1].name", func(l *LineOfBusiness) {
+			l.Claims.Sections[1].Name, l.Pricing.Sections[1].Name = "own_damage", "own_damage"
 		}},
-		{"claims.severity.third_party_weight", func(l *LineOfBusiness) { l.Claims.Severity.ThirdPartyWeight = 1.5 }},
-		{"claims.severity.own_damage_median_fraction", func(l *LineOfBusiness) { l.Claims.Severity.OwnDamageMedianFraction = 0 }},
-		{"claims.severity.own_damage_sigma", func(l *LineOfBusiness) { l.Claims.Severity.OwnDamageSigma = 0 }},
-		{"claims.severity.third_party_scale", func(l *LineOfBusiness) { l.Claims.Severity.ThirdPartyScale = 0 }},
-		{"claims.severity.third_party_alpha", func(l *LineOfBusiness) { l.Claims.Severity.ThirdPartyAlpha = 1.0 }},
-		{"claims.close_lag.shape", func(l *LineOfBusiness) { l.Claims.CloseLag.Shape = 0 }},
-		{"claims.close_lag.mean_days", func(l *LineOfBusiness) { l.Claims.CloseLag.MeanDays = 0 }},
-		{"claims.close_lag.size_threshold", func(l *LineOfBusiness) { l.Claims.CloseLag.SizeThreshold = -1 }},
-		{"claims.close_lag.size_multiplier", func(l *LineOfBusiness) { l.Claims.CloseLag.SizeMultiplier = 0.5 }},
-		{"claims.close_lag.risk_loading", func(l *LineOfBusiness) { l.Claims.CloseLag.RiskLoading = -0.1 }},
-		{"claims.close_lag.third_party_shape", func(l *LineOfBusiness) { l.Claims.CloseLag.ThirdPartyShape = 0 }},
-		{"claims.close_lag.third_party_mean_days", func(l *LineOfBusiness) { l.Claims.CloseLag.ThirdPartyMeanDays = 0 }},
+		{"claims.sections[0].base_frequency", func(l *LineOfBusiness) { l.Claims.Sections[0].BaseFrequency = -0.1 }},
+		{"claims.sections[0].severity.kind", func(l *LineOfBusiness) { l.Claims.Sections[0].Severity.Kind = "lognormal" }},
+		{"claims.sections[0].severity.median_fraction", func(l *LineOfBusiness) { l.Claims.Sections[0].Severity.MedianFraction = 0 }},
+		{"claims.sections[0].severity.sigma", func(l *LineOfBusiness) { l.Claims.Sections[0].Severity.Sigma = 0 }},
+		{"claims.sections[1].severity.scale", func(l *LineOfBusiness) { l.Claims.Sections[1].Severity.Scale = 0 }},
+		{"claims.sections[1].severity.alpha", func(l *LineOfBusiness) { l.Claims.Sections[1].Severity.Alpha = 1.0 }},
+		{"claims.sections[0].report_lag.median", func(l *LineOfBusiness) { l.Claims.Sections[0].ReportLag.Median = 0 }},
+		{"claims.sections[1].report_lag.sigma", func(l *LineOfBusiness) { l.Claims.Sections[1].ReportLag.Sigma = 0 }},
+		{"claims.sections[0].close_lag.shape", func(l *LineOfBusiness) { l.Claims.Sections[0].CloseLag.Shape = 0 }},
+		{"claims.sections[1].close_lag.mean_days", func(l *LineOfBusiness) { l.Claims.Sections[1].CloseLag.MeanDays = 0 }},
+		{"claims.sections[0].close_lag.size_elasticity", func(l *LineOfBusiness) { l.Claims.Sections[0].CloseLag.SizeElasticity = -0.1 }},
+		{"claims.sections[1].close_lag.size_reference", func(l *LineOfBusiness) { l.Claims.Sections[1].CloseLag.SizeElasticity = 0.3 }},
+		{"claims.sections[0].close_lag.risk_loading", func(l *LineOfBusiness) { l.Claims.Sections[0].CloseLag.RiskLoading = -0.1 }},
 		{"runoff.case_adequacy_mean", func(l *LineOfBusiness) { l.Runoff.CaseAdequacyMean = 0 }},
 		{"runoff.case_adequacy_sigma", func(l *LineOfBusiness) { l.Runoff.CaseAdequacySigma = -1 }},
 		{"runoff.payments_per_year", func(l *LineOfBusiness) { l.Runoff.PaymentsPerYear = -1 }},
@@ -245,21 +241,12 @@ func TestValidateSkipsSwitchedOffBlocks(t *testing.T) {
 			l.Pricing.ReopenProbability = 0
 			l.Pricing.ReopenEstimateFactor = 0
 		}},
-		{"no third party", func(l *LineOfBusiness) {
-			for _, sev := range []*SeverityParams{&l.Claims.Severity, &l.Pricing.Severity} {
-				sev.ThirdPartyWeight = 0
-				sev.ThirdPartyScale = 0
-				sev.ThirdPartyAlpha = 0
-			}
-			l.Claims.CloseLag.ThirdPartyShape = 0
-			l.Claims.CloseLag.ThirdPartyMeanDays = 0
+		{"third party off", func(l *LineOfBusiness) {
+			l.Claims.Sections[1] = SectionParams{Name: "third_party"}
+			l.Pricing.Sections[1] = PricingSectionParams{Name: "third_party"}
 		}},
-		{"no own damage", func(l *LineOfBusiness) {
-			for _, sev := range []*SeverityParams{&l.Claims.Severity, &l.Pricing.Severity} {
-				sev.ThirdPartyWeight = 1
-				sev.OwnDamageMedianFraction = 0
-				sev.OwnDamageSigma = 0
-			}
+		{"no section scored", func(l *LineOfBusiness) {
+			l.Claims.Sections[1].Scored = false
 		}},
 	}
 	for _, c := range cases {
@@ -284,16 +271,11 @@ func TestValidateChecksEnabledBlocks(t *testing.T) {
 		{"claims.reopening.estimate_factor", func(l *LineOfBusiness) {
 			l.Claims.Reopening = ReopeningParams{Probability: 0.1}
 		}},
-		{"claims.close_lag.third_party_shape", func(l *LineOfBusiness) {
-			l.Claims.CloseLag.ThirdPartyShape = 0
+		{"claims.sections[1].severity.kind", func(l *LineOfBusiness) {
+			l.Claims.Sections[1] = SectionParams{Name: "third_party", BaseFrequency: 0.02}
 		}},
-		{"claims.severity.third_party_scale", func(l *LineOfBusiness) {
-			l.Claims.Severity.ThirdPartyWeight = 1
-			l.Claims.Severity.ThirdPartyScale = 0
-		}},
-		{"claims.severity.own_damage_sigma", func(l *LineOfBusiness) {
-			l.Claims.Severity.ThirdPartyWeight = 0
-			l.Claims.Severity.OwnDamageSigma = 0
+		{"pricing.sections[1].severity.kind", func(l *LineOfBusiness) {
+			l.Pricing.Sections[1] = PricingSectionParams{Name: "third_party", BaseFrequency: 0.02}
 		}},
 	}
 	for _, c := range cases {
@@ -303,5 +285,16 @@ func TestValidateChecksEnabledBlocks(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), c.field) {
 			t.Errorf("want error naming %q, got %v", c.field, err)
 		}
+	}
+}
+
+func TestScoredSection(t *testing.T) {
+	l := validMotor()
+	if got := l.Claims.ScoredSection(); got != 1 {
+		t.Errorf("ScoredSection() = %d, want 1", got)
+	}
+	l.Claims.Sections[1].Scored = false
+	if got := l.Claims.ScoredSection(); got != -1 {
+		t.Errorf("ScoredSection() with none scored = %d, want -1", got)
 	}
 }

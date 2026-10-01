@@ -48,30 +48,40 @@ type ExcessChoiceParams struct {
 
 // PricingParams mirrors lob.PricingParams for YAML/JSON.
 type PricingParams struct {
-	TargetLossRatio      float64        `yaml:"target_loss_ratio" json:"target_loss_ratio"`
-	AdequacyVolatility   float64        `yaml:"adequacy_volatility" json:"adequacy_volatility"`
-	BaseFrequency        float64        `yaml:"base_frequency" json:"base_frequency"`
-	Severity             SeverityParams `yaml:"severity" json:"severity"`
-	NilProbability       float64        `yaml:"nil_probability" json:"nil_probability"`
-	ReopenProbability    float64        `yaml:"reopen_probability" json:"reopen_probability"`
-	ReopenEstimateFactor float64        `yaml:"reopen_estimate_factor" json:"reopen_estimate_factor"`
-	InflationMean        float64        `yaml:"inflation_mean" json:"inflation_mean"`
+	TargetLossRatio      float64                `yaml:"target_loss_ratio" json:"target_loss_ratio"`
+	AdequacyVolatility   float64                `yaml:"adequacy_volatility" json:"adequacy_volatility"`
+	Sections             []PricingSectionParams `yaml:"sections" json:"sections"`
+	NilProbability       float64                `yaml:"nil_probability" json:"nil_probability"`
+	ReopenProbability    float64                `yaml:"reopen_probability" json:"reopen_probability"`
+	ReopenEstimateFactor float64                `yaml:"reopen_estimate_factor" json:"reopen_estimate_factor"`
+	InflationMean        float64                `yaml:"inflation_mean" json:"inflation_mean"`
+}
+
+// PricingSectionParams mirrors lob.PricingSectionParams for YAML/JSON.
+type PricingSectionParams struct {
+	Name          string         `yaml:"name" json:"name"`
+	BaseFrequency float64        `yaml:"base_frequency" json:"base_frequency"`
+	Severity      SeverityParams `yaml:"severity" json:"severity"`
 }
 
 // ClaimsParams mirrors lob.ClaimParams for YAML/JSON.
 type ClaimsParams struct {
-	BaseFrequency   float64 `yaml:"base_frequency" json:"base_frequency"`
-	ReportLagMedian float64 `yaml:"report_lag_median" json:"report_lag_median"`
-	ReportLagSigma  float64 `yaml:"report_lag_sigma" json:"report_lag_sigma"`
+	Sections       []SectionParams  `yaml:"sections" json:"sections"`
+	Inflation      InflationParams  `yaml:"inflation" json:"inflation"`
+	NilProbability float64          `yaml:"nil_probability" json:"nil_probability"`
+	Recoveries     RecoveriesParams `yaml:"recoveries" json:"recoveries"`
+	Reopening      ReopeningParams  `yaml:"reopening" json:"reopening"`
+}
 
-	ThirdPartyReportLagMedian float64          `yaml:"third_party_report_lag_median" json:"third_party_report_lag_median"`
-	ThirdPartyReportLagSigma  float64          `yaml:"third_party_report_lag_sigma" json:"third_party_report_lag_sigma"`
-	Severity                  SeverityParams   `yaml:"severity" json:"severity"`
-	CloseLag                  CloseLagParams   `yaml:"close_lag" json:"close_lag"`
-	Inflation                 InflationParams  `yaml:"inflation" json:"inflation"`
-	NilProbability            float64          `yaml:"nil_probability" json:"nil_probability"`
-	Recoveries                RecoveriesParams `yaml:"recoveries" json:"recoveries"`
-	Reopening                 ReopeningParams  `yaml:"reopening" json:"reopening"`
+// SectionParams mirrors lob.SectionParams for YAML/JSON.
+type SectionParams struct {
+	Name          string          `yaml:"name" json:"name"`
+	BaseFrequency float64         `yaml:"base_frequency" json:"base_frequency"`
+	Severity      SeverityParams  `yaml:"severity" json:"severity"`
+	ReportLag     ReportLagParams `yaml:"report_lag" json:"report_lag"`
+	CloseLag      CloseLagParams  `yaml:"close_lag" json:"close_lag"`
+	Recoveries    bool            `yaml:"recoveries" json:"recoveries"`
+	Scored        bool            `yaml:"scored" json:"scored"`
 }
 
 // InflationParams mirrors lob.InflationParams for YAML/JSON.
@@ -106,25 +116,26 @@ type ReopeningParams struct {
 
 // SeverityParams mirrors lob.SeverityParams for YAML/JSON.
 type SeverityParams struct {
-	ThirdPartyWeight        float64 `yaml:"third_party_weight" json:"third_party_weight"`
-	OwnDamageMedianFraction float64 `yaml:"own_damage_median_fraction" json:"own_damage_median_fraction"`
-	OwnDamageSigma          float64 `yaml:"own_damage_sigma" json:"own_damage_sigma"`
-	ThirdPartyScale         float64 `yaml:"third_party_scale" json:"third_party_scale"`
-	ThirdPartyAlpha         float64 `yaml:"third_party_alpha" json:"third_party_alpha"`
+	Kind           string  `yaml:"kind" json:"kind"`
+	MedianFraction float64 `yaml:"median_fraction" json:"median_fraction"`
+	Sigma          float64 `yaml:"sigma" json:"sigma"`
+	Scale          float64 `yaml:"scale" json:"scale"`
+	Alpha          float64 `yaml:"alpha" json:"alpha"`
+}
+
+// ReportLagParams mirrors lob.ReportLagParams for YAML/JSON.
+type ReportLagParams struct {
+	Median float64 `yaml:"median" json:"median"`
+	Sigma  float64 `yaml:"sigma" json:"sigma"`
 }
 
 // CloseLagParams mirrors lob.CloseLagParams for YAML/JSON.
 type CloseLagParams struct {
-	Shape              float64 `yaml:"shape" json:"shape"`
-	MeanDays           float64 `yaml:"mean_days" json:"mean_days"`
-	SizeThreshold      float64 `yaml:"size_threshold" json:"size_threshold"`
-	SizeMultiplier     float64 `yaml:"size_multiplier" json:"size_multiplier"`
-	RiskLoading        float64 `yaml:"risk_loading" json:"risk_loading"`
-	ThirdPartyShape    float64 `yaml:"third_party_shape" json:"third_party_shape"`
-	ThirdPartyMeanDays float64 `yaml:"third_party_mean_days" json:"third_party_mean_days"`
-
-	ThirdPartySizeElasticity float64 `yaml:"third_party_size_elasticity" json:"third_party_size_elasticity"`
-	ThirdPartySizeReference  float64 `yaml:"third_party_size_reference" json:"third_party_size_reference"`
+	Shape          float64 `yaml:"shape" json:"shape"`
+	MeanDays       float64 `yaml:"mean_days" json:"mean_days"`
+	SizeReference  float64 `yaml:"size_reference" json:"size_reference"`
+	SizeElasticity float64 `yaml:"size_elasticity" json:"size_elasticity"`
+	RiskLoading    float64 `yaml:"risk_loading" json:"risk_loading"`
 }
 
 // RunoffParams mirrors lob.RunoffParams for YAML/JSON.
@@ -219,6 +230,35 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 	for i, e := range d.Book.ExcessChoices {
 		excesses[i] = lob.ExcessChoice{Value: e.Value, Weight: e.Weight}
 	}
+	pricingSections := make([]lob.PricingSectionParams, len(d.Pricing.Sections))
+	for i, sec := range d.Pricing.Sections {
+		pricingSections[i] = lob.PricingSectionParams{
+			Name:          sec.Name,
+			BaseFrequency: sec.BaseFrequency,
+			Severity:      sec.Severity.toDomain(),
+		}
+	}
+	sections := make([]lob.SectionParams, len(d.Claims.Sections))
+	for i, sec := range d.Claims.Sections {
+		sections[i] = lob.SectionParams{
+			Name:          sec.Name,
+			BaseFrequency: sec.BaseFrequency,
+			Severity:      sec.Severity.toDomain(),
+			ReportLag: lob.ReportLagParams{
+				Median: sec.ReportLag.Median,
+				Sigma:  sec.ReportLag.Sigma,
+			},
+			CloseLag: lob.CloseLagParams{
+				Shape:          sec.CloseLag.Shape,
+				MeanDays:       sec.CloseLag.MeanDays,
+				SizeReference:  sec.CloseLag.SizeReference,
+				SizeElasticity: sec.CloseLag.SizeElasticity,
+				RiskLoading:    sec.CloseLag.RiskLoading,
+			},
+			Recoveries: sec.Recoveries,
+			Scored:     sec.Scored,
+		}
+	}
 	return lob.LineOfBusiness{
 		Name: d.Name,
 		Book: lob.BookParams{
@@ -230,47 +270,16 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			ExcessChoices:       excesses,
 		},
 		Pricing: lob.PricingParams{
-			TargetLossRatio:    d.Pricing.TargetLossRatio,
-			AdequacyVolatility: d.Pricing.AdequacyVolatility,
-			BaseFrequency:      d.Pricing.BaseFrequency,
-			Severity: lob.SeverityParams{
-				ThirdPartyWeight:        d.Pricing.Severity.ThirdPartyWeight,
-				OwnDamageMedianFraction: d.Pricing.Severity.OwnDamageMedianFraction,
-				OwnDamageSigma:          d.Pricing.Severity.OwnDamageSigma,
-				ThirdPartyScale:         d.Pricing.Severity.ThirdPartyScale,
-				ThirdPartyAlpha:         d.Pricing.Severity.ThirdPartyAlpha,
-			},
+			TargetLossRatio:      d.Pricing.TargetLossRatio,
+			AdequacyVolatility:   d.Pricing.AdequacyVolatility,
+			Sections:             pricingSections,
 			NilProbability:       d.Pricing.NilProbability,
 			ReopenProbability:    d.Pricing.ReopenProbability,
 			ReopenEstimateFactor: d.Pricing.ReopenEstimateFactor,
 			InflationMean:        d.Pricing.InflationMean,
 		},
 		Claims: lob.ClaimParams{
-			BaseFrequency:   d.Claims.BaseFrequency,
-			ReportLagMedian: d.Claims.ReportLagMedian,
-			ReportLagSigma:  d.Claims.ReportLagSigma,
-
-			ThirdPartyReportLagMedian: d.Claims.ThirdPartyReportLagMedian,
-			ThirdPartyReportLagSigma:  d.Claims.ThirdPartyReportLagSigma,
-			Severity: lob.SeverityParams{
-				ThirdPartyWeight:        d.Claims.Severity.ThirdPartyWeight,
-				OwnDamageMedianFraction: d.Claims.Severity.OwnDamageMedianFraction,
-				OwnDamageSigma:          d.Claims.Severity.OwnDamageSigma,
-				ThirdPartyScale:         d.Claims.Severity.ThirdPartyScale,
-				ThirdPartyAlpha:         d.Claims.Severity.ThirdPartyAlpha,
-			},
-			CloseLag: lob.CloseLagParams{
-				Shape:              d.Claims.CloseLag.Shape,
-				MeanDays:           d.Claims.CloseLag.MeanDays,
-				SizeThreshold:      d.Claims.CloseLag.SizeThreshold,
-				SizeMultiplier:     d.Claims.CloseLag.SizeMultiplier,
-				RiskLoading:        d.Claims.CloseLag.RiskLoading,
-				ThirdPartyShape:    d.Claims.CloseLag.ThirdPartyShape,
-				ThirdPartyMeanDays: d.Claims.CloseLag.ThirdPartyMeanDays,
-
-				ThirdPartySizeElasticity: d.Claims.CloseLag.ThirdPartySizeElasticity,
-				ThirdPartySizeReference:  d.Claims.CloseLag.ThirdPartySizeReference,
-			},
+			Sections: sections,
 			Inflation: lob.InflationParams{
 				Mean:       d.Claims.Inflation.Mean,
 				Volatility: d.Claims.Inflation.Volatility,
@@ -297,6 +306,16 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			RevisionsPerYear:  d.Runoff.RevisionsPerYear,
 			RevisionSigma:     d.Runoff.RevisionSigma,
 		},
+	}
+}
+
+func (s SeverityParams) toDomain() lob.SeverityParams {
+	return lob.SeverityParams{
+		Kind:           lob.SeverityKind(s.Kind),
+		MedianFraction: s.MedianFraction,
+		Sigma:          s.Sigma,
+		Scale:          s.Scale,
+		Alpha:          s.Alpha,
 	}
 }
 

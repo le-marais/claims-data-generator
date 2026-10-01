@@ -13,7 +13,7 @@ func TestOwnDamageCostStaysWithinTheCover(t *testing.T) {
 	claims := claim.NewClaimSimulator(params()).Simulate(random.NewSource(5), book)
 	capped := 0
 	for _, c := range claims {
-		if !c.OwnDamage {
+		if c.Section != ownDamage {
 			if c.CoverLimit != 0 {
 				t.Fatalf("third-party claim %d has cover limit %v, want 0 (unlimited)", c.ID, c.CoverLimit)
 			}
@@ -44,7 +44,7 @@ func TestReopenNeverPaysBeyondTheCover(t *testing.T) {
 	claims = claim.NewReopenSimulator(p).Apply(random.NewSource(8), claims)
 	var totalLosses, totalLossesReopened, cappedReopens int
 	for _, c := range claims {
-		if !c.OwnDamage {
+		if c.Section != ownDamage {
 			continue
 		}
 		firstPaid := c.Episodes[0].Paid()

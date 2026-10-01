@@ -16,7 +16,7 @@ type LineOfBusiness struct {
 	Runoff  RunoffParams
 }
 
-// BookParams drives step 1, the policy book simulation.
+// BookParams drives the policy book simulation.
 type BookParams struct {
 	// GrowthFactor is the year-on-year trend in policy count; each year's
 	// book size is previous size x GrowthFactor x lognormal noise.
@@ -57,10 +57,9 @@ type PricingParams struct {
 	// TargetLossRatio while the expected loss ratio stays on it. 0 switches
 	// it off.
 	AdequacyVolatility float64
-	// BaseFrequency is the assumed ground-up occurrence frequency at risk factor 1.
-	BaseFrequency float64
-	// Severity is the assumed ground-up loss mixture.
-	Severity SeverityParams
+	// Sections is the assumed frequency and severity of each section of
+	// cover, matching the claims sections by name and order.
+	Sections []PricingSectionParams
 	// NilProbability is the assumed share of reported claims that close
 	// without payment. A nil claim still pays if it reopens.
 	NilProbability float64
@@ -73,36 +72,110 @@ type PricingParams struct {
 	InflationMean float64
 }
 
-// ClaimParams drives step 2, claim event simulation.
-type ClaimParams struct {
-	// BaseFrequency is the ground-up occurrence frequency per policy-year at
-	// risk factor 1. With a non-zero excess the realized reported frequency is
-	// lower, because sub-excess claims are discarded rather than reported.
+// PricingSectionParams is the insurer's assumed loss cost for one section.
+type PricingSectionParams struct {
+	// Name matches the claims section the assumption prices.
+	Name string
+	// BaseFrequency is the assumed ground-up occurrence frequency per
+	// policy-year at risk factor 1; 0 prices the section at nothing.
 	BaseFrequency float64
-	// ReportLagMedian is the median occurrence-to-report lag in days.
-	ReportLagMedian float64
-	// ReportLagSigma is the sigma of the lognormal report lag.
-	ReportLagSigma float64
-	// ThirdPartyReportLagMedian and ThirdPartyReportLagSigma give third-party
-	// claims their own lognormal report lag: injury claims are often reported
-	// weeks or months after the accident, which is where pure IBNR comes
-	// from. A median of 0 keeps the shared report lag for third-party claims.
-	ThirdPartyReportLagMedian float64
-	ThirdPartyReportLagSigma  float64
-	Severity                  SeverityParams
-	CloseLag                  CloseLagParams
+	// Severity is the assumed ground-up loss distribution.
+	Severity SeverityParams
+}
+
+// ClaimParams drives claim event simulation.
+type ClaimParams struct {
+	// Sections are the policy's sections of cover, such as own damage and
+	// third-party liability. Each draws its own claims, with its own
+	// frequency, severity, report lag and close lag.
+	Sections []SectionParams
 	// Inflation is the stochastic claims-inflation path applied by
 	// occurrence date to every claim's ground-up loss.
 	Inflation InflationParams
 	// NilProbability is the chance a reported claim closes without payment;
 	// 0 switches nil claims off.
 	NilProbability float64
-	// Recoveries drives salvage and subrogation: money coming back on
-	// own-damage claims after they close.
+	// Recoveries drives salvage and subrogation: money coming back after
+	// close on claims in sections that allow recoveries.
 	Recoveries RecoveryParams
 	// Reopening drives the single optional reopen episode: a closed claim
 	// can reopen once, develop further, and close again.
 	Reopening ReopeningParams
+}
+
+// SectionParams is one section of cover: the claims it produces and how
+// they report and settle.
+type SectionParams struct {
+	// Name identifies the section; it labels the section's random sub-stream
+	// and matches its pricing assumption.
+	Name string
+	// BaseFrequency is the ground-up occurrence frequency per policy-year at
+	// risk factor 1. With a non-zero excess the realized reported frequency
+	// is lower, because sub-excess claims are discarded rather than reported.
+	// 0 switches the section off.
+	BaseFrequency float64
+	Severity      SeverityParams
+	ReportLag     ReportLagParams
+	CloseLag      CloseLagParams
+	// Recoveries makes the section's claims eligible for salvage and
+	// subrogation. Salvage further needs a total loss, which only a
+	// sum-insured severity can reach.
+	Recoveries bool
+	// Scored marks the section the realism gate scores against the Schedule
+	// P reference, at most one. With none marked it scores the whole book.
+	Scored bool
+}
+
+// SeverityKind names a ground-up loss distribution.
+type SeverityKind string
+
+const (
+	// SumInsuredLognormal is a lognormal fraction of the policy's sum insured
+	// in start-year dollars, capped at the sum insured: a claim that reaches
+	// the cap is a total loss.
+	SumInsuredLognormal SeverityKind = "sum_insured_lognormal"
+	// Pareto is a Pareto loss in start-year dollars with no cap, for
+	// liability.
+	Pareto SeverityKind = "pareto"
+)
+
+// SeverityParams is a section's ground-up loss distribution. Kind selects
+// which of the other fields apply.
+type SeverityParams struct {
+	Kind SeverityKind
+	// MedianFraction and Sigma parameterize SumInsuredLognormal: the median
+	// loss as a fraction of sum insured, and the lognormal sigma.
+	MedianFraction float64
+	Sigma          float64
+	// Scale and Alpha parameterize Pareto: the minimum loss in dollars, and
+	// the tail index, which must exceed 1 for a finite mean.
+	Scale float64
+	Alpha float64
+}
+
+// ReportLagParams is the lognormal occurrence-to-report lag in days.
+type ReportLagParams struct {
+	Median float64
+	Sigma  float64
+}
+
+// CloseLagParams is the gamma report-to-close lag. A claim costing s in
+// start-year dollars has mean lag MeanDays x (s / SizeReference)^SizeElasticity
+// x riskFactor^RiskLoading, so larger and riskier claims settle slower,
+// smoothly. Costs are deflated by the claims inflation index first, so
+// inflation does not slow settlement year on year.
+type CloseLagParams struct {
+	// Shape is the gamma shape; above 1 avoids mass at near-zero delays.
+	Shape float64
+	// MeanDays is the mean lag of a claim costing SizeReference.
+	MeanDays float64
+	// SizeReference is the claim cost, in start-year dollars, that settles
+	// in MeanDays on average.
+	SizeReference float64
+	// SizeElasticity links settlement time to size; 0 switches the link off.
+	SizeElasticity float64
+	// RiskLoading is the exponent applied to the policy risk factor.
+	RiskLoading float64
 }
 
 // InflationParams is the stochastic annual claims-inflation path: each
@@ -118,7 +191,7 @@ type InflationParams struct {
 
 // RecoveryParams drives salvage (selling the insured vehicle's wreck) and
 // subrogation (recovering the payout from an at-fault third party). Both
-// attach only to own-damage claims that paid something, as money-in
+// attach only to paid claims in sections that allow recoveries, as money-in
 // transactions dated after the close, and salvage only to total losses.
 type RecoveryParams struct {
 	Salvage     RecoveryTypeParams
@@ -128,8 +201,8 @@ type RecoveryParams struct {
 // RecoveryTypeParams parameterizes one recovery type.
 type RecoveryTypeParams struct {
 	// Probability is the chance an eligible claim yields this recovery: a
-	// paid total loss for salvage, a paid own-damage claim for subrogation.
-	// 0 switches the type off.
+	// paid total loss for salvage, any paid claim in a section that allows
+	// recoveries for subrogation. 0 switches the type off.
 	Probability float64
 	// MeanShare is the average recovery as a share of the claim's gross paid.
 	MeanShare float64
@@ -148,8 +221,8 @@ type ReopeningParams struct {
 	// reopening off.
 	Probability float64
 	// EstimateFactor is the mean additional cost of the reopen episode as a
-	// factor of the claim's ultimate; it may exceed 1. Own-damage reopens are
-	// capped at the cover the claim has left.
+	// factor of the claim's ultimate; it may exceed 1. Reopens on a
+	// sum-insured section are capped at the cover the claim has left.
 	EstimateFactor float64
 	// EstimateSigma is the sigma of the mean-1 lognormal noise on the
 	// reopen's additional cost.
@@ -160,51 +233,7 @@ type ReopeningParams struct {
 	LagSigma float64
 }
 
-// SeverityParams is the ground-up loss mixture: own damage (lognormal
-// scaled by sum insured) and third party liability (Pareto, uncapped).
-type SeverityParams struct {
-	// ThirdPartyWeight is the probability a claim is third party.
-	ThirdPartyWeight float64
-	// OwnDamageMedianFraction is the median loss as a fraction of sum insured.
-	OwnDamageMedianFraction float64
-	// OwnDamageSigma is the sigma of the own damage lognormal.
-	OwnDamageSigma float64
-	// ThirdPartyScale is the Pareto scale (minimum) in dollars.
-	ThirdPartyScale float64
-	// ThirdPartyAlpha is the Pareto tail index; must exceed 1 for a finite mean.
-	ThirdPartyAlpha float64
-}
-
-// CloseLagParams is the gamma report-to-close lag with size and risk loadings.
-type CloseLagParams struct {
-	// Shape is the gamma shape; above 1 avoids mass at near-zero delays.
-	Shape float64
-	// MeanDays is the base mean close lag.
-	MeanDays float64
-	// SizeThreshold is the own-damage claim cost, in start-year dollars, above
-	// which the mean lag is stretched by SizeMultiplier. Costs are deflated by
-	// the claims inflation index before the comparison, so the share of claims
-	// above it does not drift with inflation.
-	SizeThreshold float64
-	// SizeMultiplier stretches the mean lag for claims above the threshold.
-	SizeMultiplier float64
-	// RiskLoading is the exponent applied to the policy risk factor.
-	RiskLoading float64
-	// ThirdPartyShape and ThirdPartyMeanDays are the gamma parameters for
-	// third-party (bodily-injury) claims, which settle far slower than own
-	// damage. ThirdPartyMeanDays is the mean lag of a claim costing
-	// ThirdPartySizeReference in start-year dollars.
-	ThirdPartyShape    float64
-	ThirdPartyMeanDays float64
-	// ThirdPartySizeElasticity links third-party settlement time to size: a
-	// claim costing s in start-year dollars has mean lag ThirdPartyMeanDays x
-	// (s / ThirdPartySizeReference)^ThirdPartySizeElasticity, so larger
-	// claims take longer, smoothly. 0 switches the link off.
-	ThirdPartySizeElasticity float64
-	ThirdPartySizeReference  float64
-}
-
-// RunoffParams drives steps 3-4, the case estimate path and payments.
+// RunoffParams drives the case estimate path and payments.
 type RunoffParams struct {
 	// CaseAdequacyMean is the true ultimate over the expected opening case
 	// estimate: above 1 cases open deficient (under-reserving), below 1
@@ -262,7 +291,36 @@ func (l LineOfBusiness) Validate() error {
 	if err := l.Claims.validate(); err != nil {
 		return err
 	}
+	if err := l.checkPricingSections(); err != nil {
+		return err
+	}
 	return l.Runoff.validate()
+}
+
+// checkPricingSections requires the pricing assumptions to cover the claims
+// sections one for one, by name and in order, so each section's premium is
+// priced on its own assumption.
+func (l LineOfBusiness) checkPricingSections() error {
+	if len(l.Pricing.Sections) != len(l.Claims.Sections) {
+		return fmt.Errorf("pricing.sections: must list the %d claims sections, got %d", len(l.Claims.Sections), len(l.Pricing.Sections))
+	}
+	for i, ps := range l.Pricing.Sections {
+		if want := l.Claims.Sections[i].Name; ps.Name != want {
+			return fmt.Errorf("pricing.sections[%d].name: must match claims.sections[%d].name %q, got %q", i, i, want, ps.Name)
+		}
+	}
+	return nil
+}
+
+// ScoredSection is the index of the section the realism gate scores, or -1
+// when none is marked and the gate scores the whole book.
+func (c ClaimParams) ScoredSection() int {
+	for i, sec := range c.Sections {
+		if sec.Scored {
+			return i
+		}
+	}
+	return -1
 }
 
 func (b BookParams) validate() error {
@@ -319,7 +377,6 @@ func (p PricingParams) validate() error {
 	if err := checkFinite(
 		namedFloat{"pricing.target_loss_ratio", p.TargetLossRatio},
 		namedFloat{"pricing.adequacy_volatility", p.AdequacyVolatility},
-		namedFloat{"pricing.base_frequency", p.BaseFrequency},
 		namedFloat{"pricing.nil_probability", p.NilProbability},
 		namedFloat{"pricing.reopen_probability", p.ReopenProbability},
 		namedFloat{"pricing.reopen_estimate_factor", p.ReopenEstimateFactor},
@@ -333,11 +390,10 @@ func (p PricingParams) validate() error {
 	if p.AdequacyVolatility < 0 {
 		return fmt.Errorf("pricing.adequacy_volatility: must not be negative, got %v", p.AdequacyVolatility)
 	}
-	if p.BaseFrequency <= 0 {
-		return fmt.Errorf("pricing.base_frequency: must be positive, got %v", p.BaseFrequency)
-	}
-	if err := p.Severity.validate("pricing.severity"); err != nil {
-		return err
+	for i, sec := range p.Sections {
+		if err := sec.validate(fmt.Sprintf("pricing.sections[%d]", i)); err != nil {
+			return err
+		}
 	}
 	if p.NilProbability < 0 || p.NilProbability >= 1 {
 		return fmt.Errorf("pricing.nil_probability: must be in [0, 1), got %v", p.NilProbability)
@@ -354,34 +410,52 @@ func (p PricingParams) validate() error {
 	return nil
 }
 
+func (s PricingSectionParams) validate(prefix string) error {
+	if err := checkFinite(namedFloat{prefix + ".base_frequency", s.BaseFrequency}); err != nil {
+		return err
+	}
+	if s.BaseFrequency < 0 {
+		return fmt.Errorf("%s.base_frequency: must not be negative, got %v", prefix, s.BaseFrequency)
+	}
+	if s.BaseFrequency == 0 {
+		return nil // priced at nothing: the severity is never read
+	}
+	return s.Severity.validate(prefix + ".severity")
+}
+
 func (c ClaimParams) validate() error {
-	if err := checkFinite(
-		namedFloat{"claims.base_frequency", c.BaseFrequency},
-		namedFloat{"claims.report_lag_median", c.ReportLagMedian},
-		namedFloat{"claims.report_lag_sigma", c.ReportLagSigma},
-		namedFloat{"claims.third_party_report_lag_median", c.ThirdPartyReportLagMedian},
-		namedFloat{"claims.third_party_report_lag_sigma", c.ThirdPartyReportLagSigma},
-		namedFloat{"claims.nil_probability", c.NilProbability},
-	); err != nil {
+	if err := checkFinite(namedFloat{"claims.nil_probability", c.NilProbability}); err != nil {
 		return err
 	}
-	if c.BaseFrequency <= 0 {
-		return fmt.Errorf("claims.base_frequency: must be positive, got %v", c.BaseFrequency)
+	if len(c.Sections) == 0 {
+		return fmt.Errorf("claims.sections: must not be empty")
 	}
-	if c.ReportLagMedian <= 0 {
-		return fmt.Errorf("claims.report_lag_median: must be positive, got %v", c.ReportLagMedian)
+	names := map[string]bool{}
+	scored, active := 0, 0
+	for i, sec := range c.Sections {
+		prefix := fmt.Sprintf("claims.sections[%d]", i)
+		if sec.Name == "" {
+			return fmt.Errorf("%s.name: must not be empty", prefix)
+		}
+		if names[sec.Name] {
+			return fmt.Errorf("%s.name: %q is already used by another section", prefix, sec.Name)
+		}
+		names[sec.Name] = true
+		if err := sec.validate(prefix); err != nil {
+			return err
+		}
+		if sec.Scored {
+			scored++
+		}
+		if sec.BaseFrequency > 0 {
+			active++
+		}
 	}
-	if c.ReportLagSigma <= 0 {
-		return fmt.Errorf("claims.report_lag_sigma: must be positive, got %v", c.ReportLagSigma)
+	if scored > 1 {
+		return fmt.Errorf("claims.sections: at most one section may be scored, got %d", scored)
 	}
-	if c.ThirdPartyReportLagMedian < 0 {
-		return fmt.Errorf("claims.third_party_report_lag_median: must not be negative, got %v", c.ThirdPartyReportLagMedian)
-	}
-	if c.ThirdPartyReportLagMedian > 0 && c.ThirdPartyReportLagSigma <= 0 {
-		return fmt.Errorf("claims.third_party_report_lag_sigma: must be positive, got %v", c.ThirdPartyReportLagSigma)
-	}
-	if err := c.Severity.validate("claims.severity"); err != nil {
-		return err
+	if active == 0 {
+		return fmt.Errorf("claims.sections: at least one section must have a positive base_frequency")
 	}
 	if err := c.Inflation.validate(); err != nil {
 		return err
@@ -395,10 +469,28 @@ func (c ClaimParams) validate() error {
 	if err := c.Recoveries.Subrogation.validate("claims.recoveries.subrogation"); err != nil {
 		return err
 	}
-	if err := c.Reopening.validate(); err != nil {
+	return c.Reopening.validate()
+}
+
+// validate checks one claims section. A section with a base frequency of 0
+// draws no claims, so the rest of it is not required.
+func (s SectionParams) validate(prefix string) error {
+	if err := checkFinite(namedFloat{prefix + ".base_frequency", s.BaseFrequency}); err != nil {
 		return err
 	}
-	return c.CloseLag.validate(c.Severity.ThirdPartyWeight > 0)
+	if s.BaseFrequency < 0 {
+		return fmt.Errorf("%s.base_frequency: must not be negative, got %v", prefix, s.BaseFrequency)
+	}
+	if s.BaseFrequency == 0 {
+		return nil
+	}
+	if err := s.Severity.validate(prefix + ".severity"); err != nil {
+		return err
+	}
+	if err := s.ReportLag.validate(prefix + ".report_lag"); err != nil {
+		return err
+	}
+	return s.CloseLag.validate(prefix + ".close_lag")
 }
 
 func (i InflationParams) validate() error {
@@ -481,84 +573,74 @@ func (r ReopeningParams) validate() error {
 
 func (s SeverityParams) validate(prefix string) error {
 	if err := checkFinite(
-		namedFloat{prefix + ".third_party_weight", s.ThirdPartyWeight},
-		namedFloat{prefix + ".own_damage_median_fraction", s.OwnDamageMedianFraction},
-		namedFloat{prefix + ".own_damage_sigma", s.OwnDamageSigma},
-		namedFloat{prefix + ".third_party_scale", s.ThirdPartyScale},
-		namedFloat{prefix + ".third_party_alpha", s.ThirdPartyAlpha},
+		namedFloat{prefix + ".median_fraction", s.MedianFraction},
+		namedFloat{prefix + ".sigma", s.Sigma},
+		namedFloat{prefix + ".scale", s.Scale},
+		namedFloat{prefix + ".alpha", s.Alpha},
 	); err != nil {
 		return err
 	}
-	if s.ThirdPartyWeight < 0 || s.ThirdPartyWeight > 1 {
-		return fmt.Errorf("%s.third_party_weight: must be in [0, 1], got %v", prefix, s.ThirdPartyWeight)
-	}
-	// A component with zero weight is never drawn, so its parameters are not
-	// required.
-	if s.ThirdPartyWeight < 1 {
-		if s.OwnDamageMedianFraction <= 0 {
-			return fmt.Errorf("%s.own_damage_median_fraction: must be positive, got %v", prefix, s.OwnDamageMedianFraction)
+	switch s.Kind {
+	case SumInsuredLognormal:
+		if s.MedianFraction <= 0 {
+			return fmt.Errorf("%s.median_fraction: must be positive, got %v", prefix, s.MedianFraction)
 		}
-		if s.OwnDamageSigma <= 0 {
-			return fmt.Errorf("%s.own_damage_sigma: must be positive, got %v", prefix, s.OwnDamageSigma)
+		if s.Sigma <= 0 {
+			return fmt.Errorf("%s.sigma: must be positive, got %v", prefix, s.Sigma)
 		}
-	}
-	if s.ThirdPartyWeight > 0 {
-		if s.ThirdPartyScale <= 0 {
-			return fmt.Errorf("%s.third_party_scale: must be positive, got %v", prefix, s.ThirdPartyScale)
+	case Pareto:
+		if s.Scale <= 0 {
+			return fmt.Errorf("%s.scale: must be positive, got %v", prefix, s.Scale)
 		}
-		if s.ThirdPartyAlpha <= 1 {
-			return fmt.Errorf("%s.third_party_alpha: must exceed 1 for a finite mean, got %v", prefix, s.ThirdPartyAlpha)
+		if s.Alpha <= 1 {
+			return fmt.Errorf("%s.alpha: must exceed 1 for a finite mean, got %v", prefix, s.Alpha)
 		}
+	default:
+		return fmt.Errorf("%s.kind: must be %q or %q, got %q", prefix, SumInsuredLognormal, Pareto, s.Kind)
 	}
 	return nil
 }
 
-// validate checks the close-lag parameters. thirdParty is false when the
-// claims severity gives third-party claims no weight, so the third-party
-// regime is never drawn and its parameters are not required.
-func (c CloseLagParams) validate(thirdParty bool) error {
+func (r ReportLagParams) validate(prefix string) error {
 	if err := checkFinite(
-		namedFloat{"claims.close_lag.shape", c.Shape},
-		namedFloat{"claims.close_lag.mean_days", c.MeanDays},
-		namedFloat{"claims.close_lag.size_threshold", c.SizeThreshold},
-		namedFloat{"claims.close_lag.size_multiplier", c.SizeMultiplier},
-		namedFloat{"claims.close_lag.risk_loading", c.RiskLoading},
-		namedFloat{"claims.close_lag.third_party_shape", c.ThirdPartyShape},
-		namedFloat{"claims.close_lag.third_party_mean_days", c.ThirdPartyMeanDays},
-		namedFloat{"claims.close_lag.third_party_size_elasticity", c.ThirdPartySizeElasticity},
-		namedFloat{"claims.close_lag.third_party_size_reference", c.ThirdPartySizeReference},
+		namedFloat{prefix + ".median", r.Median},
+		namedFloat{prefix + ".sigma", r.Sigma},
+	); err != nil {
+		return err
+	}
+	if r.Median <= 0 {
+		return fmt.Errorf("%s.median: must be positive, got %v", prefix, r.Median)
+	}
+	if r.Sigma <= 0 {
+		return fmt.Errorf("%s.sigma: must be positive, got %v", prefix, r.Sigma)
+	}
+	return nil
+}
+
+func (c CloseLagParams) validate(prefix string) error {
+	if err := checkFinite(
+		namedFloat{prefix + ".shape", c.Shape},
+		namedFloat{prefix + ".mean_days", c.MeanDays},
+		namedFloat{prefix + ".size_reference", c.SizeReference},
+		namedFloat{prefix + ".size_elasticity", c.SizeElasticity},
+		namedFloat{prefix + ".risk_loading", c.RiskLoading},
 	); err != nil {
 		return err
 	}
 	if c.Shape <= 0 {
-		return fmt.Errorf("claims.close_lag.shape: must be positive, got %v", c.Shape)
+		return fmt.Errorf("%s.shape: must be positive, got %v", prefix, c.Shape)
 	}
 	if c.MeanDays <= 0 {
-		return fmt.Errorf("claims.close_lag.mean_days: must be positive, got %v", c.MeanDays)
+		return fmt.Errorf("%s.mean_days: must be positive, got %v", prefix, c.MeanDays)
 	}
-	if c.SizeThreshold < 0 {
-		return fmt.Errorf("claims.close_lag.size_threshold: must not be negative, got %v", c.SizeThreshold)
+	if c.SizeElasticity < 0 {
+		return fmt.Errorf("%s.size_elasticity: must not be negative, got %v", prefix, c.SizeElasticity)
 	}
-	if c.SizeMultiplier < 1 {
-		return fmt.Errorf("claims.close_lag.size_multiplier: must be at least 1, got %v", c.SizeMultiplier)
+	if c.SizeElasticity > 0 && c.SizeReference <= 0 {
+		return fmt.Errorf("%s.size_reference: must be positive, got %v", prefix, c.SizeReference)
 	}
 	if c.RiskLoading < 0 {
-		return fmt.Errorf("claims.close_lag.risk_loading: must not be negative, got %v", c.RiskLoading)
-	}
-	if !thirdParty {
-		return nil
-	}
-	if c.ThirdPartyShape <= 0 {
-		return fmt.Errorf("claims.close_lag.third_party_shape: must be positive, got %v", c.ThirdPartyShape)
-	}
-	if c.ThirdPartyMeanDays <= 0 {
-		return fmt.Errorf("claims.close_lag.third_party_mean_days: must be positive, got %v", c.ThirdPartyMeanDays)
-	}
-	if c.ThirdPartySizeElasticity < 0 {
-		return fmt.Errorf("claims.close_lag.third_party_size_elasticity: must not be negative, got %v", c.ThirdPartySizeElasticity)
-	}
-	if c.ThirdPartySizeElasticity > 0 && c.ThirdPartySizeReference <= 0 {
-		return fmt.Errorf("claims.close_lag.third_party_size_reference: must be positive, got %v", c.ThirdPartySizeReference)
+		return fmt.Errorf("%s.risk_loading: must not be negative, got %v", prefix, c.RiskLoading)
 	}
 	return nil
 }

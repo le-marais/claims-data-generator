@@ -3,6 +3,7 @@ package claim_test
 import (
 	"math"
 	"reflect"
+	"slices"
 	"sort"
 	"testing"
 	"time"
@@ -14,28 +15,44 @@ import (
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 )
 
+// Section indices in params.
+const (
+	ownDamage  = 0
+	thirdParty = 1
+)
+
+// params is a two-section motor book: own damage sized off the sum insured,
+// and a Pareto third-party section, 0.15 claims per policy-year between them.
 func params() lob.ClaimParams {
 	return lob.ClaimParams{
-		BaseFrequency:   0.15,
-		ReportLagMedian: 2,
-		ReportLagSigma:  1.2,
-		Severity: lob.SeverityParams{
-			ThirdPartyWeight:        0.15,
-			OwnDamageMedianFraction: 0.12,
-			OwnDamageSigma:          1.0,
-			ThirdPartyScale:         4000,
-			ThirdPartyAlpha:         2.2,
-		},
-		CloseLag: lob.CloseLagParams{
-			Shape:              1.5,
-			MeanDays:           60,
-			SizeThreshold:      20000,
-			SizeMultiplier:     4,
-			RiskLoading:        0.3,
-			ThirdPartyShape:    1.0,
-			ThirdPartyMeanDays: 900,
+		Sections: []lob.SectionParams{
+			{
+				Name:          "own_damage",
+				BaseFrequency: 0.1275,
+				Severity:      lob.SeverityParams{Kind: lob.SumInsuredLognormal, MedianFraction: 0.12, Sigma: 1.0},
+				ReportLag:     lob.ReportLagParams{Median: 2, Sigma: 1.2},
+				CloseLag:      lob.CloseLagParams{Shape: 1.5, MeanDays: 60, SizeReference: 3000, SizeElasticity: 0.5, RiskLoading: 0.3},
+				Recoveries:    true,
+			},
+			{
+				Name:          "third_party",
+				BaseFrequency: 0.0225,
+				Severity:      lob.SeverityParams{Kind: lob.Pareto, Scale: 4000, Alpha: 2.2},
+				ReportLag:     lob.ReportLagParams{Median: 2, Sigma: 1.2},
+				CloseLag:      lob.CloseLagParams{Shape: 1.0, MeanDays: 900, RiskLoading: 0.3},
+			},
 		},
 	}
+}
+
+// only switches every section but one off.
+func only(p lob.ClaimParams, section int, frequency float64) lob.ClaimParams {
+	p.Sections = slices.Clone(p.Sections)
+	for i := range p.Sections {
+		p.Sections[i].BaseFrequency = 0
+	}
+	p.Sections[section].BaseFrequency = frequency
+	return p
 }
 
 // fixedBook builds n identical policies starting through 1998.
@@ -138,16 +155,14 @@ func TestReportLagIsShortWithOutliers(t *testing.T) {
 
 func TestLargerClaimsCloseSlower(t *testing.T) {
 	sim := claim.NewClaimSimulator(params())
-	// Sum insured is set well above the close-lag size threshold (20000) so the
-	// SL-3/SL-4 own-damage cap at sum insured does not bind and both small and
-	// big claims (relative to the threshold) still occur.
+	// Sum insured is set well above 20000 so the cap at sum insured does not
+	// bind and both small and big claims still occur.
 	claims := sim.Simulate(random.NewSource(6), fixedBook(30000, 200000, 0, 1.0))
-	// The size stretch only governs the own-damage regime; third-party claims
-	// draw a flat long-tail lag regardless of size, so scope this check to
-	// own-damage claims to isolate the mechanism under test.
+	// Only the own-damage section links settlement time to size, so scope the
+	// check to it.
 	var smallSum, smallN, bigSum, bigN float64
 	for _, c := range claims {
-		if !c.OwnDamage {
+		if c.Section != ownDamage {
 			continue
 		}
 		lag := float64(shared.DaysBetween(c.ReportDate(), c.CloseDate()))
@@ -167,10 +182,8 @@ func TestLargerClaimsCloseSlower(t *testing.T) {
 	}
 }
 
-func TestThirdPartyClaimsExceedSumInsured(t *testing.T) {
-	p := params()
-	p.Severity.ThirdPartyWeight = 1.0
-	sim := claim.NewClaimSimulator(p)
+func TestParetoClaimsExceedSumInsured(t *testing.T) {
+	sim := claim.NewClaimSimulator(only(params(), thirdParty, 0.15))
 	claims := sim.Simulate(random.NewSource(7), fixedBook(20000, 10000, 0, 1.0))
 	exceeded := false
 	for _, c := range claims {
@@ -288,66 +301,57 @@ func TestNilProbabilityHighFlagsMostClaims(t *testing.T) {
 	}
 }
 
-func TestOwnDamageFlagFollowsSeverityMixture(t *testing.T) {
-	allOwn := params()
-	allOwn.Severity.ThirdPartyWeight = 0
-	claims := claim.NewClaimSimulator(allOwn).Simulate(random.NewSource(31), fixedBook(2000, 20000, 0, 1.0))
-	if len(claims) == 0 {
-		t.Fatal("expected claims")
-	}
-	for _, c := range claims {
-		if !c.OwnDamage {
-			t.Fatalf("claim %d not flagged own-damage with third_party_weight 0", c.ID)
+// A claim carries its section, and only a sum-insured section sets a cover
+// limit.
+func TestClaimsCarryTheirSection(t *testing.T) {
+	for _, section := range []int{ownDamage, thirdParty} {
+		claims := claim.NewClaimSimulator(only(params(), section, 0.15)).Simulate(random.NewSource(31), fixedBook(2000, 20000, 0, 1.0))
+		if len(claims) == 0 {
+			t.Fatal("expected claims")
 		}
-	}
-
-	allThird := params()
-	allThird.Severity.ThirdPartyWeight = 1
-	claims = claim.NewClaimSimulator(allThird).Simulate(random.NewSource(32), fixedBook(2000, 20000, 0, 1.0))
-	if len(claims) == 0 {
-		t.Fatal("expected claims")
-	}
-	for _, c := range claims {
-		if c.OwnDamage {
-			t.Fatalf("claim %d flagged own-damage with third_party_weight 1", c.ID)
+		for _, c := range claims {
+			if c.Section != section {
+				t.Fatalf("claim %d in section %d, want %d", c.ID, c.Section, section)
+			}
+			if limited := c.CoverLimit > 0; limited != (section == ownDamage) {
+				t.Fatalf("claim %d in section %d has cover limit %v", c.ID, section, c.CoverLimit)
+			}
 		}
 	}
 }
 
-// MR-9: third-party claims take their own report lag, and setting it moves no
-// own-damage claim, because the lag's normal deviate is drawn before the
-// claim type is known.
-func TestThirdPartyReportLag(t *testing.T) {
+// Each section draws from its own sub-stream, so changing one section's
+// parameters moves no claim of another.
+func TestSectionsDrawIndependently(t *testing.T) {
 	book := fixedBook(20000, 20000, 300, 1.0)
-	common := claim.NewClaimSimulator(params()).Simulate(random.NewSource(5), book)
+	before := claim.NewClaimSimulator(params()).Simulate(random.NewSource(5), book)
 	p := params()
-	p.ThirdPartyReportLagMedian, p.ThirdPartyReportLagSigma = 20, 1.6
-	own := claim.NewClaimSimulator(p).Simulate(random.NewSource(5), book)
-	if len(own) != len(common) {
-		t.Fatalf("claim count moved: %d, want %d", len(own), len(common))
-	}
+	p.Sections[thirdParty].ReportLag = lob.ReportLagParams{Median: 20, Sigma: 1.6}
+	p.Sections[thirdParty].BaseFrequency *= 2
+	after := claim.NewClaimSimulator(p).Simulate(random.NewSource(5), book)
+
 	type key struct {
-		policy   int
-		occurred string
-		cost     int64
+		policy           int
+		occurred, report string
+		cost             int64
 	}
-	before := map[key]claim.Claim{}
-	for _, c := range common {
-		before[key{c.PolicyID, c.OccurrenceDate.String(), int64(c.Episodes[0].Ultimate)}] = c
+	ownDamageClaims := func(claims []claim.Claim) map[key]bool {
+		m := map[key]bool{}
+		for _, c := range claims {
+			if c.Section == ownDamage {
+				m[key{c.PolicyID, c.OccurrenceDate.String(), c.ReportDate().String(), int64(c.Episodes[0].Ultimate)}] = true
+			}
+		}
+		return m
+	}
+	if !reflect.DeepEqual(ownDamageClaims(before), ownDamageClaims(after)) {
+		t.Fatal("own-damage claims moved when the third-party section changed")
 	}
 	var tpLags []int
-	for _, c := range own {
-		b, ok := before[key{c.PolicyID, c.OccurrenceDate.String(), int64(c.Episodes[0].Ultimate)}]
-		if !ok {
-			t.Fatalf("claim on policy %d occurring %s has no counterpart without the third-party lag", c.PolicyID, c.OccurrenceDate)
+	for _, c := range after {
+		if c.Section == thirdParty {
+			tpLags = append(tpLags, shared.DaysBetween(c.OccurrenceDate, c.ReportDate()))
 		}
-		if c.OwnDamage {
-			if c.ReportDate() != b.ReportDate() || c.CloseDate() != b.CloseDate() {
-				t.Fatalf("own-damage claim on policy %d moved: reported %s, want %s", c.PolicyID, c.ReportDate(), b.ReportDate())
-			}
-			continue
-		}
-		tpLags = append(tpLags, shared.DaysBetween(c.OccurrenceDate, c.ReportDate()))
 	}
 	sort.Ints(tpLags)
 	if median := tpLags[len(tpLags)/2]; median < 16 || median > 24 {

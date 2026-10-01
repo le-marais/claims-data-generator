@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/le-marais/claimsgen/internal/domain/lob"
 )
 
 const validYAML = `
@@ -22,35 +24,31 @@ book:
     - {value: 500, weight: 0.9}
 pricing:
   target_loss_ratio: 0.72
-  base_frequency: 0.15
-  severity:
-    third_party_weight: 0.15
-    own_damage_median_fraction: 0.15
-    own_damage_sigma: 1.0
-    third_party_scale: 5000
-    third_party_alpha: 2.0
+  sections:
+    - name: own_damage
+      base_frequency: 0.1275
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.15, sigma: 1.0}
+    - name: third_party
+      base_frequency: 0.0225
+      severity: {kind: pareto, scale: 5000, alpha: 2.0}
   nil_probability: 0.05
   reopen_probability: 0.04
   reopen_estimate_factor: 0.45
   inflation_mean: 1.04
 claims:
-  base_frequency: 0.15
-  report_lag_median: 2
-  report_lag_sigma: 1.0
-  severity:
-    third_party_weight: 0.15
-    own_damage_median_fraction: 0.15
-    own_damage_sigma: 1.0
-    third_party_scale: 5000
-    third_party_alpha: 2.0
-  close_lag:
-    shape: 1.5
-    mean_days: 60
-    size_threshold: 20000
-    size_multiplier: 4
-    risk_loading: 0.5
-    third_party_shape: 1.0
-    third_party_mean_days: 900
+  sections:
+    - name: own_damage
+      base_frequency: 0.1275
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.15, sigma: 1.0}
+      report_lag: {median: 2, sigma: 1.0}
+      close_lag: {shape: 1.5, mean_days: 60, size_reference: 3000, size_elasticity: 0.2, risk_loading: 0.5}
+      recoveries: true
+    - name: third_party
+      base_frequency: 0.0225
+      severity: {kind: pareto, scale: 5000, alpha: 2.0}
+      report_lag: {median: 20, sigma: 1.5}
+      close_lag: {shape: 1.0, mean_days: 900, risk_loading: 0.5}
+      scored: true
   inflation:
     mean: 1.04
     volatility: 0.02
@@ -98,8 +96,14 @@ func TestLoadValidYAML(t *testing.T) {
 	if len(l.Book.ExcessChoices) != 2 || l.Book.ExcessChoices[1].Value != 500 {
 		t.Errorf("ExcessChoices = %+v, want two entries with second value 500", l.Book.ExcessChoices)
 	}
-	if l.Claims.Severity.ThirdPartyAlpha != 2.0 {
-		t.Errorf("ThirdPartyAlpha = %v, want 2.0", l.Claims.Severity.ThirdPartyAlpha)
+	if len(l.Claims.Sections) != 2 {
+		t.Fatalf("claims sections = %d, want 2", len(l.Claims.Sections))
+	}
+	if tp := l.Claims.Sections[1]; tp.Severity.Kind != lob.Pareto || tp.Severity.Alpha != 2.0 || !tp.Scored || tp.Recoveries {
+		t.Errorf("third-party section = %+v, want a scored Pareto with alpha 2.0 and no recoveries", tp)
+	}
+	if od := l.Claims.Sections[0]; od.CloseLag.SizeElasticity != 0.2 || !od.Recoveries {
+		t.Errorf("own-damage section = %+v, want size elasticity 0.2 and recoveries", od)
 	}
 	if l.Runoff.SettlementShare != 0.4 {
 		t.Errorf("SettlementShare = %v, want 0.4", l.Runoff.SettlementShare)
@@ -275,13 +279,16 @@ func leaves(v reflect.Value, path string, out map[string]any) {
 		out[path] = v.Float()
 	case reflect.String:
 		out[path] = v.String()
+	case reflect.Bool:
+		out[path] = v.Bool()
 	default:
 		panic(fmt.Sprintf("leaves: unhandled kind %s at %s", v.Kind(), path))
 	}
 }
 
 // fillDistinct sets every float64 leaf to a distinct value (1, 2, 3, ...),
-// every string to its path, and gives every slice two elements.
+// every string to its path, every bool by the parity of the same counter (so
+// neighbouring switches differ), and gives every slice two elements.
 func fillDistinct(v reflect.Value, path string, next *float64) {
 	switch v.Kind() {
 	case reflect.Struct:
@@ -298,6 +305,9 @@ func fillDistinct(v reflect.Value, path string, next *float64) {
 		v.SetFloat(*next)
 	case reflect.String:
 		v.SetString(path)
+	case reflect.Bool:
+		*next++
+		v.SetBool(int(*next)%2 == 1)
 	}
 }
 

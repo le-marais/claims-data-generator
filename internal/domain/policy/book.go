@@ -1,5 +1,5 @@
 // Package policy simulates the policy book: the exposure that claims arise
-// from (step 1 of the simulation).
+// from.
 package policy
 
 import (
@@ -26,11 +26,11 @@ type Policy struct {
 	// self-describing field instead of needing the book's drift rate. Never
 	// written to CSV.
 	BaseSumInsured float64
-	// ThirdPartyPremium is the third-party liability section of Premium,
-	// priced the same way on that section's expected loss. The realism gate
-	// scores the liability claims against it, because the Schedule P
-	// reference is a liability line. Never written to CSV.
-	ThirdPartyPremium shared.Money
+	// SectionPremiums splits Premium by section of cover, in the order of the
+	// line of business's sections, each priced the same way on that section's
+	// expected loss. The realism gate scores a section's claims against its
+	// premium. Never written to CSV.
+	SectionPremiums []shared.Money
 }
 
 // BookSimulator generates the policy book for a run.
@@ -137,8 +137,13 @@ func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, startYear, y
 	riskFactor := src.Gamma(1/spread2, spread2)
 
 	excess := s.drawExcess(src)
-	ownDamageLoss, thirdPartyLoss := s.pricing.ExpectedSectionLoss(sumInsured, excess, riskFactor, inflation, siDrift)
-	premium := (ownDamageLoss + thirdPartyLoss) / lossRatio
+	total := 0.0
+	sections := make([]shared.Money, len(s.pricing.Sections))
+	for i := range sections {
+		loss := s.pricing.ExpectedSectionLoss(i, sumInsured, excess, riskFactor, inflation, siDrift)
+		total += loss
+		sections[i] = shared.FromDollars(loss / lossRatio)
+	}
 
 	return Policy{
 		ID:         id,
@@ -149,9 +154,9 @@ func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, startYear, y
 		BaseSumInsured: shared.FromDollars(sumInsured).Dollars() / siDrift,
 		Excess:         shared.FromDollars(excess),
 		RiskFactor:     riskFactor,
-		Premium:        shared.FromDollars(premium),
+		Premium:        shared.FromDollars(total / lossRatio),
 
-		ThirdPartyPremium: shared.FromDollars(thirdPartyLoss / lossRatio),
+		SectionPremiums: sections,
 	}
 }
 

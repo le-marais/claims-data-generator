@@ -28,18 +28,17 @@ type Claim struct {
 	PolicyID       int
 	OccurrenceDate shared.Date
 	Episodes       []Episode
+	// Section is the index of the claim's section of cover in the line of
+	// business's sections.
+	Section int
 	// CoverLimit is the most the policy pays on the claim over its whole
-	// life, reopen included: sum insured minus excess for own damage, zero
-	// (unlimited) for third party.
+	// life, reopen included: sum insured minus excess for a sum-insured
+	// severity, zero (unlimited) for a Pareto one.
 	CoverLimit shared.Money
 	// RiskFactor is the policy's risk factor, kept for the reopen pass's
 	// close-lag draw, which runs after the claim stage has let go of the
 	// policy.
 	RiskFactor float64
-	// OwnDamage is true when the severity mixture picked the own-damage
-	// component. Recovery eligibility depends on it: only own-damage claims
-	// yield salvage or subrogation.
-	OwnDamage bool
 }
 
 // Episode is one open-to-close stretch of a claim's development.
@@ -47,8 +46,8 @@ type Episode struct {
 	Open  shared.Date
 	Close shared.Date
 	// Ultimate is the episode's true cost. For the first episode it is the
-	// ground-up loss net of excess, capped at the cover for own damage; for a
-	// reopen it is the additional cost. The severity model sizes it, not the
+	// ground-up loss net of excess, capped at the cover for a sum-insured
+	// severity; for a reopen it is the additional cost. The severity model sizes it, not the
 	// case estimate, so the case adequacy knobs move reserves, never the loss
 	// cost.
 	Ultimate shared.Money
@@ -116,10 +115,10 @@ func (c Claim) Cost() shared.Money {
 	return cost
 }
 
-// TotalLoss reports whether the claim wrote the vehicle off: an own-damage
-// claim whose true cost reached its cover limit, the sum insured less excess.
+// TotalLoss reports whether the claim wrote the insured property off: its true
+// cost reached its cover limit, the sum insured less excess.
 func (c Claim) TotalLoss() bool {
-	return c.OwnDamage && c.CoverLimit > 0 && c.Episodes[0].Ultimate >= c.CoverLimit
+	return c.CoverLimit > 0 && c.Episodes[0].Ultimate >= c.CoverLimit
 }
 
 // ClaimSimulator generates claim events for a policy book.
@@ -192,17 +191,22 @@ func (s *ClaimSimulator) exposedFraction(pol policy.Policy) float64 {
 	return math.Max(0, float64(days)) / float64(coverDays)
 }
 
-// Simulate draws claim events for every policy. Claims are returned sorted
-// by report date with sequential IDs, resembling a claims system's
-// registration order.
+// Simulate draws claim events for every policy. Each section of each policy
+// draws its claims from its own sub-stream, so a change to one section never
+// moves another's draws. Claims are returned sorted by report date with
+// sequential IDs, resembling a claims system's registration order.
 func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy) []Claim {
 	var claims []Claim
 	for _, pol := range book {
 		stream := src.Split(fmt.Sprintf("claims-policy-%d", pol.ID))
-		n := stream.Poisson(s.params.BaseFrequency * pol.RiskFactor * s.exposedFraction(pol))
-		for i := 0; i < n; i++ {
-			if c, ok := s.simulateClaim(stream, pol); ok {
-				claims = append(claims, c)
+		exposed := s.exposedFraction(pol)
+		for i, sec := range s.params.Sections {
+			sectionStream := stream.Split(sec.Name)
+			n := sectionStream.Poisson(sec.BaseFrequency * pol.RiskFactor * exposed)
+			for range n {
+				if c, ok := s.simulateClaim(sectionStream, pol, i); ok {
+					claims = append(claims, c)
+				}
 			}
 		}
 	}
@@ -221,31 +225,24 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 	return claims
 }
 
-// simulateClaim draws one claim; ok is false when the ground-up loss does
-// not exceed the excess, making the claim unreportable. The severity draw is
-// the first episode's true cost (Ultimate); the case estimate is a separate,
-// later view of it.
-func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Policy) (Claim, bool) {
+// simulateClaim draws one claim in the given section; ok is false when the
+// ground-up loss does not exceed the excess, making the claim unreportable.
+// The severity draw is the first episode's true cost (Ultimate); the case
+// estimate is a separate, later view of it. Every claim takes the same draws
+// in the same order, reportable or not.
+func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Policy, section int) (Claim, bool) {
+	sec := s.params.Sections[section]
 	first, span := s.occurrenceSpan(pol)
 	occurrence := first.AddDays(int(src.Uniform() * float64(span)))
-
-	// The report lag's normal deviate is drawn here, before the claim type is
-	// known, and scaled by the type's lag parameters below, so the draw order
-	// is the same for both types and a third-party lag never moves another
-	// draw.
-	lagDeviate := math.Log(src.LogNormal(0, 1))
-
-	loss, ownDamage := s.drawGroundUpLoss(src, pol)
-	lag := math.Exp(math.Log(s.reportLagMedian(ownDamage)) + s.reportLagSigma(ownDamage)*lagDeviate)
+	lag := src.LogNormal(math.Log(sec.ReportLag.Median), sec.ReportLag.Sigma)
 	report := occurrence.AddDays(int(math.Round(lag)))
-	// Own damage is expressed in base-year sum-insured terms (baseSumInsured)
-	// and trended by the claims index only, applied here; third-party (Pareto)
-	// losses carry the same claims index but no sum-insured term at all. Own
-	// damage is then capped at the drifted sum insured, representing a total
-	// loss.
-	loss *= s.inflation.For(occurrence)
-	coverLimit := shared.Money(0) // third-party liability is unlimited
-	if ownDamage {
+
+	// Losses are drawn in start-year dollars and trended by the claims index
+	// at the occurrence date. A sum-insured loss is then capped at the drifted
+	// sum insured, representing a total loss; a Pareto loss is uncapped.
+	loss := s.drawGroundUpLoss(src, pol, sec.Severity) * s.inflation.For(occurrence)
+	coverLimit := shared.Money(0) // unlimited
+	if sec.Severity.Kind == lob.SumInsuredLognormal {
 		if cap := pol.SumInsured.Dollars(); loss > cap {
 			loss = cap
 		}
@@ -260,11 +257,10 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 		ultimate = shared.OneCent // a reportable claim always costs something
 	}
 
-	// The size stretch compares the cost in start-year dollars with the
-	// threshold, so claims inflation does not push a growing share of claims
-	// over it and slow settlement year on year (MR-5).
+	// The close lag reads the cost in start-year dollars, so claims inflation
+	// does not lengthen settlement year on year (MR-5).
 	baseCost := cost / s.inflation.For(occurrence)
-	closeDate := report.AddDays(int(math.Round(drawCloseLag(src, s.params.CloseLag, baseCost, pol.RiskFactor, ownDamage))))
+	closeDate := report.AddDays(int(math.Round(drawCloseLag(src, sec.CloseLag, baseCost, pol.RiskFactor))))
 
 	// Nil claims draw their severity and probability independently of claim
 	// size; real withdrawn claims skew small, so this is a known simplification.
@@ -278,67 +274,36 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 		PolicyID:       pol.ID,
 		OccurrenceDate: occurrence,
 		Episodes:       []Episode{{Open: report, Close: closeDate, Ultimate: ultimate, Nil: isNil}},
+		Section:        section,
 		CoverLimit:     coverLimit,
 		RiskFactor:     pol.RiskFactor,
-		OwnDamage:      ownDamage,
 	}, true
 }
 
-// reportLagMedian and reportLagSigma are the lognormal report-lag parameters
-// for a claim type: third-party claims use their own when a third-party
-// median is set, and the shared ones otherwise.
-func (s *ClaimSimulator) reportLagMedian(ownDamage bool) float64 {
-	if !ownDamage && s.params.ThirdPartyReportLagMedian > 0 {
-		return s.params.ThirdPartyReportLagMedian
+// drawGroundUpLoss draws a loss in start-year dollars from a section's
+// severity: a lognormal fraction of the policy's base-year sum insured, or a
+// Pareto amount. Either kind takes one draw.
+func (s *ClaimSimulator) drawGroundUpLoss(src shared.RandomSource, pol policy.Policy, sev lob.SeverityParams) float64 {
+	if sev.Kind == lob.Pareto {
+		return src.Pareto(sev.Scale, sev.Alpha)
 	}
-	return s.params.ReportLagMedian
+	return s.baseSumInsured(pol) * src.LogNormal(math.Log(sev.MedianFraction), sev.Sigma)
 }
 
-func (s *ClaimSimulator) reportLagSigma(ownDamage bool) float64 {
-	if !ownDamage && s.params.ThirdPartyReportLagMedian > 0 {
-		return s.params.ThirdPartyReportLagSigma
+// closeLagMean is the mean report-to-close lag of a claim costing baseSize in
+// start-year dollars on a policy with the given risk factor: the section's
+// MeanDays scaled smoothly by size and by risk.
+func closeLagMean(cl lob.CloseLagParams, baseSize, riskFactor float64) float64 {
+	mean := cl.MeanDays
+	if cl.SizeElasticity > 0 {
+		mean *= math.Pow(baseSize/cl.SizeReference, cl.SizeElasticity)
 	}
-	return s.params.ReportLagSigma
-}
-
-// drawGroundUpLoss mixes own-damage losses (lognormal, scaled by sum
-// insured) with third party liability losses (Pareto, uncapped), reporting
-// which component fired.
-func (s *ClaimSimulator) drawGroundUpLoss(src shared.RandomSource, pol policy.Policy) (loss float64, ownDamage bool) {
-	sev := s.params.Severity
-	if src.Bernoulli(sev.ThirdPartyWeight) {
-		return src.Pareto(sev.ThirdPartyScale, sev.ThirdPartyAlpha), false
-	}
-	fraction := src.LogNormal(math.Log(sev.OwnDamageMedianFraction), sev.OwnDamageSigma)
-	return s.baseSumInsured(pol) * fraction, true
-}
-
-// closeLagRegime selects the (shape, mean) close-lag gamma parameters for a
-// claim: own-damage claims use the base parameters with the size stretch for
-// claims above the threshold; third-party claims use the long-tail parameters,
-// with the mean scaled smoothly by size when ThirdPartySizeElasticity is set.
-// Risk loading applies to both. baseSize is the claim's cost in start-year
-// dollars, deflated by the claims inflation index.
-func closeLagRegime(cl lob.CloseLagParams, baseSize, riskFactor float64, ownDamage bool) (shape, mean float64) {
-	if ownDamage {
-		shape, mean = cl.Shape, cl.MeanDays
-		if baseSize > cl.SizeThreshold {
-			mean *= cl.SizeMultiplier
-		}
-	} else {
-		shape, mean = cl.ThirdPartyShape, cl.ThirdPartyMeanDays
-		if cl.ThirdPartySizeElasticity > 0 {
-			mean *= math.Pow(baseSize/cl.ThirdPartySizeReference, cl.ThirdPartySizeElasticity)
-		}
-	}
-	mean *= math.Pow(riskFactor, cl.RiskLoading)
-	return shape, mean
+	return mean * math.Pow(riskFactor, cl.RiskLoading)
 }
 
 // drawCloseLag draws a report-to-close (or reopen-to-second-close) delay in
-// days: gamma distributed, with own-damage and third-party claims drawing from
-// separate regimes (see closeLagRegime).
-func drawCloseLag(src shared.RandomSource, cl lob.CloseLagParams, baseSize, riskFactor float64, ownDamage bool) float64 {
-	shape, mean := closeLagRegime(cl, baseSize, riskFactor, ownDamage)
-	return src.Gamma(shape, mean/shape)
+// days: gamma distributed with the section's shape and the mean closeLagMean
+// gives.
+func drawCloseLag(src shared.RandomSource, cl lob.CloseLagParams, baseSize, riskFactor float64) float64 {
+	return src.Gamma(cl.Shape, closeLagMean(cl, baseSize, riskFactor)/cl.Shape)
 }

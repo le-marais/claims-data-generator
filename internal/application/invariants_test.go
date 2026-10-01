@@ -34,11 +34,11 @@ func TestDatasetInvariants(t *testing.T) {
 	}
 
 	type claimInfo struct {
-		report, close shared.Date
-		firstClose    shared.Date
-		reopen        shared.Date
-		reopened      bool
-		isNil, ownDmg bool
+		report, close      shared.Date
+		firstClose         shared.Date
+		reopen             shared.Date
+		reopened           bool
+		isNil, recoverable bool
 	}
 	claims := map[int]claimInfo{}
 	for _, c := range ds.Claims {
@@ -76,7 +76,7 @@ func TestDatasetInvariants(t *testing.T) {
 		if c.Reopened() {
 			reopen = c.Episodes[1].Open
 		}
-		claims[c.ID] = claimInfo{c.ReportDate(), c.CloseDate(), firstClose, reopen, c.Reopened(), c.Nil(), c.OwnDamage}
+		claims[c.ID] = claimInfo{c.ReportDate(), c.CloseDate(), firstClose, reopen, c.Reopened(), c.Nil(), req.LOB.Claims.Sections[c.Section].Recoveries}
 	}
 
 	type state struct {
@@ -135,8 +135,8 @@ func TestDatasetInvariants(t *testing.T) {
 			if tx.Amount <= 0 {
 				t.Fatalf("transaction %d recovery amount %v not positive", tx.ID, tx.Amount)
 			}
-			if !c.ownDmg {
-				t.Fatalf("recovery %d on non-own-damage claim %d", tx.ID, tx.ClaimID)
+			if !c.recoverable {
+				t.Fatalf("recovery %d on claim %d, whose section has no recoveries", tx.ID, tx.ClaimID)
 			}
 			s.recovered += tx.Amount
 		default:
@@ -181,10 +181,10 @@ func TestDatasetInvariants(t *testing.T) {
 		if s.paid != want {
 			t.Fatalf("claim %d total paid %v, want its true cost %v", c.ID, s.paid, want)
 		}
-		if c.OwnDamage {
+		if c.CoverLimit > 0 {
 			pol := policies[c.PolicyID]
-			if limit := pol.sumInsured - pol.excess; s.paid > limit {
-				t.Fatalf("own-damage claim %d paid %v, above sum insured minus excess %v", c.ID, s.paid, limit)
+			if limit := pol.sumInsured - pol.excess; c.CoverLimit != limit || s.paid > limit {
+				t.Fatalf("claim %d paid %v against cover limit %v, want at most sum insured minus excess %v", c.ID, s.paid, c.CoverLimit, limit)
 			}
 		}
 		if c.Reopened() && !s.afterReopen {

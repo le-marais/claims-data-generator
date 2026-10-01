@@ -68,7 +68,7 @@ func (s *ReopenSimulator) Apply(src shared.RandomSource, claims []Claim) []Claim
 			}
 		}
 		baseSize := additional.Dollars() / s.inflation.For(c.OccurrenceDate)
-		closeLag := int(math.Round(drawCloseLag(stream, s.params.CloseLag, baseSize, c.RiskFactor, c.OwnDamage)))
+		closeLag := int(math.Round(drawCloseLag(stream, s.params.Sections[c.Section].CloseLag, baseSize, c.RiskFactor)))
 		if closeLag < 1 {
 			closeLag = 1 // the second close is strictly after the reopen
 		}

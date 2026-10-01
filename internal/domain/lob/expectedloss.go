@@ -43,44 +43,47 @@ func stopLossPareto(scale, alpha, excess float64) float64 {
 }
 
 // ExpectedPolicyLoss is the deterministic expected ultimate gross incurred loss
-// for one policy under the pricing assumptions: the sum of its two sections
-// (see ExpectedSectionLoss). It draws no randomness, so pricing never perturbs
-// a sub-stream. Recoveries are excluded (gross basis).
+// for one policy under the pricing assumptions: the sum of its sections (see
+// ExpectedSectionLoss). It draws no randomness, so pricing never perturbs a
+// sub-stream. Recoveries are excluded (gross basis).
 func (p PricingParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflationFactor, siDrift float64) float64 {
-	ownDamage, thirdParty := p.ExpectedSectionLoss(sumInsured, excess, riskFactor, inflationFactor, siDrift)
-	return ownDamage + thirdParty
+	total := 0.0
+	for i := range p.Sections {
+		total += p.ExpectedSectionLoss(i, sumInsured, excess, riskFactor, inflationFactor, siDrift)
+	}
+	return total
 }
 
-// ExpectedSectionLoss splits ExpectedPolicyLoss into the policy's own-damage
-// and third-party liability sections. Own damage is expressed in base-year
-// sum-insured terms (baseSI = sumInsured / siDrift) trended by the claims index
-// only, and capped at the drifted sumInsured (a total loss). Third party keeps
-// the claims index and is uncapped. inflationFactor is the assumed index at
-// the midpoint of the policy's cover.
+// ExpectedSectionLoss is the expected loss of one section of the policy, the
+// section at index section of Sections. A sum-insured severity is expressed in
+// base-year sum-insured terms (baseSI = sumInsured / siDrift) trended by the
+// claims index only, and capped at the drifted sumInsured (a total loss). A
+// Pareto severity keeps the claims index and is uncapped. inflationFactor is
+// the assumed index at the midpoint of the policy's cover.
 //
 // Each claim pays its cost unless it is nil, and pays a further
 // ReopenEstimateFactor of that cost if it reopens, nil or not, so the expected
 // payout per claim is the cost times 1 - NilProbability + ReopenProbability *
-// ReopenEstimateFactor. The reopen term ignores the cap that holds an
-// own-damage reopen within the cover left, so claims near their limit are
+// ReopenEstimateFactor. The reopen term ignores the cap that holds a
+// sum-insured reopen within the cover left, so claims near their limit are
 // slightly overpriced.
-func (p PricingParams) ExpectedSectionLoss(sumInsured, excess, riskFactor, inflationFactor, siDrift float64) (ownDamage, thirdParty float64) {
-	s := p.Severity
+func (p PricingParams) ExpectedSectionLoss(section int, sumInsured, excess, riskFactor, inflationFactor, siDrift float64) float64 {
+	sec := p.Sections[section]
+	// A section priced at no frequency is skipped rather than multiplied by
+	// zero: its severity need not be valid (see PricingSectionParams.validate),
+	// and zero times an infinite or NaN layer cost is NaN.
+	if sec.BaseFrequency <= 0 {
+		return 0
+	}
 	payout := 1 - p.NilProbability + p.ReopenProbability*p.ReopenEstimateFactor
-	perClaim := p.BaseFrequency * riskFactor * payout
-	// A zero-weight component is skipped rather than multiplied by zero: its
-	// parameters need not be valid (see SeverityParams.validate), and zero
-	// times an infinite or NaN layer cost is NaN.
-	if s.ThirdPartyWeight < 1 {
-		baseSI := sumInsured / siDrift
-		odMedian := inflationFactor * baseSI * s.OwnDamageMedianFraction
-		od := limitedStopLossLognormal(odMedian, s.OwnDamageSigma, excess, sumInsured)
-		ownDamage = perClaim * (1 - s.ThirdPartyWeight) * od
+	perClaim := sec.BaseFrequency * riskFactor * payout
+	sev := sec.Severity
+	switch sev.Kind {
+	case SumInsuredLognormal:
+		median := inflationFactor * sumInsured / siDrift * sev.MedianFraction
+		return perClaim * limitedStopLossLognormal(median, sev.Sigma, excess, sumInsured)
+	case Pareto:
+		return perClaim * stopLossPareto(inflationFactor*sev.Scale, sev.Alpha, excess)
 	}
-	if s.ThirdPartyWeight > 0 {
-		tpScale := inflationFactor * s.ThirdPartyScale
-		tp := stopLossPareto(tpScale, s.ThirdPartyAlpha, excess)
-		thirdParty = perClaim * s.ThirdPartyWeight * tp
-	}
-	return ownDamage, thirdParty
+	return 0
 }

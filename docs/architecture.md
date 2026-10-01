@@ -53,7 +53,7 @@ Three read-only passes consume the `Dataset`:
 
 - `application.Aggregate` builds the monthly grid and monthly exposure on the chosen origin basis, plus the accident-basis annual triangles and earned premium, into `Aggregates`.
 - `application.Summarize` and `application.ComputeDistributions` build the UI's per-year table and its severity and lag histograms.
-- `application.EvaluateRealism` builds `LiabilityComparison`, the third-party section's annual triangles and premium, and scores it with `triangle.CompareToReference`.
+- `application.EvaluateRealism` builds `SectionComparison`, the scored section's annual triangles and premium, and scores it with `triangle.CompareToReference`.
 
 The CLI writes the three dataset CSVs and, from `Aggregates`, `triangles.csv` and `exposure.csv`. The web server writes the same five files and returns the analytics as JSON.
 
@@ -63,21 +63,23 @@ The CLI writes the three dataset CSVs and, from `Aggregates`, `triangles.csv` an
 
 `LineOfBusiness{Name, Book, Pricing, Claims, Runoff}` is the whole parameter set; nothing else configures the engine. `Validate` names an offending field by its YAML path, screens NaN and infinity before the range checks, and skips the fields of a switched-off feature, so a YAML author never has to invent parameters for something they turned off.
 
-`PricingParams` is the insurer's assumed loss cost, kept apart from `ClaimParams`, the true process. `ExpectedSectionLoss` prices a policy's own-damage and third-party sections in closed form from the assumptions alone, and premium is that over the target loss ratio. The loss ratio emerges from sampling and from any gap between the two models; nothing forces it.
+A line of business is a list of sections of cover, `ClaimParams.Sections`. Each `SectionParams` carries its own base frequency, severity (`sum_insured_lognormal`, capped at the sum insured, or `pareto`, uncapped), report lag, close lag, recovery eligibility, and whether the realism gate scores it (`ScoredSection`). Inflation, nil claims, reopening and the recovery parameters are shared across sections.
+
+`PricingParams` is the insurer's assumed loss cost, kept apart from `ClaimParams`, the true process. Its `Sections` give each claims section's assumed frequency and severity, by the same names in the same order. `ExpectedSectionLoss` prices one section of a policy in closed form from the assumptions alone, and premium is the sum over the target loss ratio. The loss ratio emerges from sampling and from any gap between the two models; nothing forces it.
 
 ### `policy` - the book
 
-`BookSimulator.Simulate` writes one underwriting year at a time, starting with a warm-up year before the window so the first accident year has a full book in force. Each policy draws its cover dates, sum insured, risk factor and excess from its own sub-stream and is priced from the pricing block. `Policy` also carries two fields no CSV writes: `BaseSumInsured`, the sum insured in start-year dollars that own-damage severity is sized off, and `ThirdPartyPremium`, the liability section's premium that the realism gate scores against. `ProjectedSize` is the noise-free policy count the web server caps runs with.
+`BookSimulator.Simulate` writes one underwriting year at a time, starting with a warm-up year before the window so the first accident year has a full book in force. Each policy draws its cover dates, sum insured, risk factor and excess from its own sub-stream and is priced from the pricing block. `Policy` also carries two fields no CSV writes: `BaseSumInsured`, the sum insured in start-year dollars that a sum-insured severity is sized off, and `SectionPremiums`, the premium split by section, which the realism gate scores a section against. `ProjectedSize` is the noise-free policy count the web server caps runs with.
 
 ### `claim` - claim events
 
 A `Claim`'s life is a list of `Episode`s, each with open and close dates, its true cost (`Ultimate`), a nil flag, and the case it opens at. The first episode runs from the report date to the first close; a reopened claim has a second. Stages append episodes and never rewrite one's dates or cost, so the claim's report date, final close, initial estimate and total cost are all read off its episodes. `Record()` is the claim's `claims.csv` row.
 
-`ClaimSimulator.Simulate` draws each policy's claim count, then each claim's occurrence date, report lag, ground-up loss, inflation, cap, excess, close lag and nil flag in a fixed order, dropping claims that do not pierce the excess. It sorts the claims into registration order and numbers them. `InflationIndex` is the stochastic claims-inflation path, one factor per calendar year, interpolated smoothly through the year. `ReopenSimulator.Apply` is a post-pass that appends a second episode to some closed claims, with its own cost and close date.
+`ClaimSimulator.Simulate` draws, for each section of each policy, a claim count, then each claim's occurrence date, report lag, ground-up loss, inflation, cap, excess, close lag and nil flag in a fixed order, dropping claims that do not pierce the excess. A claim records its `Section` and, for a sum-insured severity, its cover limit. It sorts the claims into registration order and numbers them. `InflationIndex` is the stochastic claims-inflation path, one factor per calendar year, interpolated smoothly through the year. `ReopenSimulator.Apply` is a post-pass that appends a second episode to some closed claims, with its own cost and close date.
 
 ### `transaction` - the ledger
 
-`CaseEstimator.Apply` sets each episode's opening case around its true cost. `RunoffSimulator.Simulate` turns each claim into `ESTIMATE` and `PAYMENT` rows one episode at a time: the case moves to the episode's opening case, then interim payments and revisions in date order, then a final settlement and a release of the case to zero. `RecoverySimulator.Apply` adds `SALVAGE` and `SUBROGATION` rows after the final close of eligible own-damage claims.
+`CaseEstimator.Apply` sets each episode's opening case around its true cost. `RunoffSimulator.Simulate` turns each claim into `ESTIMATE` and `PAYMENT` rows one episode at a time: the case moves to the episode's opening case, then interim payments and revisions in date order, then a final settlement and a release of the case to zero. `RecoverySimulator.Apply` adds `SALVAGE` and `SUBROGATION` rows after the final close of paid claims in sections with recoveries, salvage only on total losses.
 
 The ledger is each claim's event stream, and every measure folds from it: outstanding case is the running sum of `ESTIMATE` rows, gross paid the sum of `PAYMENT` rows, and net paid subtracts the recoveries.
 
@@ -96,8 +98,8 @@ The ledger is each claim's event stream, and every measure folds from it: outsta
 
 `random.Source` holds a SHA-256 key and a PCG generator seeded from it, with gonum supplying the distributions. `Split(label)` hashes the parent key with the label to make the child's key, so a stream's draws depend only on the seed and its label path, never on how much any other stream drew. Two conventions keep a parameter toggle from moving unrelated draws:
 
-1. **Streams keyed by entity.** Every policy, every policy's claims and every claim draws from a stream labelled with its ID: `policy-<id>`, `claims-policy-<id>`, `reopen-claim-<id>`, `case-estimate-claim-<id>`, `runoff-claim-<id>`, and `recovery-claim-<id>`, split further by `SALVAGE` and `SUBROGATION`.
-2. **Constant draw counts.** A stream takes the same draws whatever the parameters: the nil flag is drawn even at a nil probability of 0, and the report-lag deviate is drawn before the claim type is known, so both types consume the same draws. `MeanOneLogNormal` at sigma 0 is the deliberate mirror image, taking no draw where none is conceptually needed, and `ReopenSimulator.Apply` takes no draws at all when the reopen probability is 0.
+1. **Streams keyed by entity.** Every policy, every policy's claims and every claim draws from a stream labelled with its ID: `policy-<id>`, `claims-policy-<id>` split further by section name, `reopen-claim-<id>`, `case-estimate-claim-<id>`, `runoff-claim-<id>`, and `recovery-claim-<id>`, split further by `SALVAGE` and `SUBROGATION`.
+2. **Constant draw counts.** A stream takes the same draws whatever the parameters: the nil flag is drawn even at a nil probability of 0. `MeanOneLogNormal` at sigma 0 is the deliberate mirror image, taking no draw where none is conceptually needed, and `ReopenSimulator.Apply` takes no draws at all when the reopen probability is 0.
 
 ## Adapters
 
@@ -112,10 +114,10 @@ The CLI dispatches `generate` (load the preset or a `--config` YAML, generate, w
 
 - **Determinism.** The same seed and parameters produce byte-identical CSVs. `internal/application/golden_test.go` pins hashes of the dataset CSVs, the aggregate CSVs, and the annual triangles the realism gate scores.
 - **Ultimate-first.** A claim's true cost is fixed before its ledger is drawn: the case-estimate and runoff parameters move reserves and timing, never the amount paid.
-- **The ledger folds cleanly.** Each payment releases its own case, outstanding case is never negative, and every episode ends with the case at exactly zero. Gross paid equals the claim's true cost, and own damage never pays beyond the sum insured less the excess. `internal/application/invariants_test.go` checks the ledger as a state machine.
+- **The ledger folds cleanly.** Each payment releases its own case, outstanding case is never negative, and every episode ends with the case at exactly zero. Gross paid equals the claim's true cost, and a sum-insured section never pays beyond the sum insured less the excess. `internal/application/invariants_test.go` checks the ledger as a state machine.
 - **Recoveries stay below gross paid,** by at least a cent, and are the only rows dated after a claim's final close.
 - **Every claim closes.** There is no valuation date.
-- **Realism.** `TestDefaultPresetIsRealistic` keeps the preset's third-party section inside the Schedule P P5-P95 bands across several seeds, and `TestPresetHasNoSystematicLossRatioDrift` switches the inflation and pricing noise off and requires a flat loss ratio.
+- **Realism.** `TestDefaultPresetIsRealistic` keeps the preset's scored third-party section inside the Schedule P P5-P95 bands across several seeds, and `TestPresetHasNoSystematicLossRatioDrift` switches the inflation and pricing noise off and requires a flat loss ratio.
 - **Loopback-only UI.** A 127.0.0.1 bind, Host and Origin checks, capped request bodies, strict JSON and YAML decoding, and a front end that never assigns HTML. `docs/todo.md` lists what must change before the UI is served beyond 127.0.0.1.
 - **No free text in the CSVs.** If a free-text column is ever added, switch to `encoding/csv` with formula-lead-character escaping in the same change.
 

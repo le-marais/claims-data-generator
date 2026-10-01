@@ -2,6 +2,7 @@ package application_test
 
 import (
 	"math"
+	"slices"
 	"testing"
 
 	"github.com/le-marais/claimsgen/internal/application"
@@ -66,8 +67,9 @@ func TestUnderpricingRaisesRealizedLossRatio(t *testing.T) {
 	// Claims params are untouched, so actual losses are identical; only premium
 	// (hence earned premium) falls, lifting the loss ratio.
 	under := base
-	under.Pricing.Severity.OwnDamageMedianFraction *= 0.5
-	under.Pricing.Severity.ThirdPartyScale *= 0.5
+	under.Pricing.Sections = slices.Clone(base.Pricing.Sections)
+	under.Pricing.Sections[ownDamage].Severity.MedianFraction *= 0.5
+	under.Pricing.Sections[thirdParty].Severity.Scale *= 0.5
 	reqUnder := req
 	reqUnder.LOB = under
 
@@ -93,15 +95,17 @@ func TestUnderpricingRaisesRealizedLossRatio(t *testing.T) {
 // was trended to the start of the underwriting year while claims arise over
 // the cover term. Own damage only, so the comparison is not swamped by
 // third-party tail noise: the variants share the same claims, scaled or
-// zeroed, so the ratios are tight.
+// zeroed, so the ratios are tight. Which claims the nil flag lands on still
+// moves a single seed's ratio by up to about 1%, so the loss ratio is pooled
+// over four seeds.
 func TestMatchedPricingAbsorbsNilClaimsAndInflation(t *testing.T) {
 	base, err := config.MotorPersonal()
 	if err != nil {
 		t.Fatalf("MotorPersonal: %v", err)
 	}
-	for _, sev := range []*lob.SeverityParams{&base.Claims.Severity, &base.Pricing.Severity} {
-		sev.ThirdPartyWeight = 0
-	}
+	// Own damage only, at the preset's total claim frequency.
+	base.Claims.Sections[ownDamage].BaseFrequency, base.Pricing.Sections[ownDamage].BaseFrequency = 0.12, 0.12
+	base.Claims.Sections[thirdParty].BaseFrequency, base.Pricing.Sections[thirdParty].BaseFrequency = 0, 0
 	base.Claims.NilProbability, base.Pricing.NilProbability = 0, 0
 	base.Claims.Inflation = lob.InflationParams{Mean: 1, Volatility: 0}
 	base.Pricing.InflationMean = 1
@@ -109,11 +113,16 @@ func TestMatchedPricingAbsorbsNilClaimsAndInflation(t *testing.T) {
 	lossRatio := func(l lob.LineOfBusiness) float64 {
 		t.Helper()
 		req := application.GenerateRequest{LOB: l, StartYear: 1998, Years: 10, InitialBookSize: 4000}
-		ds, err := application.GenerateDataset(t.Context(), random.NewSource(1), req)
-		if err != nil {
-			t.Fatalf("generate: %v", err)
+		var paid, premium float64
+		for seed := uint64(1); seed <= 4; seed++ {
+			ds, err := application.GenerateDataset(t.Context(), random.NewSource(seed), req)
+			if err != nil {
+				t.Fatalf("generate: %v", err)
+			}
+			total := application.Summarize(ds, 1998, 10).Total
+			paid, premium = paid+total.Paid, premium+total.EarnedPremium
 		}
-		return pooledLossRatio(application.Summarize(ds, 1998, 10))
+		return paid / premium
 	}
 	lrBase := lossRatio(base)
 

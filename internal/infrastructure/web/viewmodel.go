@@ -5,6 +5,7 @@ import (
 
 	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
+	"github.com/le-marais/claimsgen/internal/infrastructure/config"
 )
 
 type lobInfoJSON struct {
@@ -79,6 +80,8 @@ type binJSON struct {
 }
 
 type realismJSON struct {
+	// Section names the section the report scores; empty means the whole book.
+	Section        string         `json:"section"`
 	Pass           bool           `json:"pass"`
 	PaidATA        []ageCheckJSON `json:"paid_ata"`
 	IncurredATA    []ageCheckJSON `json:"incurred_ata"`
@@ -126,7 +129,7 @@ func buildResponse(req generateRequest, ds application.Dataset, ag application.A
 			Incurred: triangleView(ag.Annual.Incurred),
 		},
 		Distributions: distributionsView(application.ComputeDistributions(ds)),
-		Realism:       realismView(realism),
+		Realism:       realismView(realism, scoredSectionName(req.Params)),
 	}
 }
 
@@ -194,8 +197,20 @@ func finite(f float64) float64 {
 	return f
 }
 
-func realismView(r triangle.Report) realismJSON {
+// scoredSectionName is the name of the section the realism gate scores, or
+// empty when it scores the whole book.
+func scoredSectionName(p config.LOBParams) string {
+	for _, sec := range p.Claims.Sections {
+		if sec.Scored {
+			return sec.Name
+		}
+	}
+	return ""
+}
+
+func realismView(r triangle.Report, section string) realismJSON {
 	return realismJSON{
+		Section:     section,
 		Pass:        r.Pass(),
 		PaidATA:     ageChecksView(r.PaidATA),
 		IncurredATA: ageChecksView(r.IncurredATA),

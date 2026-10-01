@@ -27,12 +27,15 @@ func (t Type) IsRecovery() bool {
 // RecoverySimulator draws salvage and subrogation transactions for eligible
 // claims after the runoff stage.
 type RecoverySimulator struct {
-	params lob.RecoveryParams
+	params   lob.RecoveryParams
+	sections []lob.SectionParams
 }
 
-// NewRecoverySimulator builds a recovery simulator from the recovery parameters.
-func NewRecoverySimulator(p lob.RecoveryParams) *RecoverySimulator {
-	return &RecoverySimulator{params: p}
+// NewRecoverySimulator builds a recovery simulator from the claim parameters:
+// the recovery parameters, and the sections that say which claims are
+// eligible.
+func NewRecoverySimulator(p lob.ClaimParams) *RecoverySimulator {
+	return &RecoverySimulator{params: p.Recoveries, sections: p.Sections}
 }
 
 // Apply merges each eligible claim's recovery rows into the runoff output
@@ -78,16 +81,16 @@ func (s *RecoverySimulator) Apply(src shared.RandomSource, claims []claim.Claim,
 }
 
 // simulateClaim draws at most one salvage and one subrogation row. Only
-// own-damage claims that paid something are eligible, and salvage, the sale
-// of the written-off vehicle, only on a total loss whose first episode paid
-// the write-off (MR-7); for a total loss
-// gross paid is the sum insured less excess, so salvage is sized off the
-// vehicle's value. The total recovered stays strictly below the claim's gross
+// claims that paid something in a section that allows recoveries are
+// eligible, and salvage, the sale of the written-off vehicle, only on a total
+// loss whose first episode paid the write-off (MR-7); for a total loss gross
+// paid is the sum insured less excess, so salvage is sized off the vehicle's
+// value. The total recovered stays strictly below the claim's gross
 // paid. A nil claim that never reopens has paid 0 and stays ineligible through
 // the paid check alone; a reopened nil claim that paid in its second episode
-// is subrogation-eligible like any other paying own-damage claim.
+// is subrogation-eligible like any other paying claim.
 func (s *RecoverySimulator) simulateClaim(src shared.RandomSource, c claim.Claim, paid shared.Money) []Transaction {
-	if !c.OwnDamage || paid <= 0 {
+	if !s.sections[c.Section].Recoveries || paid <= 0 {
 		return nil
 	}
 	kinds := []struct {
