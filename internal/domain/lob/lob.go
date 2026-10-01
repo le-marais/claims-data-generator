@@ -174,8 +174,10 @@ type CloseLagParams struct {
 	Shape float64
 	// MeanDays is the base mean close lag.
 	MeanDays float64
-	// SizeThreshold is the initial estimate (dollars) above which the mean
-	// lag is stretched by SizeMultiplier.
+	// SizeThreshold is the own-damage claim cost, in start-year dollars, above
+	// which the mean lag is stretched by SizeMultiplier. Costs are deflated by
+	// the claims inflation index before the comparison, so the share of claims
+	// above it does not drift with inflation.
 	SizeThreshold float64
 	// SizeMultiplier stretches the mean lag for claims above the threshold.
 	SizeMultiplier float64

@@ -154,7 +154,7 @@ The `RandomSource` interface, covered in section 4.1.
 - **`PricingParams`** (premium): the insurer's assumed loss cost, independent of the claims model. `TargetLossRatio` (premium = assumed expected loss / this), `AdequacyVolatility` (sigma of mean-one lognormal noise on each underwriting year's target loss ratio; 0 switches it off), `BaseFrequency`, `Severity SeverityParams`, `NilProbability`, `ReopenProbability`, `ReopenEstimateFactor`, `InflationMean` (all assumed values). Carries the `ExpectedPolicyLoss` and `ExpectedSectionLoss` methods (in `expectedloss.go`). The target sets premium only; the realized loss ratio emerges from the claims model. The preset starts these assumptions from the true claims values, so its loss ratio lands around the target; deviating them models underpricing or adverse experience.
 - **`ClaimParams`** (step 2): `BaseFrequency`, `ReportLagMedian`, `ReportLagSigma`, `Severity SeverityParams`, `CloseLag CloseLagParams`, `Inflation InflationParams`, `NilProbability`, `Recoveries RecoveryParams`, `Reopening ReopeningParams`.
 - **`SeverityParams`**: `ThirdPartyWeight` (probability a claim is third party), `OwnDamageMedianFraction` (own-damage median as a fraction of sum insured), `OwnDamageSigma`, `ThirdPartyScale` (Pareto minimum), `ThirdPartyAlpha` (Pareto tail index, must exceed 1 for a finite mean).
-- **`CloseLagParams`**: `Shape`, `MeanDays` (own-damage gamma base), `SizeThreshold`/`SizeMultiplier` (stretch the mean lag for large own-damage claims), `RiskLoading` (exponent applied to the risk factor), `ThirdPartyShape`/`ThirdPartyMeanDays` (the slower bodily-injury regime, not size-stretched).
+- **`CloseLagParams`**: `Shape`, `MeanDays` (own-damage gamma base), `SizeThreshold`/`SizeMultiplier` (stretch the mean lag for own-damage claims above the threshold in start-year dollars), `RiskLoading` (exponent applied to the risk factor), `ThirdPartyShape`/`ThirdPartyMeanDays` (the slower bodily-injury regime, not size-stretched).
 - **`InflationParams`**: `Mean` (average annual claims-inflation factor), `Volatility` (sigma of mean-1 noise per year).
 - **`RecoveryParams`**: `Salvage`, `Subrogation`, each a `RecoveryTypeParams`.
 - **`RecoveryTypeParams`**: `Probability` (0 switches the type off), `MeanShare` (mean recovery as a share of gross paid), `Concentration` (Beta concentration), `LagMedianDays`, `LagSigma` (lognormal close-to-receipt lag).
@@ -235,14 +235,14 @@ Core generation:
   4. Claims inflation: multiply the loss by `inflation.For(occurrenceDate)` (applies to both severity components).
   5. Own-damage cap: if own damage and the loss exceeds the drifted `SumInsured`, cap it (a total loss).
   6. Cost = loss - excess; if `<= 0` the claim did not pierce the excess and is unreportable (`ok = false`, but the draws above were still consumed). Otherwise it becomes the claim's `Ultimate` (floored at one cent) and, for now, its `InitialEstimate`; own damage records `CoverLimit = SumInsured - Excess`.
-  7. Close date: `report + round(drawCloseLag(...))`, sized on the cost.
+  7. Close date: `report + round(drawCloseLag(...))`, sized on the cost deflated to start-year dollars by `inflation.For(occurrenceDate)`, so claims inflation does not push a growing share of claims over the size threshold.
   8. Nil flag: always drawn via `Bernoulli(NilProbability)`.
 - `drawGroundUpLoss(src, pol) (loss float64, ownDamage bool)` - a two-component mixture that always consumes exactly two draws: with probability `ThirdPartyWeight`, a Pareto `(ThirdPartyScale, ThirdPartyAlpha)` (uncapped, `ownDamage=false`); otherwise `baseSumInsured(pol)` times a lognormal fraction `(log(OwnDamageMedianFraction), OwnDamageSigma)` (`ownDamage=true`).
 
 Shared close-lag logic, reused by the reopen pass:
 
-- `closeLagRegime(cl, estimate, riskFactor, ownDamage) (shape, mean float64)` - selects the gamma parameters. Own damage uses `Shape`/`MeanDays`, stretched by `SizeMultiplier` above `SizeThreshold`; third party uses the slower `ThirdPartyShape`/`ThirdPartyMeanDays` with no size stretch. Both scale the mean by `riskFactor^RiskLoading`.
-- `drawCloseLag(src, cl, estimate, riskFactor, ownDamage) float64` - draws `Gamma(shape, mean/shape)`, giving expected value `mean`.
+- `closeLagRegime(cl, baseSize, riskFactor, ownDamage) (shape, mean float64)` - selects the gamma parameters. `baseSize` is the claim's cost in start-year dollars. Own damage uses `Shape`/`MeanDays`, stretched by `SizeMultiplier` when `baseSize` exceeds `SizeThreshold`; third party uses the slower `ThirdPartyShape`/`ThirdPartyMeanDays` with no size stretch. Both scale the mean by `riskFactor^RiskLoading`.
+- `drawCloseLag(src, cl, baseSize, riskFactor, ownDamage) float64` - draws `Gamma(shape, mean/shape)`, giving expected value `mean`.
 
 ### 8.2 `inflation.go` - the claims-inflation path
 
@@ -253,7 +253,7 @@ Shared close-lag logic, reused by the reopen pass:
 
 ### 8.3 `reopen.go` - the optional reopen episode
 
-`ReopenSimulator{params lob.ClaimParams}`, built by `NewReopenSimulator(p)`, runs as a post-pass after claim IDs are assigned.
+`ReopenSimulator{params lob.ClaimParams, inflation InflationIndex}`, built by `NewReopenSimulator(p)` and wired with `WithInflation(x)` (the zero index leaves costs nominal), runs as a post-pass after claim IDs are assigned. The second close lag is sized on the reopen's additional cost deflated by the index at the claim's occurrence date.
 
 - `Apply(src, claims []Claim) []Claim` - mutates reopened claims in place. If reopen probability is `<= 0` it returns immediately with no draws. Otherwise, for each claim it splits a `reopen-claim-<id>` stream and draws `Bernoulli(Probability)`; a claim that does not reopen consumes exactly that one draw. A reopening claim then draws, in order: a reopen lag (lognormal, floored to 1 day), the reopen's additional cost (`Ultimate * EstimateFactor * MeanOneLogNormal`, floored to one cent, then capped for own damage at the cover left - `CoverLimit` less what the first episode pays, nothing for a nil claim; a claim with no cover left, such as a paid total loss, does not reopen), and a second close lag (via the shared `drawCloseLag`, floored to 1 day). It records `FirstCloseDate = old CloseDate`, `ReopenDate = FirstCloseDate + lag`, `ReopenUltimate` (and `ReopenEstimate` equal to it until the case-estimate stage), and moves `CloseDate` to `ReopenDate + closeLag`. The day floors guarantee `ReopenDate > FirstCloseDate` and final `CloseDate > ReopenDate`.
 
