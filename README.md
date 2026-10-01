@@ -174,4 +174,16 @@ CI runs gofmt, `go vet`, `go test` (on the minimum Go version in `go.mod` and on
 
 Screenshots are regenerated with `tools/screenshots` (start the UI on port 8093, `npm install`, `node screenshots.js`).
 
-The layout is domain-driven: `internal/domain/` holds the simulation model (policy, claim, transaction, lob, triangle) with no outside dependencies, `internal/application/` the use cases, and `internal/infrastructure/` the adapters (config, CSV, Schedule P reader, gonum-backed randomness). Design docs live in `docs/`.
+The layout is domain-driven: `internal/domain/` holds the simulation model (policy, claim, transaction, lob, triangle) with no outside dependencies, `internal/application/` the use cases, and `internal/infrastructure/` the adapters (config, CSV, Schedule P reader, gonum-backed randomness). See `docs/architecture.md` for the full tour.
+
+## For contributors: project docs
+
+If you contribute to claimsgen, keep the five living docs in `docs/` current in the same pull request as your change. Each describes the current state or open work only: when you ship or resolve something, delete it rather than archiving it, and git history keeps it.
+
+- `docs/mission.md` - the core purpose of the app
+- `docs/roadmap.md` - where the app is heading; nothing already shipped
+- `docs/architecture.md` - an overview of the code, kept in line with `main`
+- `docs/review.md` - open review findings, recorded as reviews happen
+- `docs/todo.md` - smaller or administrative items still to be done
+
+See "Living docs" in `AGENTS.md` for the full rules.
