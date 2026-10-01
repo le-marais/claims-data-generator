@@ -22,18 +22,17 @@ worth addressing soon, **low** fix when touching the area.
 ## Exposure milestone (conditional)
 
 The security review's low rating depends on the tool staying loopback-only and
-single-user. Today `handleGenerate` takes `out_dir` verbatim and writes the
-five CSVs wherever it points, which is the feature, not a vulnerability: the
-user is writing their own files to their own disk with their own privileges. The
-same applies to raw error strings echoing local paths, and to serving without
-read or write timeouts.
+single-user. The server writes no files - a run comes back as JSON or as a zip
+download - so nothing a request sends reaches the file system. What is
+acceptable only on loopback: raw error strings in responses, serving without
+read or write timeouts, and no bound on how many runs execute at once.
 
 If the UI is ever bound beyond 127.0.0.1 or shared, all of that inverts at once.
-Before any non-loopback deployment: add authentication; confine `out_dir` to a
-server-configured base directory and reject absolute paths and `..` escapes
-after `filepath.Clean`; stop treating an absent `Origin` header as trusted for
-state-changing requests; use an `http.Server` with timeouts; and return generic
-error messages while logging detail server-side. Design these in when the
-second-line-of-business plumbing is touched, rather than retrofitting after
-exposure. The UI's run-size caps and one-run-at-a-time slot are sized for a mistyped form, not for an attacker: revisit both numbers
-here rather than assuming they carry over.
+Before any non-loopback deployment: add authentication; stop treating an absent
+`Origin` header as trusted for state-changing requests; use an `http.Server`
+with timeouts; return generic error messages while logging detail server-side;
+and bound concurrent runs, since every generate and download request is a full
+run. Design these in when the second-line-of-business plumbing is touched,
+rather than retrofitting after exposure. The UI's run-size caps are sized for a
+mistyped form, not for an attacker: revisit them here rather than assuming they
+carry over.

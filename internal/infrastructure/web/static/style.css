@@ -116,7 +116,18 @@ summary { cursor: pointer; }
 /* results area */
 .results { flex: 1; padding: 16px; min-width: 0; }
 #empty-state { color: var(--muted); padding: 48px; text-align: center; }
-#run-header { font-size: 13px; color: var(--text-secondary); margin-bottom: 12px; }
+.run-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+#run-header { font-size: 13px; color: var(--text-secondary); }
+#download-btn {
+  flex: none;
+  padding: 6px 12px;
+  background: none;
+  border: 1px solid var(--series-1);
+  border-radius: 6px;
+  color: var(--series-1);
+  font-weight: 600;
+}
+#download-btn:disabled { opacity: 0.6; cursor: wait; }
 /* A run in flight, or one that failed, leaves the previous results on screen;
    dimming them keeps stale numbers from reading as the current parameters. */
 #results.stale { opacity: 0.45; }
