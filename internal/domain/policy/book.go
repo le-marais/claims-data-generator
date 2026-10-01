@@ -43,9 +43,13 @@ func NewBookSimulator(book lob.BookParams, pricing lob.PricingParams) *BookSimul
 // Simulate produces the book: policies written over the given calendar
 // years. Each year's size is the previous year's size times the growth
 // factor times a mean-1 lognormal noise, so the book trends upward but can
-// shrink in individual years.
+// shrink in individual years. Each year's policies are priced to that year's
+// target loss ratio: the pricing target times mean-1 lognormal noise of sigma
+// AdequacyVolatility, drawn on its own sub-stream so the knob never moves any
+// other draw.
 func (s *BookSimulator) Simulate(src shared.RandomSource, startYear, years, initialSize int) []Policy {
 	sizeSrc := src.Split("book-size")
+	adequacySrc := src.Split("pricing-adequacy")
 	var book []Policy
 	size := initialSize
 	id := 1
@@ -58,10 +62,11 @@ func (s *BookSimulator) Simulate(src shared.RandomSource, startYear, years, init
 			}
 		}
 		year := startYear + y
+		lossRatio := s.pricing.TargetLossRatio * shared.MeanOneLogNormal(adequacySrc, s.pricing.AdequacyVolatility)
 		medianSI := s.book.SumInsuredMedian * math.Pow(s.book.SumInsuredInflation, float64(y))
 		siDrift := math.Pow(s.book.SumInsuredInflation, float64(y))
 		for i := 0; i < size; i++ {
-			book = append(book, s.simulatePolicy(src.Split(fmt.Sprintf("policy-%d", id)), id, startYear, year, medianSI, siDrift))
+			book = append(book, s.simulatePolicy(src.Split(fmt.Sprintf("policy-%d", id)), id, startYear, year, lossRatio, medianSI, siDrift))
 			id++
 		}
 	}
@@ -85,7 +90,9 @@ func ProjectedSize(book lob.BookParams, years, initialSize int) float64 {
 	return total
 }
 
-func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, startYear, year int, medianSI, siDrift float64) Policy {
+// simulatePolicy draws one policy and prices it to lossRatio, the target loss
+// ratio of its underwriting year.
+func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, startYear, year int, lossRatio, medianSI, siDrift float64) Policy {
 	yearStart := shared.NewDate(year, time.January, 1)
 	daysInYear := shared.DaysBetween(yearStart, shared.NewDate(year+1, time.January, 1))
 	start := yearStart.AddDays(int(src.Uniform() * float64(daysInYear)))
@@ -104,7 +111,7 @@ func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, startYear, y
 
 	excess := s.drawExcess(src)
 	ownDamageLoss, thirdPartyLoss := s.pricing.ExpectedSectionLoss(sumInsured, excess, riskFactor, inflation, siDrift)
-	premium := (ownDamageLoss + thirdPartyLoss) / s.pricing.TargetLossRatio
+	premium := (ownDamageLoss + thirdPartyLoss) / lossRatio
 
 	return Policy{
 		ID:         id,
@@ -115,7 +122,7 @@ func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, startYear, y
 		RiskFactor: riskFactor,
 		Premium:    shared.FromDollars(premium),
 
-		ThirdPartyPremium: shared.FromDollars(thirdPartyLoss / s.pricing.TargetLossRatio),
+		ThirdPartyPremium: shared.FromDollars(thirdPartyLoss / lossRatio),
 	}
 }
 

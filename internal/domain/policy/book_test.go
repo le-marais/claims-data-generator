@@ -232,3 +232,53 @@ func TestProjectedSizeMatchesTheSimulatedBookWithoutNoise(t *testing.T) {
 		t.Fatalf("simulated %d policies, projection %v", got, want)
 	}
 }
+
+// priceFactor is a policy's premium over its assumed expected loss: one over
+// the target loss ratio its underwriting year was priced to.
+func priceFactor(p policy.Policy, prm lob.BookParams, pp lob.PricingParams) float64 {
+	yearOffset := float64(p.CoverStart.Year() - 1998)
+	infl := math.Pow(pp.InflationMean, shared.TrendYears(p.CoverStart.AddDays(182), 1998))
+	siDrift := math.Pow(prm.SumInsuredInflation, yearOffset)
+	return p.Premium.Dollars() / pp.ExpectedPolicyLoss(p.SumInsured.Dollars(), p.Excess.Dollars(), p.RiskFactor, infl, siDrift)
+}
+
+// Adequacy volatility prices every policy in an underwriting year to the same
+// noisy target loss ratio, a different one each year, and moves nothing but
+// premium.
+func TestAdequacyVolatilityPricesEachYearToItsOwnTarget(t *testing.T) {
+	prm := params()
+	plain := policy.NewBookSimulator(prm, pricingParams()).Simulate(random.NewSource(4), 1998, 5, 300)
+	pp := pricingParams()
+	pp.AdequacyVolatility = 0.1
+	noisy := policy.NewBookSimulator(prm, pp).Simulate(random.NewSource(4), 1998, 5, 300)
+
+	if len(noisy) != len(plain) {
+		t.Fatalf("book size moved: %d policies, want %d", len(noisy), len(plain))
+	}
+	factorByYear := map[int]float64{}
+	for i, p := range noisy {
+		q := plain[i]
+		if p.CoverStart != q.CoverStart || p.SumInsured != q.SumInsured || p.Excess != q.Excess || p.RiskFactor != q.RiskFactor {
+			t.Fatalf("policy %d: adequacy volatility moved a non-premium field", p.ID)
+		}
+		f := priceFactor(p, prm, pp)
+		year := p.CoverStart.Year()
+		if want, ok := factorByYear[year]; !ok {
+			factorByYear[year] = f
+		} else if math.Abs(f/want-1) > 1e-4 {
+			t.Fatalf("policy %d: price factor %.6f, want the year's %.6f", p.ID, f, want)
+		}
+	}
+	distinct := map[float64]bool{}
+	for _, f := range factorByYear {
+		distinct[math.Round(f*1e4)/1e4] = true
+	}
+	if len(distinct) != len(factorByYear) {
+		t.Fatalf("underwriting years share a target loss ratio: %v", factorByYear)
+	}
+	for year, f := range factorByYear {
+		if lr := 1 / f; math.Abs(lr/pp.TargetLossRatio-1) > 0.5 {
+			t.Errorf("year %d priced to loss ratio %.3f, implausibly far from target %.2f", year, lr, pp.TargetLossRatio)
+		}
+	}
+}

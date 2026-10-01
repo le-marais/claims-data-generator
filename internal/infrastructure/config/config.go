@@ -49,6 +49,7 @@ type ExcessChoiceParams struct {
 // PricingParams mirrors lob.PricingParams for YAML/JSON.
 type PricingParams struct {
 	TargetLossRatio      float64        `yaml:"target_loss_ratio" json:"target_loss_ratio"`
+	AdequacyVolatility   float64        `yaml:"adequacy_volatility" json:"adequacy_volatility"`
 	BaseFrequency        float64        `yaml:"base_frequency" json:"base_frequency"`
 	Severity             SeverityParams `yaml:"severity" json:"severity"`
 	NilProbability       float64        `yaml:"nil_probability" json:"nil_probability"`
@@ -224,8 +225,9 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			ExcessChoices:       excesses,
 		},
 		Pricing: lob.PricingParams{
-			TargetLossRatio: d.Pricing.TargetLossRatio,
-			BaseFrequency:   d.Pricing.BaseFrequency,
+			TargetLossRatio:    d.Pricing.TargetLossRatio,
+			AdequacyVolatility: d.Pricing.AdequacyVolatility,
+			BaseFrequency:      d.Pricing.BaseFrequency,
 			Severity: lob.SeverityParams{
 				ThirdPartyWeight:        d.Pricing.Severity.ThirdPartyWeight,
 				OwnDamageMedianFraction: d.Pricing.Severity.OwnDamageMedianFraction,
