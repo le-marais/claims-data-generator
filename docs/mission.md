@@ -6,7 +6,7 @@ An app that can easily be run on a local machine which generates realistic, full
 
 ## The problem
 
-Reserving teams need individual claims data for demos and testing. Real data is sensitive and hard to share, public datasets lack transaction-level detail, and ad-hoc scripts are not reusable. claimsgen produces realistic data on demand, and because nothing in it is real, there are no data governance concerns.
+Actuaries and researchers need individual claims data for research, demonstrations and as placeholder input to models. Real data is sensitive and hard to share, public datasets lack transaction-level detail, and ad-hoc scripts are not reusable. claimsgen produces realistic data on demand, and because nothing in it is real, there are no data governance concerns.
 
 ## Who it's for
 
@@ -38,10 +38,10 @@ It runs as a CLI (`claimsgen generate`) or as a local browser UI (`claimsgen ui`
 
 ## Success
 
-A team member can generate a realistic personal motor dataset on a laptop and feed it into a reserving demo without manual fixes.
+A user can generate a realistic personal motor dataset on their own machine and feed it into a reserving model, study or demonstration without manual fixes.
 
 Realism is measured against Schedule P: the third-party (liability) section of the shipped preset must sit inside the P5-P95 bands of the private passenger auto liability reference companies.
 
 ## Next
 
-More short-tail lines of business, starting with commercial property, then opening the tool to the wider actuarial community. Whether the engine extends to long-tail classes is a later question. See `docs/roadmap.md` for status and sequencing.
+More short-tail lines of business, starting with commercial property. Whether the engine extends to long-tail classes is a later question. See `docs/roadmap.md` for status and sequencing.
