@@ -28,48 +28,14 @@ high-severity is open.
 
 ## Order
 
-1. **SL-7** - the only open item here that changes what a reserving actuary
-   sees in the data.
-2. **CI-1** - small, and guards every merge from now on.
-3. **RF-13** - gates the second line of business; step (1) is due before the
+1. **CI-1** - small, and guards every merge from now on.
+2. **RF-13** - gates the second line of business; step (1) is due before the
    parameters the model findings will add.
-4. **RF-14** - gates the same work, and compounds with every feature added.
+3. **RF-14** - gates the same work, and compounds with every feature added.
 
 The sequence across this file and `docs/review.md` lives in `docs/roadmap.md`.
 
-## 1. SL-7 (medium) - case estimates re-centre on the true ultimate at the first revision
-
-- Where: `internal/domain/transaction/runoff.go`, `runEpisode`;
-  `case_adequacy_mean: 1.0` in `internal/infrastructure/config/motor-personal.yaml`.
-- Every revision targets `(ultimate - paid)` times mean-one lognormal noise
-  whose sigma decays with age. Even with a case adequacy mean away from 1, the
-  first revision (Poisson, about 4/yr) snaps the case to an unbiased view of the
-  truth. Real incurred triangles show persistent case strengthening or weakening
-  that IBNER methods are built to detect; here incurred is unbiased at every
-  age, so incurred-based methods look trivially perfect - the wrong impression
-  for a tool whose job is feeding reserving demos.
-- The opening case's adequacy bias is set by `transaction.CaseEstimator`
-  (`internal/domain/transaction/estimate.go`), which draws the case around the
-  claim's true cost; the runoff then removes that bias at the first revision.
-- Already documented in the README and in a code comment. The model change
-  remains.
-- Action: let the adequacy bias decay gradually over the claim's life instead of
-  vanishing at the first revision. While in this function, fold in the old RF-4:
-  the nil branch duplicates the sigma-decay and target computation with a
-  different remaining-source and floor rule, and a `remaining()` closure plus one
-  unconditional keep-open floor removes both the duplication and a boolean
-  parameter.
-- An earlier attempt (PR #4, 2026-08-09) was closed unmerged on 2026-10-01: it
-  conflicted with `main`, and its `pricing.case_adequacy_mean` no longer
-  applies, because since MR-1 case adequacy moves reserves only, never the
-  loss cost. Redo it on top of `main`; its decay idea (aim each revision at
-  `(ultimate - paid) x case_adequacy_mean^(u-1)` over the elapsed share `u` of
-  the episode) and its RF-4 refactor are still a useful starting point.
-- Cost note: this is the most expensive item here. It changes generated output,
-  so it needs a golden-hash refresh and a realism-gate re-check, and the preset
-  may need recalibrating.
-
-## 2. CI-1 (low) - no CI and no dependency scanning
+## 1. CI-1 (low) - no CI and no dependency scanning
 
 Merges the old R-13 and I2.
 
@@ -84,7 +50,7 @@ Merges the old R-13 and I2.
   `govulncheck ./...` on every pull request. Consider `golangci-lint` in the
   same pass.
 
-## 3. RF-13 (medium) - adding one line-of-business parameter touches five places
+## 2. RF-13 (medium) - adding one line-of-business parameter touches five places
 
 - Where: the domain struct plus validation (`internal/domain/lob/lob.go`), the
   config DTO plus `ToDomain` (`internal/infrastructure/config/config.go`), the
@@ -109,7 +75,7 @@ Merges the old R-13 and I2.
   `NewBookSimulator(book, pricing)` already shows it working - it takes a
   purpose-built `PricingParams` and structurally cannot read claims knobs.
 
-## 4. RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
+## 3. RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
 
 Merges the old F3 and F6, which describe the same problem from the parameter
 side.

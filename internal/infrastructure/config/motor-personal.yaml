@@ -131,9 +131,13 @@ claims:
 # Case runoff. The claim's true cost is fixed in the claims stage; the case
 # adequacy knobs only set the case estimate it opens at (ultimate over the
 # expected opening case, and the noise on each estimate), so they move
-# reserves and incurred development, never the loss cost.
+# reserves and incurred development, never the loss cost. The bias decays
+# over each claim's life, reaching parity at close, so incurred development
+# carries a persistent signal for IBNER methods to find. 0.90 opens cases
+# about 11% redundant, so incurred develops downward, the shape Schedule P
+# total incurred shows as early reserves are released.
 runoff:
-  case_adequacy_mean: 1.0
+  case_adequacy_mean: 0.90
   case_adequacy_sigma: 0.35
   payments_per_year: 2.5
   settlement_share: 0.4

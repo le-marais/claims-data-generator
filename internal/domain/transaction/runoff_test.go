@@ -1,6 +1,7 @@
 package transaction_test
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -425,6 +426,67 @@ func TestNilClaimTinyEstimateStillClosesOnCloseDate(t *testing.T) {
 		}
 		if last := txs[len(txs)-1]; last.Date != c.CloseDate {
 			t.Fatalf("seed %d: last transaction on %s, want close date %s", seed, last.Date, c.CloseDate)
+		}
+	}
+}
+
+// incurredShare is the average across claims of incurred (case plus paid) as
+// a share of the true cost, valued day days after report.
+func incurredShare(txs []transaction.Transaction, claims []claim.Claim, day int) float64 {
+	rows := byClaim(txs)
+	total := 0.0
+	for _, c := range claims {
+		valuation := c.ReportDate.AddDays(day)
+		incurred := shared.Money(0)
+		for _, tx := range rows[c.ID] {
+			if !tx.Date.After(valuation) {
+				incurred += tx.Amount // ESTIMATE movements and payments both add to case plus paid
+			}
+		}
+		total += incurred.Dollars() / c.Ultimate.Dollars()
+	}
+	return total / float64(len(claims))
+}
+
+// SL-7: the opening case's adequacy bias decays over the claim's life rather
+// than vanishing at the first revision. Cases open 25% redundant (mean 0.8)
+// and the gap closes geometrically, CaseAdequacyMean^(u-1) at elapsed share u.
+func TestCaseAdequacyBiasDecaysOverTheClaimLife(t *testing.T) {
+	const duration = 1000
+	claimsFor := func(mean float64) []claim.Claim {
+		claims := make([]claim.Claim, 3000)
+		for i := range claims {
+			report := shared.NewDate(1998, time.March, 1)
+			claims[i] = claim.Claim{
+				ID: i + 1, PolicyID: i + 1, OccurrenceDate: report, ReportDate: report,
+				CloseDate:       report.AddDays(duration),
+				Ultimate:        shared.FromDollars(10000),
+				InitialEstimate: shared.FromDollars(10000 / mean),
+			}
+		}
+		return claims
+	}
+	p := params()
+	p.PaymentsPerYear = 0   // case alone carries incurred until the settlement at close
+	p.RevisionsPerYear = 12 // revise often, so the case tracks its aim closely
+	for _, mean := range []float64{0.8, 1.0} {
+		p.CaseAdequacyMean = mean
+		claims := claimsFor(mean)
+		txs := transaction.NewRunoffSimulator(p).Simulate(random.NewSource(9), claims)
+		prev := math.Inf(1)
+		for _, u := range []float64{0.25, 0.5, 0.75} {
+			got := incurredShare(txs, claims, int(u*duration))
+			want := math.Pow(mean, u-1)
+			if math.Abs(got/want-1) > 0.03 {
+				t.Errorf("mean %.1f at %.0f%% of the claim's life: incurred %.3f of the truth, want about %.3f", mean, 100*u, got, want)
+			}
+			if mean != 1 && got >= prev {
+				t.Errorf("mean %.1f: the adequacy gap did not narrow by %.0f%% of the life (%.3f after %.3f)", mean, 100*u, got, prev)
+			}
+			prev = got
+		}
+		if got := incurredShare(txs, claims, duration); math.Abs(got-1) > 1e-9 {
+			t.Errorf("mean %.1f at close: incurred %.6f of the truth, want exactly 1", mean, got)
 		}
 	}
 }

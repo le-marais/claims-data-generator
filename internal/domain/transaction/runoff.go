@@ -14,6 +14,7 @@ package transaction
 
 import (
 	"fmt"
+	"math"
 	"sort"
 
 	"github.com/le-marais/claimsgen/internal/domain/claim"
@@ -82,50 +83,50 @@ func (s *RunoffSimulator) simulateClaim(src shared.RandomSource, c claim.Claim) 
 	if c.Reopened() {
 		firstClose = c.FirstCloseDate
 	}
-	s.runEpisode(src, e, c.ReportDate, firstClose, c.Ultimate, c.Nil, false)
+	s.runEpisode(src, e, c.ReportDate, firstClose, c.Ultimate, c.Nil)
 
 	if c.Reopened() {
 		// The case is re-raised on the reopen date, then a second, smaller
 		// episode develops and pays the reopen's additional cost.
 		e.reviseTo(shared.DaysBetween(c.ReportDate, c.ReopenDate), c.ReopenEstimate)
-		s.runEpisode(src, e, c.ReopenDate, c.CloseDate, c.ReopenUltimate, false, true)
+		s.runEpisode(src, e, c.ReopenDate, c.CloseDate, c.ReopenUltimate, false)
 	}
 	return e.txs
+}
+
+// adequacyBias is the case a revision aims at as a share of the true
+// remaining cost, at elapsed share u of the episode: CaseAdequacyMean^(u-1).
+// The case opens at about 1/CaseAdequacyMean of the truth (CaseEstimator), and
+// the bias closes geometrically to parity at close instead of vanishing at the
+// first revision, so incurred develops the way IBNER methods expect (SL-7). A
+// mean of 1 makes every revision unbiased.
+func (s *RunoffSimulator) adequacyBias(u float64) float64 {
+	return math.Pow(s.params.CaseAdequacyMean, u-1)
 }
 
 // runEpisode develops one open-close episode: interim payments and pure
 // revisions between start and close, a final settlement at close that brings
 // total paid in the episode to exactly ultimate, and the outstanding case
 // released to exactly zero. A nil episode emits no payments and ignores
-// ultimate. floorRevisions keeps every revision target at least one cent (the
-// nil path's guard), used for reopen episodes whose costs can be tiny.
-func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, start, close shared.Date, ultimate shared.Money, isNil, floorRevisions bool) {
+// ultimate.
+//
+// Each revision moves the case to its aim times mean-one lognormal noise
+// whose sigma decays to zero at close. A paying episode aims at the remaining
+// cost (ultimate - paid) times the adequacy bias; a nil episode, whose handler
+// does not know it will pay nothing, aims at the current case. Every target
+// is floored at one cent, so the case stays open until the close date.
+func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, start, close shared.Date, ultimate shared.Money, isNil bool) {
 	base := shared.DaysBetween(e.report, start)
 	duration := shared.DaysBetween(start, close)
 	years := float64(duration) / 365
 
-	if isNil {
-		revisions := s.drawRevisions(src, duration, years)
-		sort.SliceStable(revisions, func(i, j int) bool {
-			return revisions[i].offset < revisions[j].offset
-		})
-		for _, ev := range revisions {
-			remaining := e.outstanding.Dollars()
-			sigma := s.params.RevisionSigma * (1 - float64(ev.offset)/float64(duration))
-			target := shared.FromDollars(remaining * shared.MeanOneLogNormal(src, sigma))
-			if target < shared.OneCent {
-				target = shared.OneCent // keep the case open so the terminal release lands on the close date
-			}
-			e.reviseTo(base+ev.offset, target)
+	var interims []event
+	if !isNil {
+		if ultimate < shared.OneCent {
+			ultimate = shared.OneCent // guards hand-built claims; generated claims always cost something
 		}
-		e.reviseTo(base+duration, 0)
-		return
+		interims = s.drawInterimPayments(src, ultimate, duration, years)
 	}
-
-	if ultimate < shared.OneCent {
-		ultimate = shared.OneCent // guards hand-built claims; generated claims always cost something
-	}
-	interims := s.drawInterimPayments(src, ultimate, duration, years)
 	events := append(s.drawRevisions(src, duration, years), interims...)
 	sort.SliceStable(events, func(i, j int) bool {
 		if events[i].offset != events[j].offset {
@@ -135,27 +136,31 @@ func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, start,
 	})
 
 	paid := shared.Money(0)
+	aim := func(u float64) float64 {
+		if isNil {
+			return e.outstanding.Dollars()
+		}
+		return (ultimate - paid).Dollars() * s.adequacyBias(u)
+	}
 	for _, ev := range events {
 		if ev.kind == kindPayment {
 			e.pay(base+ev.offset, ev.amount)
 			paid += ev.amount
 			continue
 		}
-		// The first revision re-centres the case on (ultimate - paid), so
-		// the opening case's adequacy bias vanishes after it and incurred development carries
-		// little systematic IBNER signal thereafter.
-		remaining := (ultimate - paid).Dollars()
-		sigma := s.params.RevisionSigma * (1 - float64(ev.offset)/float64(duration))
-		target := shared.FromDollars(remaining * shared.MeanOneLogNormal(src, sigma))
-		if floorRevisions && target < shared.OneCent {
-			target = shared.OneCent
+		u := float64(ev.offset) / float64(duration)
+		target := shared.FromDollars(aim(u) * shared.MeanOneLogNormal(src, s.params.RevisionSigma*(1-u)))
+		if target < shared.OneCent {
+			target = shared.OneCent // keep the case open so the terminal release lands on the close date
 		}
 		e.reviseTo(base+ev.offset, target)
 	}
 
-	// Final settlement clears the remaining ultimate, then the case snaps
-	// to exactly zero.
-	e.pay(base+duration, ultimate-paid)
+	// A paying episode's final settlement clears the remaining ultimate; then
+	// the case snaps to exactly zero.
+	if !isNil {
+		e.pay(base+duration, ultimate-paid)
+	}
 	e.reviseTo(base+duration, 0)
 }
 
