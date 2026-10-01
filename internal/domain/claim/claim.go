@@ -69,6 +69,12 @@ func (c Claim) Cost() shared.Money {
 	return cost
 }
 
+// TotalLoss reports whether the claim wrote the vehicle off: an own-damage
+// claim whose true cost reached its cover limit, the sum insured less excess.
+func (c Claim) TotalLoss() bool {
+	return c.OwnDamage && c.CoverLimit > 0 && c.Ultimate >= c.CoverLimit
+}
+
 // Reopened reports whether the claim has a reopen episode.
 func (c Claim) Reopened() bool {
 	return c.ReopenDate != (shared.Date{})

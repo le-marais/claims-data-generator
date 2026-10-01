@@ -104,9 +104,11 @@ claims:
   # probability 0 switches a recovery type off, and the other fields of that
   # type may then be left out.
   recoveries:
+    # Salvage only on total losses, where the vehicle is written off and its
+    # wreck sold: most total losses yield it, at about a fifth of the payout.
     salvage:
-      probability: 0.10
-      mean_share: 0.15
+      probability: 0.90
+      mean_share: 0.20
       concentration: 10
       lag_median_days: 21
       lag_sigma: 0.5
