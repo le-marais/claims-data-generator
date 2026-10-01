@@ -22,7 +22,7 @@ Only motor personal exists as a line of business today.
 
 ## Near term
 
-The real-claims-data backlog from the mission is complete (claims inflation, nil claims, recoveries, reopened claims), and so is the model-realism pass agreed on 2026-10-01 (MR-13, MR-9, SL-7, MR-7) and CI (CI-1). The next step is the second line of business below, which folds in MR-12 (separate sum-insured and risk spreads), the per-class switches from MR-8 (liability limit, excess on liability claims) and RF-13.
+The real-claims-data backlog from the mission is complete (claims inflation, nil claims, recoveries, reopened claims), and so is the model-realism pass agreed on 2026-10-01 (MR-13, MR-9, SL-7, MR-7) and CI (CI-1). The next step is the second line of business below, which folds in MR-12 (separate sum-insured and risk spreads), the per-class switches from MR-8 (liability limit, excess on liability claims) and RF-14. Adding a parameter now follows the checklist in `AGENTS.md`, with tests that catch a field missing from the config mapping or the UI form.
 
 ## Mid term - second line of business
 
@@ -46,4 +46,4 @@ Small items that make the above cheaper or are worth cleaning up when touched:
 - The `ui` command's reference-data directory is hardcoded to private passenger auto; generalising it is a prerequisite for a second line of business's realism view.
 - Reference-data loading should be keyed per line of business (currently a single embedded set, though the other five curated families are already in the repo - see above).
 - The nil-claim runoff floors its case release at one cent to guarantee a close-date transaction; if very small initial estimates ever become common, revisit the runoff's sub-cent behavior more broadly.
-- `docs/todo.md` is the live backlog and the best source for "what to clean up next": the open code-review, security-review and stage-isolation findings in one place. The items that most affect this roadmap are the server guardrails (R-1, R-2, M1, L1) before sharing the UI, and the parameter fan-out (RF-13), the `Claim` struct's carry fields (RF-14) and the stage-isolation items F3 to F8 before a second line of business.
+- `docs/todo.md` is the live backlog and the best source for "what to clean up next": the open code-review, security-review and stage-isolation findings in one place. The item that most affects this roadmap is the `Claim` struct's carry fields (RF-14), before a second line of business; its "Exposure milestone" section lists what must change before the UI is shared beyond one laptop.
