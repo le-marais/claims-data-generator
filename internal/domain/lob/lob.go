@@ -207,7 +207,10 @@ type CloseLagParams struct {
 type RunoffParams struct {
 	// CaseAdequacyMean is the true ultimate over the expected opening case
 	// estimate: above 1 cases open deficient (under-reserving), below 1
-	// redundant. It moves case reserves only, never the loss cost.
+	// redundant. Each later revision aims at the true remaining cost times
+	// CaseAdequacyMean^(u-1) at elapsed share u of the episode, so the bias
+	// decays to parity at close rather than vanishing at the first revision.
+	// It moves case reserves only, never the loss cost.
 	CaseAdequacyMean float64
 	// CaseAdequacySigma is the sigma of the mean-one lognormal noise on each
 	// opening case estimate: how wrong individual estimates are.

@@ -10,6 +10,7 @@ A living view of where claimsgen is and what comes next. Grounded in `mission.md
 - **Realism gate** - the third-party (liability) section of generated motor data is scored against the 96 hand-curated Schedule P private passenger auto liability reference companies, on its share of premium; the shipped preset must land inside the observed P5-P95 bands (`TestDefaultPresetIsRealistic`). Own damage has no 10-year Schedule P reference and is not scored.
 - **Claims inflation** - stochastic inflation index, simulated per year and interpolated by occurrence date, one user-facing mean knob per line of business, applied to every claim's ground-up loss.
 - **Third-party report lag and IBNR** - third-party injury claims report later than own damage (median 20 days, about 15% of them after their accident year ends), so reported counts and incurred carry pure IBNR to estimate; their settlement time grows smoothly with size; and the realism gate scores incurred with pure IBNR at its true value, like Schedule P total incurred.
+- **Persistent case adequacy** - the opening case's adequacy bias decays over each claim's life instead of vanishing at the first revision, so incurred develops in a consistent direction for IBNER methods to find; the preset opens cases about 11% redundant.
 - **Nil claims** - a share of reported claims close without payment, with a dedicated no-payment runoff path and a `nil_probability` off switch.
 - **Recoveries (salvage and subrogation)** - money coming back on own-damage claims after close, as SALVAGE and SUBROGATION transaction types; triangles and the realism gate go net of recoveries, and the triangle tab gains a gross/net toggle.
 - **Reopened claims** - a closed claim can reopen once and develop a second episode; claims.csv shows the final close date and the reopen appears in transactions as a case re-raised after a release to zero, with a reopen_probability off switch.
@@ -22,9 +23,8 @@ Only motor personal exists as a line of business today.
 
 The real-claims-data backlog from the mission is complete (claims inflation, nil claims, recoveries, reopened claims). Before the second line of business, a model-realism pass on the findings that most limit a reserving demo, in this order (re-ranked 2026-10-01):
 
-1. **SL-7** (`docs/todo.md`) - case adequacy bias that persists over a claim's life, so incurred-based methods have something to detect.
-2. **MR-7** (`docs/review.md`) - salvage only on total losses.
-3. **CI-1** - an automatic test run on every pull request; small enough to slot in at any point.
+1. **MR-7** (`docs/review.md`) - salvage only on total losses.
+2. **CI-1** (`docs/todo.md`) - an automatic test run on every pull request; small enough to slot in at any point.
 
 The second line of business then folds in MR-12 (separate sum-insured and risk spreads), the per-class switches from MR-8 (liability limit, excess on liability claims) and RF-13.
 
