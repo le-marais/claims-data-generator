@@ -26,27 +26,28 @@ The codebase is domain-driven and layered. Dependencies point inward: infrastruc
 cmd/claimsgen/            CLI entry point (main), argument parsing, command dispatch
 internal/
   domain/                 the simulation model, no outside dependencies
-    shared/               value objects: Date, Money, distributions, RandomSource interface
+    shared/               value objects: Date, Month, Money, distributions, RandomSource interface
     lob/                  LineOfBusiness parameter tree + validation + expected-loss pricing
     policy/               step 1: the policy book
     claim/                step 2: claim events, claims inflation, reopening
     transaction/          steps 3-4: case-estimate runoff, payments, recoveries
     triangle/             development triangles + realism comparison
-  application/            use cases: GenerateDataset + analytics (summary, histogram, realism)
+  application/            use cases: GenerateDataset, Aggregate + analytics (summary, histogram, realism)
   infrastructure/         adapters
     config/               YAML <-> LineOfBusiness mapping, embedded preset registry
     random/               gonum-backed RandomSource implementation
     csv/                  CSV writers: the dataset files and the aggregate files
     schedulep/            Schedule P reference-file reader
-    web/                  HTTP server + JSON view models for the browser UI
-data/reference/           embedded Schedule P reference companies + refdata package
+    web/                  HTTP server, JSON view models, form-field registry, embedded static UI
+data/reference/           Schedule P reference companies (private passenger auto embedded) + refdata package
+tools/                    dev-only helpers: reference-data curation, README screenshots
 ```
 
 The `internal/domain/shared.RandomSource` interface is the seam between the pure domain and the concrete `internal/infrastructure/random.Source`. The domain describes the randomness it needs; infrastructure supplies it.
 
 ## 3. End-to-end data flow
 
-`application.GenerateDataset` is the composition root. It runs seven ordered stages, each drawing from its own labelled random sub-stream so that toggling one stage never reshuffles another's draws:
+`application.GenerateDataset` is the composition root. It runs seven ordered stages, each drawing from its own labelled random sub-stream so that toggling one stage never reshuffles another's draws. The README's "How the simulation works" section diagrams what each stage models; this is the code view:
 
 ```
 seed --> random.NewSource
@@ -62,6 +63,8 @@ seed --> random.NewSource
              v
    application.Dataset{Policies, Claims, Transactions}
 ```
+
+Between stages it checks its `context.Context` and returns the context's error once the run is cancelled. The checks sit at stage boundaries only, so the domain stays free of cancellation and the output never depends on the context.
 
 Downstream, three read-only passes consume the `Dataset`. `application.Summarize` builds the per-year table and `application.ComputeDistributions` the severity and lag histograms, both straight off the `Dataset`. `application.Aggregate` is the third: it builds the monthly grid, the monthly exposure, and the accident-basis annual triangles and earned premium into an `Aggregates`, which `application.EvaluateRealism` then scores against the Schedule P reference bands.
 
@@ -102,7 +105,7 @@ type RandomSource interface {
 
 Two conventions keep parameter toggles from disturbing unrelated draws:
 
-1. **Labelled sub-streams keyed by entity ID.** Each policy draws from `src.Split("policy-<id>")`, each claim from `claims-policy-<id>`, `reopen-claim-<id>`, `case-estimate-claim-<id>`, `runoff-claim-<id>`, `recovery-claim-<id>`, and recovery types further split by `SALVAGE`/`SUBROGATION`. Keying on the global sequential ID makes an entity's draws stable regardless of what other entities do.
+1. **Labelled sub-streams keyed by entity ID.** The book stage draws its yearly size and pricing noise from `book-size` and `pricing-adequacy`; each policy draws from `src.Split("policy-<id>")`, each policy's claims from `claims-policy-<id>`, and each claim from `reopen-claim-<id>`, `case-estimate-claim-<id>`, `runoff-claim-<id>` and `recovery-claim-<id>`, with recovery types further split by `SALVAGE`/`SUBROGATION`. Keying on the global sequential ID makes an entity's draws stable regardless of what other entities do.
 2. **Constant draw counts.** `simulateClaim` always draws the nil `Bernoulli`, even when `NilProbability` is 0 (`Bernoulli(0)` still consumes one uniform and returns false), so turning nil claims off does not reshuffle later draws. `shared.MeanOneLogNormal` is the deliberate mirror image: with `sigma <= 0` it returns 1 without drawing, so a zero-volatility knob does not consume a draw where none is conceptually needed.
 
 The one intentional exception is `ReopenSimulator.Apply`, which short-circuits entirely when reopen probability is `<= 0` (it takes no draws at all in that case).
@@ -123,7 +126,19 @@ The one intentional exception is `ReopenSimulator.Apply`, which short-circuits e
 - `TrendYears(d Date, startYear int) float64` - the date's position on the continuous axis claims inflation trends along: years since the middle of the start year, each day measured at its midpoint (leap-year aware). The inflation index and pricing both read time on it, so the trend the pricing assumes and the one the claims carry line up.
 - `(d Date) String() string` - ISO-8601 (`2006-01-02`), implementing `fmt.Stringer`; this is what lands in the CSVs.
 
-### 5.2 `money.go` - integer-cent money
+### 5.2 `month.go` - calendar months
+
+`Month` is a calendar month held as an absolute month index (`year*12 + month - 1`) in an unexported field, so offsets and differences are integer arithmetic and two months compare with `==`. It is the axis of the monthly grid and the monthly exposure.
+
+- `NewMonth(year int, m time.Month) Month` - builds a month, normalising the month number (`NewMonth(1998, 13)` is January 1999).
+- `(d Date) Month() Month` - the calendar month a date falls in.
+- `(m Month) Year() int`, `Month() time.Month`, `Quarter() int` - the calendar year, month of the year and quarter (1 to 4). They use floored division, so a negative index round-trips.
+- `(m Month) Add(n int) Month` - the month `n` months later (`n` may be negative).
+- `(m Month) Start() Date` / `End() Date` - the first and last day of the month.
+- `MonthsBetween(a, b Month) int` - whole months from `a` to `b`, negative when `b` is earlier.
+- `(m Month) String() string` - `YYYY-MM`, the `origin_month` format in the aggregate CSVs.
+
+### 5.3 `money.go` - integer-cent money
 
 `Money` is an `int64` count of whole cents, so accumulation never drifts.
 
@@ -133,11 +148,11 @@ The one intentional exception is `ReopenSimulator.Apply`, which short-circuits e
 - `(m Money) MulFloat(f float64) Money` - `Money(math.Round(float64(m)*f))`; returns 0 for NaN/Inf. Used to apply inflation and recovery/reopen shares.
 - `(m Money) String() string` - formats `"[-]dollars.cc"`, negating a local copy first so the cents part never prints a negative remainder. This is the CSV amount format.
 
-### 5.3 `distribution.go` - mean-one lognormal noise
+### 5.4 `distribution.go` - mean-one lognormal noise
 
 - `MeanOneLogNormal(src RandomSource, sigma float64) float64` - a lognormal with mean exactly 1. With `sigma <= 0` it returns 1 with no draw (preserving the shift-free contract); otherwise `src.LogNormal(-sigma*sigma/2, sigma)`, where the `-sigma^2/2` offset centres the multiplicative noise on 1. This is the standard multiplicative noise used for book size, inflation, reopen costs, opening case estimates, and runoff revisions.
 
-### 5.4 `random.go`
+### 5.5 `random.go`
 
 The `RandomSource` interface, covered in section 4.1.
 
@@ -171,9 +186,9 @@ Notable per-struct rules. A sub-block that is switched off is never read, so onl
 
 - `BookParams`: growth/spread/median/inflation all `> 0`; volatility `>= 0`; `ExcessChoices` non-empty with each weight `>= 0` and a positive total weight; each value `>= 0`.
 - `PricingParams`: `TargetLossRatio`, `BaseFrequency`, `InflationMean` all `> 0`; `AdequacyVolatility >= 0`; `NilProbability` and `ReopenProbability` in `[0, 1)`, and `ReopenEstimateFactor > 0` unless the reopen probability is 0; delegates to `Severity.validate("pricing.severity")`.
-- `ClaimParams`: base frequency, report-lag median/sigma `> 0`; `NilProbability` in `[0, 1)`; delegates to `Severity.validate("claims.severity")`, inflation, both recovery types (with the prefix passed in), reopening, and close lag.
+- `ClaimParams`: base frequency, report-lag median/sigma `> 0`; `ThirdPartyReportLagMedian >= 0`, and `ThirdPartyReportLagSigma > 0` when that median is above 0; `NilProbability` in `[0, 1)`; delegates to `Severity.validate("claims.severity")`, inflation (`Mean > 0`, `Volatility >= 0`), both recovery types (with the prefix passed in), reopening, and close lag.
 - `SeverityParams.validate(prefix string)`: `ThirdPartyWeight` in `[0, 1]` (inclusive, unlike the other probabilities); own-damage fraction/sigma `> 0` unless the weight is 1; third-party scale `> 0` and `ThirdPartyAlpha > 1` unless the weight is 0. The prefix names the offending field for either the pricing or claims severity block.
-- `CloseLagParams.validate(thirdParty bool)`: shapes and mean days `> 0`; `SizeMultiplier >= 1`; loadings/threshold `>= 0`. The third-party shape and mean are skipped when the claims severity gives third-party claims no weight.
+- `CloseLagParams.validate(thirdParty bool)`: shapes and mean days `> 0`; `SizeMultiplier >= 1`; loadings/threshold `>= 0`; `ThirdPartySizeElasticity >= 0`, and `ThirdPartySizeReference > 0` when the elasticity is above 0. The third-party fields are skipped when the claims severity gives third-party claims no weight.
 - `RecoveryTypeParams.validate(prefix string)`: `Probability` in `[0, 1)`; when it is above 0, `MeanShare` in the open interval `(0, 1)`, `Concentration`/`LagMedianDays > 0`, `LagSigma >= 0`.
 - `ReopeningParams`: `Probability` in `[0, 1)`; when it is above 0, `EstimateFactor > 0`, sigmas/median with the usual non-negativity/positivity.
 - `RunoffParams`: `SettlementShare` in `(0, 1]`; adequacy mean/concentration `> 0`; the rest `>= 0`.
@@ -197,11 +212,13 @@ This file prices premium deterministically (no randomness) from the assumed loss
 
 `BookSimulator` holds `book lob.BookParams` and `pricing lob.PricingParams` (the latter drives premium pricing, independent of the claims model). `NewBookSimulator(book, pricing)` constructs it.
 
-- `Simulate(src, startYear, years, initialSize int) []Policy` - produces the whole book. It splits a dedicated `book-size` stream for year-size noise and a `pricing-adequacy` stream for pricing noise and starts a global `id = 1`. It first writes a warm-up underwriting year (`y = -1`, `startYear-1`) of `warmUpSize = round(initialSize / GrowthFactor)` policies, with no size noise, so the window opens with a full book in force rather than one ramping up from nothing; the claim stage keeps only their in-window occurrences. Then `size = initialSize` for `y = 0`, and for each year `y`:
+- `Simulate(src, startYear, years, initialSize int) []Policy` - produces the whole book. It splits a dedicated `book-size` stream for year-size noise and a `pricing-adequacy` stream for pricing noise, starts a global `id = 1`, and loops `y` from `-1` to `years-1`. The warm-up underwriting year `y = -1` (`startYear-1`) has `warmUpSize` policies, with no size noise, so the window opens with a full book in force rather than one ramping up from nothing; the claim stage keeps only their in-window occurrences. `y = 0` has `initialSize`. For every year, the warm-up year included:
   - For `y > 0`, applies growth with noise: `size = round(size * GrowthFactor * MeanOneLogNormal(sizeSrc, SizeVolatility))`, clamped to a minimum of 1. So the book trends upward but individual years can shrink.
   - Draws the year's target loss ratio `TargetLossRatio * MeanOneLogNormal(adequacySrc, AdequacyVolatility)`; at a volatility of 0 this makes no draw. Every policy written in the year is priced to it, so cohorts scatter around the target while the expected loss ratio stays on it, and the knob moves premium only.
   - Computes the drifted median sum insured `SumInsuredMedian*SumInsuredInflation^y`, and the sum-insured drift `SumInsuredInflation^y`.
   - Emits `size` policies, each from its own `policy-<id>` sub-stream, incrementing the global `id`.
+- `warmUpSize(book, initialSize) int` (unexported) - `round(initialSize / GrowthFactor)`, at least 1. A non-positive growth factor, which validation rejects but `ProjectedSize` may see first, takes nothing off.
+- `ProjectedSize(book, years, initialSize int) float64` - the number of policies a run would write if every year's size noise came out at 1: the warm-up year plus `initialSize` compounded by `GrowthFactor` (floored at 1 a year, as `Simulate` does), summed over the years. It is a `float64` because a large growth factor overflows an `int` long before the run would finish. The web server sizes runs with it before generating (section 12.5).
 - `simulatePolicy(src, id, startYear, year int, lossRatio, medianSI, siDrift float64) Policy` - one policy: cover start uniform within the calendar year (leap-year aware via `DaysBetween`), the assumed pricing inflation factor `pricing.InflationMean^TrendYears(coverStart+182 days, startYear)` - the loss cost trended to the middle of the cover on the same time axis as the claims inflation index - sum insured lognormal `(log(medianSI), Spread)`, risk factor a mean-1 gamma with variance `Spread^2` (`Gamma(1/spread2, spread2)`), excess via `drawExcess`, and premium from `pricing.ExpectedSectionLoss(...)`: the sum of both sections over the year's `lossRatio`, with the third-party section alone giving `ThirdPartyPremium`.
 - `drawExcess(src) float64` - weighted categorical draw over `ExcessChoices`: draw `u = Uniform()*totalWeight`, walk the choices subtracting weights, return the first whose running total crosses `u`; fall back to the last choice on floating-point edges.
 
@@ -211,7 +228,7 @@ This file prices premium deterministically (no randomness) from the assumed loss
 
 ### 8.1 `claim.go`
 
-`Claim` embeds two structs, so the CSV surface is explicit in the type (RF-14); their fields read as `c.ID` or `c.Nil`:
+`Claim` embeds two structs, so the CSV surface is explicit in the type; their fields read as `c.ID` or `c.Nil`:
 
 - `Record` is the persisted claim, exactly the `claims.csv` columns: `ID`, `PolicyID`, `OccurrenceDate`, `ReportDate`, `CloseDate` (the final close after any reopen), and `InitialEstimate` (the opening case, set to `Ultimate` here and replaced by the case-estimate stage). The CSV writer reads only the record, and a test ties its field count to the file's columns.
 - `Development` is what later stages need and no CSV writes: `Ultimate` (the true cost: ground-up loss minus excess, capped at the cover for own damage), `CoverLimit` (sum insured minus excess for own damage, zero meaning unlimited for third party), `RiskFactor` (the policy's, kept for the reopen pass's close-lag draw), `Nil` (the first episode closes without payment), `OwnDamage` (drives recovery eligibility), and the reopen fields `FirstCloseDate`, `ReopenDate`, `ReopenUltimate` (the episode's true additional cost) and `ReopenEstimate` (the case it re-opens at) - all zero when the claim never reopens.
@@ -235,7 +252,7 @@ Core generation:
 - `Simulate(src, book []policy.Policy) []Claim` - for each policy, splits a `claims-policy-<id>` stream, draws a Poisson count with mean `BaseFrequency * RiskFactor * exposedFraction(pol)`, and calls `simulateClaim` that many times (appending only reportable ones). It then stable-sorts by report date, then policy ID, then occurrence date - resembling a claims-system registration order - and assigns 1-based sequential IDs after sorting.
 - `simulateClaim(src, pol) (Claim, bool)` - draws one claim in a fixed order so draw counts stay constant:
   1. Occurrence date: uniform over `occurrenceSpan(pol)`, one uniform draw whether or not the window clips the cover.
-  2. Report lag: one normal deviate is drawn here (as `log(LogNormal(0, 1))`), before the severity draw decides the claim type, and the lag is set after it with the type's median and sigma (`ThirdPartyReportLag*` for third-party claims when set, the shared ones otherwise), rounded to days. Drawing the deviate first keeps the draw order the same for both types, so a third-party lag never moves an own-damage claim.
+  2. Report lag: one normal deviate is drawn here (as `log(LogNormal(0, 1))`), before the severity draw decides the claim type, and the lag is set after it with the type's median and sigma (`ThirdPartyReportLag*` for third-party claims when set, the shared ones otherwise, as `reportLagMedian` and `reportLagSigma` choose), rounded to days. Drawing the deviate first keeps the draw order the same for both types, so a third-party lag never moves an own-damage claim.
   3. Ground-up loss: `drawGroundUpLoss`.
   4. Claims inflation: multiply the loss by `inflation.For(occurrenceDate)` (applies to both severity components).
   5. Own-damage cap: if own damage and the loss exceeds the drifted `SumInsured`, cap it (a total loss).
@@ -260,7 +277,7 @@ Shared close-lag logic, reused by the reopen pass:
 
 `ReopenSimulator{params lob.ClaimParams, inflation InflationIndex}`, built by `NewReopenSimulator(p)` and wired with `WithInflation(x)` (the zero index leaves costs nominal), runs as a post-pass after claim IDs are assigned. The second close lag is sized on the reopen's additional cost deflated by the index at the claim's occurrence date.
 
-- `Apply(src, claims []Claim) []Claim` - mutates reopened claims in place. If reopen probability is `<= 0` it returns immediately with no draws. Otherwise, for each claim it splits a `reopen-claim-<id>` stream and draws `Bernoulli(Probability)`; a claim that does not reopen consumes exactly that one draw. A reopening claim then draws, in order: a reopen lag (lognormal, floored to 1 day), the reopen's additional cost (`Ultimate * EstimateFactor * MeanOneLogNormal`, floored to one cent, then capped for own damage at the cover left - `CoverLimit` less what the first episode pays, nothing for a nil claim; a claim with no cover left, such as a paid total loss, does not reopen), and a second close lag (via the shared `drawCloseLag`, floored to 1 day). It records `FirstCloseDate = old CloseDate`, `ReopenDate = FirstCloseDate + lag`, `ReopenUltimate` (and `ReopenEstimate` equal to it until the case-estimate stage), and moves `CloseDate` to `ReopenDate + closeLag`. The day floors guarantee `ReopenDate > FirstCloseDate` and final `CloseDate > ReopenDate`.
+- `Apply(src, claims []Claim) []Claim` - mutates reopened claims in place. If reopen probability is `<= 0` it returns immediately with no draws. Otherwise, for each claim it splits a `reopen-claim-<id>` stream and draws `Bernoulli(Probability)`; a claim that does not reopen consumes exactly that one draw. A reopening claim then draws, in order: a reopen lag (lognormal, floored to 1 day), the reopen's additional cost (`Ultimate * EstimateFactor * MeanOneLogNormal`, floored to one cent, then capped for own damage at the cover left (`coverLeft`: `CoverLimit` less what the first episode pays, nothing for a nil claim); a claim with no cover left, such as a paid total loss, does not reopen), and a second close lag (via the shared `drawCloseLag`, floored to 1 day). It records `FirstCloseDate = old CloseDate`, `ReopenDate = FirstCloseDate + lag`, `ReopenUltimate` (and `ReopenEstimate` equal to it until the case-estimate stage), and moves `CloseDate` to `ReopenDate + closeLag`. The day floors guarantee `ReopenDate > FirstCloseDate` and final `CloseDate > ReopenDate`.
 
 ## 9. Domain: `transaction` - runoff and recoveries (steps 3-4)
 
@@ -309,13 +326,17 @@ Recoveries are pure cash events on own-damage claims that paid something; they l
 
 Cells are **incremental**: a cell is the movement in that development month. Increments sum, so any coarser grain is a plain sum over cells and a cumulative view is a running sum along a row.
 
-- `BuildMonthlyGrid(policies, claims, txs, startMonth, originMonths, basis)` - two passes over the input: one to size the rectangle to the widest development period any in-span claim reaches, one to place every movement. Weights match the annual triangles it replaced: paid counts `PAYMENT` only; net paid subtracts recoveries; incurred adds every case movement and payment and subtracts recoveries, so it is gross case plus net paid. Reported counts a claim in its **report** month. Development runs to full runoff, so the grid holds development after the run window ends.
-- `OriginBasis` (`basis.go`) is the one configuration seam, consulted in exactly two places: a claim's origin month (occurrence month, or its policy's inception month) and a month's exposure (earned in the month, or written in it).
-- `(g MonthlyGrid) Cell(measure, origin, dev)` reads a cell with a 1-based development period.
+- `Measure` names a quantity a triangle carries: `MeasurePaid`, `MeasurePaidNet`, `MeasureIncurred`, `MeasureReported`, `MeasureIBNR`.
+- `(g MonthlyGrid) Origins() int` - the number of origin months.
+
+- `BuildMonthlyGrid(policies, claims, txs, startMonth, originMonths, basis)` - two passes over the input: one to size the rectangle to the widest development period any in-span claim reaches, one to place every movement. Weights match the annual triangles it replaced: paid counts `PAYMENT` only; net paid subtracts recoveries; incurred adds every case movement and payment and subtracts recoveries, so it is gross case plus net paid. Reported counts a claim in its **report** month. Development runs to full runoff, so the grid holds development after the run window ends. It rejects an invalid basis or fewer than one origin month. `originRows` (unexported) maps each claim to its row and drops a claim whose origin falls outside the span, with all its movements; on the underwriting basis a claim whose policy is not in the book is an error. `devPeriod` (unexported) clamps to development period 1, which generated data never needs but hand-built input might.
+- `OriginBasis` (`basis.go`: `AccidentMonth` is `accident`, `UnderwritingMonth` is `underwriting`, checked by `Validate`) is the one configuration seam, consulted in exactly two places: a claim's origin month (occurrence month, or its policy's inception month) and a month's exposure (earned in the month, or written in it).
+- `(g MonthlyGrid) Cell(measure, origin, dev)` reads a cell with a 1-based development period; indices outside the grid read as zero.
 
 ### 10.2 `coarsen.go` - every coarser grain
 
-- `Coarsen(kind, devPeriods, foldTail)` maps both axes onto the calendar period the month falls in: `originPeriod = index(originMonth) - index(startMonth)` and `devPeriod = index(eventMonth) - index(originMonth) + 1`, for `Monthly`, `Quarterly` or `Annual`. Keying on the calendar period rather than dividing monthly development by twelve is what makes the annual result equal what the annual triangles have always measured: an accident in March 1998 paid in January 1999 is development year 2. Rows are zero-padded to `devPeriods` rather than left ragged, because `ATAFactors` counts an origin at an age only when its row reaches that far.
+- `PeriodKind` is `Monthly`, `Quarterly` or `Annual`; `IncrementalSet{Basis, Kind, StartMonth, Paid, PaidNet, Incurred, Reported, IBNR}` is the grid's five measures on a coarser grain.
+- `Coarsen(kind, devPeriods, foldTail) IncrementalSet` maps both axes onto the calendar period the month falls in: `originPeriod = index(originMonth) - index(startMonth)` and `devPeriod = index(eventMonth) - index(originMonth) + 1`, for `Monthly`, `Quarterly` or `Annual`. Keying on the calendar period rather than dividing monthly development by twelve is what makes the annual result equal what the annual triangles have always measured: an accident in March 1998 paid in January 1999 is development year 2. When `devPeriods` is positive every row is exactly that wide, and development beyond it is folded into the last period when `foldTail` is set and dropped otherwise; a non-positive `devPeriods` gives each row the grain's natural extent. Rows are zero-padded to `devPeriods` rather than left ragged, because `ATAFactors` counts an origin at an age only when its row reaches that far.
 - `(s IncrementalSet) Cumulative(measure) Triangle` - the running-sum projection.
 - `(g MonthlyGrid) AnnualTriangles(devYears) AnnualSet` - `Coarsen(Annual, devYears, true)` cumulated into the paid, net paid and incurred triangles the realism gate and the UI read, plus `TotalIncurred` (incurred plus pure IBNR), the counterpart of Schedule P total incurred.
 
@@ -333,7 +354,7 @@ Cells are **incremental**: a cell is the movement in that development month. Inc
 
 ### 10.5 `compare.go` - scoring against reference bands
 
-- `ReferenceSet{Name, Paid, Incurred, EarnedPremium, DevelopedIncurred}` - one reference company's observed triangles and premium. `DevelopedIncurred` is `Incurred` completed with the company's later reported development to the full ten ages; its zero value means none is available. `Incurred` is Schedule P total incurred (paid, case, bulk and IBNR), while the generated incurred is case incurred with no IBNR, so the incurred age-factor check compares different quantities: reference factors fall below 1 as early IBNR is released, generated ones mostly as nil claims release their case. `Comparison{Paid, Incurred, EarnedPremium}` - the generated data's equivalent.
+- `ReferenceSet{Name, Paid, Incurred, EarnedPremium, DevelopedIncurred}` - one reference company's observed triangles and premium. `DevelopedIncurred` is `Incurred` completed with the company's later reported development to the full ten ages; its zero value means none is available. `Incurred` is Schedule P total incurred (paid, case, bulk and IBNR). The generated incurred it is scored against is `AnnualSet.TotalIncurred`, case incurred plus pure IBNR at its true value, so unreported claims count on both sides. The generated side has no bulk reserve, and a perfect IBNR does not build up and release the way a company's estimate does, so the incurred age-factor check stays a loose bound. `Comparison{Paid, Incurred, EarnedPremium}` - the generated data's equivalent.
 - `Band{Lo, Hi, Min, Max}` - `Lo`/`Hi` are the scored P5-P95 pass interval; `Min`/`Max` are the full observed extremes kept for display. `(b Band) contains(v)` is inclusive membership.
 - Constants: `bandLoPercentile = 5`, `bandHiPercentile = 95` (the scored band).
 - `Percentile(xs, p)` - linearly interpolated percentile (type-7), non-mutating; `NaN` for empty input.
@@ -353,7 +374,7 @@ Cells are **incremental**: a cell is the movement in that development month. Inc
 
 - `GenerateRequest{LOB lob.LineOfBusiness, StartYear, Years, InitialBookSize int}` and `Dataset{Policies, Claims, Transactions}`.
 - `(r GenerateRequest) validate()` (unexported) - requires `Years >= 1` and `InitialBookSize >= 1`, then delegates to `LOB.Validate()` (`StartYear` is not validated).
-- `GenerateDataset(src shared.RandomSource, req GenerateRequest) (Dataset, error)` - validates, then runs the seven stages of section 3 over independently labelled sub-streams (`book`, `inflation`, `claims`, `reopening`, `case-estimate`, `runoff`, `recovery`), wiring the claim simulator fluently with the inflation index and window. The claim stage takes no book parameter: it reads each policy's `BaseSumInsured`. Output depends only on the master seed plus the request.
+- `GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateRequest) (Dataset, error)` - validates, then runs the seven stages of section 3 over independently labelled sub-streams (`book`, `inflation`, `claims`, `reopening`, `case-estimate`, `runoff`, `recovery`), wiring the claim simulator fluently with the inflation index and window. The claim stage takes no book parameter: it reads each policy's `BaseSumInsured`. Output depends only on the master seed plus the request. `ctx` decides only how early an abandoned run stops: it is checked before the first stage, after the book, after the claim, reopen and case-estimate stages, and after the runoff, never inside a stage, so a cancelled caller waits at most one stage (`TestGenerateDatasetStopsWhenCancelled`, `TestGenerateDatasetIgnoresContextOtherwise`).
 
 ### 11.2 `summary.go` - per-year table
 
@@ -364,23 +385,24 @@ Cells are **incremental**: a cell is the movement in that development month. Inc
 ### 11.3 `histogram.go` - distributions
 
 - `HistogramBin{Lo, Hi, Count}` (half-open except the last bin, which is inclusive) and `Histogram{Bins}`.
-- `LinearHistogram(values, bins) Histogram` - equal-width bins over `[min, max]`, with the top boundary forced inclusive so the maximum lands in the last bin; handles the degenerate all-equal case.
+- `LinearHistogram(values, bins) Histogram` - equal-width bins over `[min, max]`, with the top boundary forced inclusive so the maximum lands in the last bin; handles the degenerate all-equal case. No values or `bins < 1` gives an empty histogram.
 - `LogHistogram(values, bins) Histogram` - log10-spaced bins (bins the log of positive values linearly, then converts bounds back to linear units); values `<= 0` are dropped.
 - `minMax(values)` (unexported) - min and max (callers guard non-empty input).
 - `Distributions{Severity, ReportLagDays, CloseLagDays Histogram}` and `ComputeDistributions(ds) Distributions` (with `const histogramBins = 20`) - severity is each claim's total `PAYMENT` amount on a log histogram (so zero-paid/nil claims drop out), report lag is occurrence-to-report days and close lag is report-to-close days, both linear.
 
 ### 11.4 `aggregate.go` and `realism.go` - the aggregation pass and the gate
 
-- `const developmentYears = 10` (Schedule P shape) - lives only in `aggregate.go` now.
-- `Aggregate(ds, startYear, years, basis) (Aggregates, error)` - one pure aggregation pass per run: the monthly grid and exposure on the requested basis, plus the accident-basis annual triangles and earned premium. `Annual` and `EarnedPremium` are always accident-basis, because Schedule P is an accident-year presentation.
-- `LiabilityComparison(ds, startYear, years) (triangle.Comparison, error)` - what the realism gate scores: the accident-basis annual net paid and total incurred (incurred plus pure IBNR) triangles and earned premium of the third-party liability section alone. `liabilitySection` narrows the dataset to the third-party claims and gives each policy its `ThirdPartyPremium` as premium; the result is then built like every other aggregate view, as the monthly grid coarsened to annual. The Schedule P private passenger auto reference is a liability line with no physical damage, so own damage is not scored. It lives with the gate rather than in `Aggregates`, so a run that does not score realism (the CLI) never builds it.
+- `const developmentYears = 10` (Schedule P shape), in `aggregate.go`.
+- `Aggregates{Basis, StartYear, Years, Grid, Exposure, Annual, EarnedPremium}` - everything derived from a dataset by pure aggregation.
+- `Aggregate(ds, startYear, years, basis) (Aggregates, error)` - the aggregation step of a run; it draws no randomness and mutates nothing. It rejects an invalid basis or `years < 1`, then builds the monthly grid and exposure on the requested basis, plus the accident-basis annual triangles and earned premium. `Annual` and `EarnedPremium` are always accident-basis, because Schedule P is an accident-year presentation, so on the underwriting basis it builds a second, accident-basis grid for them.
+- `LiabilityComparison(ds, startYear, years) (triangle.Comparison, error)` - what the realism gate scores (it rejects `years < 1`): the accident-basis annual net paid and total incurred (incurred plus pure IBNR) triangles and earned premium of the third-party liability section alone. `liabilitySection` narrows the dataset to the third-party claims and gives each policy its `ThirdPartyPremium` as premium; the result is then built like every other aggregate view, as the monthly grid coarsened to annual. The Schedule P private passenger auto reference is a liability line with no physical damage, so own damage is not scored. It lives with the gate rather than in `Aggregates`, so a run that does not score realism (the CLI) never builds it.
 - `EvaluateRealism(ds, startYear, years, refs) (triangle.Report, error)` - a thin adapter: builds the `LiabilityComparison`, then returns `CompareToReference`. Used as a test gate (`TestDefaultPresetIsRealistic`) and by the UI.
 
 ## 12. Infrastructure layer
 
 ### 12.1 `config` - YAML mapping and preset registry
 
-`internal/infrastructure/config/config.go` maps YAML onto `lob.LineOfBusiness`. The `*Params` DTOs (`LOBParams`, `BookParams`, `ClaimsParams`, `SeverityParams`, `CloseLagParams`, `InflationParams`, `RecoveriesParams`, `RecoveryTypeParams`, `ReopeningParams`, `RunoffParams`, `ExcessChoiceParams`) mirror the domain structs field-for-field, each field carrying matching `yaml:` and `json:` tags. This means the same structs serve both YAML config loading (CLI) and the JSON request/response shape (web API). Decoding is strict: `KnownFields(true)` rejects unknown keys.
+`internal/infrastructure/config/config.go` maps YAML onto `lob.LineOfBusiness`. The `*Params` DTOs (`LOBParams`, `BookParams`, `PricingParams`, `ClaimsParams`, `SeverityParams`, `CloseLagParams`, `InflationParams`, `RecoveriesParams`, `RecoveryTypeParams`, `ReopeningParams`, `RunoffParams`, `ExcessChoiceParams`) mirror the domain structs field-for-field, each field carrying matching `yaml:` and `json:` tags. This means the same structs serve both YAML config loading (CLI) and the JSON request/response shape (web API). Decoding is strict: `KnownFields(true)` rejects unknown keys. `TestToDomainMapsEveryField` gives every config leaf a distinct value and checks it arrives in the domain field of the same Go name, so a field that is not carried across fails.
 
 - `decode(r) (LOBParams, error)` (unexported) - strict YAML decode.
 - `Load(r) (lob.LineOfBusiness, error)` - decode, `ToDomain()`, then `Validate()`.
@@ -397,7 +419,7 @@ The embedded `motor-personal.yaml` is the annotated personal-motor preset, whose
 `internal/infrastructure/csv/writer.go` writes the three dataset CSVs; `internal/infrastructure/csv/monthly.go` writes the two aggregate CSVs. All five use stable formatting so identical datasets produce byte-identical files. Every column is numeric, an ISO-8601 date, or a fixed enum, so no quoting is needed and `fmt.Sprintf` is safe.
 
 - `WriteDataset(dir, ds) error` - creates `dir` (0o755) and writes `policies.csv`, `claims.csv`, `transactions.csv`.
-- `WriteAggregates(dir, ag) error` - writes `triangles.csv` (one row per grid cell, ordered by origin month then development month, zeros included) and `exposure.csv` (one row per origin month). Money is rendered at two decimal places and exposure units at six, with a guard so a value rounding to zero never prints as `-0.00`.
+- `WriteAggregates(dir, ag) error` - creates `dir` and writes `triangles.csv` (one row per grid cell, ordered by origin month then development month, zeros included) and `exposure.csv` (one row per origin month). Origin months render as `YYYY-MM`, money at two decimal places and exposure units at six, with a guard so a value rounding to zero never prints as `-0.00`.
 - `FormatRiskFactor(r) string` - fixed 6-decimal formatting for byte stability.
 - `writeFile(dir, name, header, rows, row func(int) string)` (unexported, `writer.go`) - buffered generic writer with a deferred close that surfaces a close error only when there was no prior error; shared by both writers.
 
@@ -415,27 +437,29 @@ exposure.csv:     origin_month,premium,exposure_units,policies
 
 ### 12.4 `schedulep` - the reference reader
 
-`internal/infrastructure/schedulep/reader.go` reads the Schedule P reference companies into `triangle.ReferenceSet`s. Each company JSON carries a `ClassId`, a `PaidTriangle` and `IncurredTriangle` (each a list of `[year, [values...]]` rows), an `EarnedPremium` list of `[year, amount]` pairs, and `FutureIncurred`: the incurred development reported after the triangle's valuation date, as incremental `[year, [values...]]` rows that complete each origin year to ten ages. The file also carries `FuturePaid`, which nothing reads. Custom `UnmarshalJSON` methods on `triangleRow` and `premiumJSON` decode the positional pair encodings.
+`internal/infrastructure/schedulep/reader.go` reads the Schedule P reference companies into `triangle.ReferenceSet`s. Each company JSON carries a `PaidTriangle` and `IncurredTriangle` (each an object whose `TriangleValues` holds `[year, [values...]]` rows), an `EarnedPremium` list of `[year, amount]` pairs, and `FutureIncurred`: the incurred development reported after the triangle's valuation date, as incremental `[year, [values...]]` rows that complete each origin year to ten ages. `ClassId` is decoded but unused, and the file's other keys, such as `FuturePaid`, are not read. Custom `UnmarshalJSON` methods on `triangleRow` and `premiumJSON` decode the positional pair encodings.
 
 - `LoadFile(path)` - one company from disk; company name is the file stem.
 - `LoadFS(fsys, dir)` - every `*.json` in a directory of a filesystem, sorted by name for determinism. This is what `runUI` uses with the embedded `refdata.Files`.
 - `LoadDir(dir)` - the on-disk variant over `os.DirFS`, rewriting the "no reference files" sentinel to include the directory.
 - `loadDirFS`, `parse`, `toTriangle` (unexported) - glob and sort names, parse each file (sorting premium and triangle rows by year), and require contiguous origin years in each triangle.
-- `develop(tri, future)` (unexported) - copies the cumulative triangle and appends the running sum of each origin year's later increments, giving `DevelopedIncurred`. No later development yields the zero triangle; an origin year outside the triangle is an error.
+- `develop(tri, future)` (unexported) - copies the cumulative triangle and appends the running sum of each origin year's later increments, giving `DevelopedIncurred`. No later development yields the zero triangle; an origin year outside the triangle, or one with no valued development to extend, is an error.
 
 ### 12.5 `web` - the server and view models
 
-`internal/infrastructure/web/server.go` serves the UI: an embedded static page (`//go:embed static`, holding `app.js`, `index.html`, `style.css`) plus a small JSON API. The server is stateless apart from the loaded reference sets; the latest run lives in the browser.
+`internal/infrastructure/web/server.go` serves the UI: an embedded static page (`//go:embed static`, holding `app.js`, `index.html`, `style.css`) plus a small JSON API. Apart from the loaded reference sets and the run slot the server is stateless; the latest run lives in the browser.
 
-- `Server{refs, mux}` and `NewServer(refs)` register routes: `GET /api/lobs`, `GET /api/lobs/{id}/preset`, `GET /api/limits`, `GET /api/fields`, `POST /api/generate`, and `GET /` (a file server over the embedded `static` subtree).
+- `Server{refs, mux, runSlot, inFlight}` and `NewServer(refs)` register routes: `GET /api/lobs`, `GET /api/lobs/{id}/preset`, `GET /api/limits`, `GET /api/fields`, `POST /api/generate`, and `GET /` (a file server over the embedded `static` subtree).
 - `ServeHTTP` is a security front gate before dispatch (the server is loopback-only): it rejects non-local `Host` (403 "forbidden host") and, when an `Origin` header is present, non-local origins (403 "forbidden origin"), guarding against DNS rebinding and cross-site use. `localHost` accepts `127.0.0.1`, `localhost`, `::1` (with optional port); `localOrigin` parses the origin and checks its host.
-- `handleLOBs` returns the preset list as `lobInfoJSON{id, name}`. `handlePreset` returns the raw `LOBParams` for a preset id (404 on unknown). `handleGenerate` caps the body at 1 MiB, decodes a strict `generateRequest{seed string, start_year, years, initial_book_size, out_dir, origin_basis, params}` (an empty `origin_basis` defaults to accident), parses the seed, requires and absolutises `out_dir`, runs `GenerateDataset` and `WriteDataset`, then `application.Aggregate` and `WriteAggregates`, then `application.EvaluateRealism`, and returns `buildResponse` (validation and domain errors map to 400, CSV write and aggregation errors to 500).
+- `handleLOBs` returns the preset list as `lobInfoJSON{id, name}`. `handlePreset` returns the raw `LOBParams` for a preset id (404 on unknown). `handleLimits` returns the run-size caps as `{max_years, max_initial_book_size, max_projected_policies}`. `handleGenerate` caps the body at 1 MiB, decodes a strict `generateRequest{seed string, start_year, years, initial_book_size, out_dir, origin_basis, params}` (an empty `origin_basis` defaults to accident), parses the seed, requires and absolutises `out_dir`, validates the basis, checks the run size, takes the run slot, runs `GenerateDataset` with the request's context and `WriteDataset`, then `application.Aggregate` and `WriteAggregates`, then `application.EvaluateRealism`, and returns `buildResponse`. Request, validation and domain errors and an oversized run map to 400, a full run queue to 409, a run cancelled while queued or running to 499 (`statusClientClosedRequest`, nginx's client-closed code), and CSV write, aggregation and realism errors to 500.
+- Run-size caps: `checkRunSize` rejects more than `maxYears` (100) years, an initial book above `maxInitialBookSize` (1,000,000), and a run whose `policy.ProjectedSize` exceeds `maxProjectedPolicies` (2,000,000), the cap that catches growth compounding. They guard against a mistyped form, not an attacker, and the CLI has none.
+- Serialised runs: `runSlot` is a one-deep semaphore, so one run generates at a time and two runs cannot interleave writes into the same `out_dir`. `acquireRun` waits for it, cancellably through the request context, and turns a request away with `errTooManyRuns` when more than `maxRunsInFlight` (4) are running or queued; `releaseRun` frees the slot.
 - `handleFields` serves `formFields` (`fields.go`): the parameter form's metadata, one `formField{path, label, tip}` per numeric parameter in `fieldGroup`s in display order. `app.js` builds the form from it, so labels and tips live in one place; `TestFormFieldsCoverEveryParameter` requires exactly one entry per numeric `config.LOBParams` leaf (the excess choices table is built separately).
-- `writeJSON`, `writeError` - JSON response helpers.
+- `writeJSON`, `writeError` - JSON response helpers. `writeJSON` marshals to a buffer first, so an encoding failure becomes a 500 rather than a half-written body.
 
 `internal/infrastructure/web/viewmodel.go` builds the `/api/generate` response DTOs. `buildResponse(req, ds, ag, realism)` assembles a `generateResponseJSON{run, summary, triangles, distributions, realism}`: `run.origin_basis` echoes `ag.Basis`, the triangles are `ag.Annual`'s paid, net paid and incurred for the whole book (already coarsened to 10 development years), the realism report (computed by `handleGenerate` via `EvaluateRealism`, so a grid error maps to a 500) scores the liability section only (the Realism tab says so under its banner), and the summary and distributions are delegated to the application layer, mapping each into JSON view models. Notable serialisation choices: `LossRatio` and per-age factors are pointers so they serialise as `null` when undefined or `NaN`; the `finite` helper replaces `NaN`/`Inf` band numbers with 0 so the response stays valid JSON.
 
-The front end (`static/index.html`, `static/app.js`, `static/style.css`) is a single-page app: a sidebar form (line-of-business select, run flags including an origin-basis select, and an editable parameter panel built from `/api/fields` and prefilled from the preset) posts to `/api/generate` and renders four tabs - Summary, Triangles (with a Paid gross / Paid net / Incurred toggle and age-to-age factors), Distributions, and Realism. The tabs are unchanged: they read the annual triangles, not the monthly grid, which has no browser view.
+The front end (`static/index.html`, `static/app.js`, `static/style.css`) is a single-page app: a sidebar form (line-of-business select, run flags including an origin-basis select, and an editable parameter panel built from `/api/fields` and prefilled from the preset) posts to `/api/generate` and renders four tabs - Summary, Triangles (with a Paid gross / Paid net / Incurred toggle and age-to-age factors), Distributions, and Realism. The Triangles tab reads the annual triangles; the monthly grid has no browser view. While a run is going the page counts its elapsed seconds and offers a Cancel button that aborts the request through an `AbortController`; the previous run's results stay on screen, dimmed under a note, until the new ones arrive. A reset button restores the preset's values, the excess choices are an editable table with add and remove buttons, and the years and initial book size inputs take their `max` from `/api/limits`.
 
 ### 12.6 `data/reference/refdata.go`
 
@@ -449,21 +473,21 @@ A single verb-first binary: `claimsgen <command> [flags]`.
 
 - `main()` calls `os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))`.
 - `run(args, stdout, stderr) int` dispatches to `generate` or `ui`; anything else (or no args) prints the usage text to stderr and returns exit code 2.
-- `runGenerate` parses `--config`, `--seed` (default 1), `--out` (default `output`), `--start-year` (default 1998), `--years` (default 10), `--initial-book-size` (default 20000), `--origin-basis` (default `accident`, validated against `triangle.OriginBasis`); loads the embedded preset (or a YAML file via `--config`), runs `GenerateDataset(random.NewSource(seed), ...)`, writes the three dataset CSVs, runs `application.Aggregate` on the chosen basis, writes `triangles.csv` and `exposure.csv`, and prints a one-line summary including the triangle and exposure row counts. Config errors and generation/write errors return exit code 1; flag-parse errors return 2.
-- `runUI` parses `--port` (default 8080), loads the embedded reference data, binds a loopback listener on `127.0.0.1:<port>`, prints the URL, and serves `web.NewServer(refs)`.
+- `runGenerate` parses `--config`, `--seed` (default 1), `--out` (default `output`), `--start-year` (default 1998), `--years` (default 10), `--initial-book-size` (default 20000), `--origin-basis` (default `accident`, validated against `triangle.OriginBasis` before the config loads); loads the embedded preset (or a YAML file via `--config`), runs `GenerateDataset(context.Background(), random.NewSource(seed), ...)`, writes the three dataset CSVs, runs `application.Aggregate` on the chosen basis, writes `triangles.csv` and `exposure.csv`, and prints a one-line summary including the triangle and exposure row counts. An invalid origin basis, config errors, and generation, aggregation or write errors return exit code 1; flag-parse errors return 2.
+- `runUI` parses `--port` (default 8080), loads the embedded reference data, binds a loopback listener on `127.0.0.1:<port>` (a listen failure suggests `--port`), prints the URL, and serves `web.NewServer(refs)`. Reference-data, listen and serve errors return exit code 1.
 
 ## 14. Key invariants and deliberate simplifications
 
 Invariants worth remembering:
 
-- **Determinism.** Same seed plus same parameters produce byte-identical CSVs. Every independent decision draws from its own labelled sub-stream, and draw counts are kept constant across knob toggles, so turning a feature on or off never reshuffles unrelated draws.
+- **Determinism.** Same seed plus same parameters produce byte-identical CSVs. Every independent decision draws from its own labelled sub-stream keyed by entity ID, so turning a feature on or off never reshuffles unrelated draws; section 4.3 covers the draw-count conventions and their exceptions. The golden tests in `internal/application/golden_test.go` pin it: `TestGoldenCSVBytes`, `TestGoldenAggregateCSVBytes` and `TestGoldenAnnualTriangles` hash the dataset CSVs, the aggregate CSVs, and the annual triangles the realism gate scores.
 - **Case releases to zero.** Every runoff episode ends with the outstanding case revised to exactly zero on the close date, and each payment fully releases its own case, so outstanding case is always the running sum of `ESTIMATE` amounts and is never negative.
 - **Recoveries stay below gross paid.** A claim's cumulative recovered is strictly less than its gross paid (by at least one cent), and recovery rows are the only transactions dated after the final close.
-- **All claims close.** There is no valuation date; every claim runs to closure, gross paid equals the ultimate (zero for a never-reopened nil claim).
+- **All claims close.** There is no valuation date; every claim runs to closure with its case at zero.
 - **Paid never exceeds the cover.** Gross paid is exactly `Ultimate + ReopenUltimate` (just `ReopenUltimate` for a nil claim), and for own damage that never exceeds sum insured minus excess.
 - **The ledger is checked as a state machine.** `internal/application/invariants_test.go` validates the full ledger: referential integrity, date ordering, case never negative, zero at close, nil and reopen sequencing, recovery bounds.
-- **Distribution parameterizations.** Mean-one lognormal via the -sigma^2/2 adjustment, mean-one gamma via shape 1/sigma^2, the case adequacy mu adjustment, Beta mean/concentration form, and Pareto alpha > 1 for a finite mean.
-- **Loopback-only security posture.** 127.0.0.1 bind, Host and Origin checks against DNS rebinding and CSRF, `MaxBytesReader`, `DisallowUnknownFields` on JSON and `KnownFields(true)` on YAML, an embedded `fs.Sub` static tree with no path traversal, and a front end that builds DOM only via `textContent` and `createElementNS`, so there is no XSS sink. `docs/todo.md` lists what must change before the UI is served beyond 127.0.0.1.
+- **Distribution parameterizations.** Mean-one lognormal via the -sigma^2/2 adjustment (the opening case divides one by `CaseAdequacyMean`), mean-one gamma via shape 1/sigma^2, Beta mean/concentration form, and Pareto alpha > 1 for a finite mean.
+- **Loopback-only security posture.** 127.0.0.1 bind, Host and Origin checks against DNS rebinding and CSRF, `MaxBytesReader`, `DisallowUnknownFields` on JSON and `KnownFields(true)` on YAML, an embedded `fs.Sub` static tree with no path traversal, and a front end that builds DOM with `createElement`, `createElementNS` and `textContent` and never assigns HTML, so there is no XSS sink. The UI's run-size caps and single run slot guard against a mistyped form, not an attacker. `docs/todo.md` lists what must change before the UI is served beyond 127.0.0.1.
 - **The CSV output has no free-text column.** Every field is numeric, an ISO-8601 date or a fixed enum, which is why plain `fmt.Sprintf` is safe. If a claim description or class name is ever added, switch to `encoding/csv` with formula-lead-character escaping in the same change.
 - **No secrets, no PII.** The reference data is public NAIC Schedule P aggregate triangles keyed by company code, and the generated output is fully synthetic.
 

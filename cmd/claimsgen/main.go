@@ -1,5 +1,6 @@
 // Command claimsgen generates fully synthetic insurance claims data -
-// policies, claims and transactions - for use in reserving demos and tests.
+// policies, claims and transactions, plus the monthly triangles and exposure
+// aggregated from them - for use in reserving demos and tests.
 package main
 
 import (
@@ -25,7 +26,8 @@ import (
 const usage = `usage: claimsgen <command> [flags]
 
 Commands:
-  generate    generate policies.csv, claims.csv and transactions.csv
+  generate    generate policies.csv, claims.csv, transactions.csv,
+              triangles.csv and exposure.csv
   ui          serve the browser UI on localhost
 
 generate flags:

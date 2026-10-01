@@ -38,7 +38,7 @@ func (r GenerateRequest) validate() error {
 	return r.LOB.Validate()
 }
 
-// GenerateDataset runs the three simulation stages. Each stage draws from
+// GenerateDataset runs the seven simulation stages. Each stage draws from
 // its own labelled sub-stream of the given source, so results only depend
 // on the master seed and the request - never on ctx, which only decides how
 // early an abandoned run stops.
