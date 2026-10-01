@@ -4,6 +4,7 @@ import (
 	"math"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/domain/policy"
@@ -59,15 +60,15 @@ func TestBookSizeFollowsRecursionWithoutVolatility(t *testing.T) {
 	sim := policy.NewBookSimulator(p, pricingParams())
 	book := sim.Simulate(random.NewSource(1), 1998, 3, 100)
 	counts := countByStartYear(book)
-	// 100, round(100*1.05)=105, round(105*1.05)=110
-	want := map[int]int{1998: 100, 1999: 105, 2000: 110}
+	// Warm-up round(100/1.05)=95, then 100, round(100*1.05)=105, round(105*1.05)=110
+	want := map[int]int{1997: 95, 1998: 100, 1999: 105, 2000: 110}
 	for year, n := range want {
 		if counts[year] != n {
 			t.Errorf("year %d count = %d, want %d", year, counts[year], n)
 		}
 	}
-	if len(book) != 315 {
-		t.Errorf("total policies = %d, want 315", len(book))
+	if len(book) != 410 {
+		t.Errorf("total policies = %d, want 410", len(book))
 	}
 }
 
@@ -110,8 +111,8 @@ func TestPolicyFieldConsistency(t *testing.T) {
 	book := sim.Simulate(random.NewSource(2), 1998, 3, 500)
 	validExcess := map[float64]bool{0: true, 100: true, 300: true, 500: true, 1000: true}
 	for _, p := range book {
-		if p.CoverStart.Year() < 1998 || p.CoverStart.Year() > 2000 {
-			t.Fatalf("cover start %s outside simulated years", p.CoverStart)
+		if p.CoverStart.Year() < 1997 || p.CoverStart.Year() > 2000 {
+			t.Fatalf("cover start %s outside the simulated years and the warm-up year", p.CoverStart)
 		}
 		if got := p.CoverStart.AddDays(364); got != p.CoverEnd {
 			t.Fatalf("cover end %s, want %s (12-month term)", p.CoverEnd, got)
@@ -147,9 +148,10 @@ func TestSumInsuredMedianInflatesAcrossYears(t *testing.T) {
 	var y1, y2 []float64
 	for _, pol := range book {
 		si := pol.SumInsured.Dollars()
-		if pol.CoverStart.Year() == 1998 {
+		switch pol.CoverStart.Year() {
+		case 1998:
 			y1 = append(y1, si)
-		} else {
+		case 1999:
 			y2 = append(y2, si)
 		}
 	}
@@ -211,14 +213,20 @@ func TestSimulateIsDeterministic(t *testing.T) {
 
 func TestProjectedSizeMatchesTheGrowthRule(t *testing.T) {
 	book := params() // growth 1.05
-	// 100 + 105 + 110.25, before rounding.
-	if got, want := policy.ProjectedSize(book, 3, 100), 315.25; math.Abs(got-want) > 1e-9 {
+	// Warm-up round(100/1.05)=95, then 100 + 105 + 110.25, before rounding.
+	if got, want := policy.ProjectedSize(book, 3, 100), 95+315.25; math.Abs(got-want) > 1e-9 {
 		t.Fatalf("ProjectedSize = %v, want %v", got, want)
 	}
-	// A shrinking book floors at one policy a year, as Simulate does.
-	book.GrowthFactor = 0.01
-	if got, want := policy.ProjectedSize(book, 4, 10), 10.0+1+1+1; got != want {
+	// A shrinking book floors at one policy a year, as Simulate does; its
+	// warm-up year is the first year with the shrink undone.
+	book.GrowthFactor = 0.5
+	if got, want := policy.ProjectedSize(book, 4, 2), 4.0+2+1+1+1; got != want {
 		t.Fatalf("shrinking ProjectedSize = %v, want %v", got, want)
+	}
+	// An invalid growth factor, seen before validation, takes nothing off.
+	book.GrowthFactor = 0
+	if got := policy.ProjectedSize(book, 1, 10); got != 20 {
+		t.Fatalf("zero-growth ProjectedSize = %v, want 20", got)
 	}
 }
 
@@ -280,5 +288,27 @@ func TestAdequacyVolatilityPricesEachYearToItsOwnTarget(t *testing.T) {
 		if lr := 1 / f; math.Abs(lr/pp.TargetLossRatio-1) > 0.5 {
 			t.Errorf("year %d priced to loss ratio %.3f, implausibly far from target %.2f", year, lr, pp.TargetLossRatio)
 		}
+	}
+}
+
+// MR-6: the book carries a warm-up underwriting year before the window, so
+// policies are in force from the window's first day. The first window year
+// keeps the initial size.
+func TestSimulateWritesAWarmUpYear(t *testing.T) {
+	p := params()
+	book := policy.NewBookSimulator(p, pricingParams()).Simulate(random.NewSource(7), 1998, 2, 1000)
+	counts := countByStartYear(book)
+	if counts[1997] != 952 || counts[1998] != 1000 { // round(1000/1.05) = 952
+		t.Fatalf("policies by start year %v, want 952 in the 1997 warm-up and 1000 in 1998", counts)
+	}
+	windowStart := shared.NewDate(1998, time.January, 1)
+	inForce := 0
+	for _, pol := range book {
+		if pol.CoverStart.Before(windowStart) && !pol.CoverEnd.Before(windowStart) {
+			inForce++
+		}
+	}
+	if inForce < 900 {
+		t.Fatalf("%d policies in force on the window's first day, want nearly all of the warm-up year", inForce)
 	}
 }

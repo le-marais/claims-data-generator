@@ -197,7 +197,7 @@ This file prices premium deterministically (no randomness) from the assumed loss
 
 `BookSimulator` holds `book lob.BookParams` and `pricing lob.PricingParams` (the latter drives premium pricing, independent of the claims model). `NewBookSimulator(book, pricing)` constructs it.
 
-- `Simulate(src, startYear, years, initialSize int) []Policy` - produces the whole book. It splits a dedicated `book-size` stream for year-size noise and a `pricing-adequacy` stream for pricing noise, starts `size = initialSize` and a global `id = 1`, then for each year `y`:
+- `Simulate(src, startYear, years, initialSize int) []Policy` - produces the whole book. It splits a dedicated `book-size` stream for year-size noise and a `pricing-adequacy` stream for pricing noise and starts a global `id = 1`. It first writes a warm-up underwriting year (`y = -1`, `startYear-1`) of `warmUpSize = round(initialSize / GrowthFactor)` policies, with no size noise, so the window opens with a full book in force rather than one ramping up from nothing; the claim stage keeps only their in-window occurrences. Then `size = initialSize` for `y = 0`, and for each year `y`:
   - For `y > 0`, applies growth with noise: `size = round(size * GrowthFactor * MeanOneLogNormal(sizeSrc, SizeVolatility))`, clamped to a minimum of 1. So the book trends upward but individual years can shrink.
   - Draws the year's target loss ratio `TargetLossRatio * MeanOneLogNormal(adequacySrc, AdequacyVolatility)`; at a volatility of 0 this makes no draw. Every policy written in the year is priced to it, so cohorts scatter around the target while the expected loss ratio stays on it, and the knob moves premium only.
   - Computes the drifted median sum insured `SumInsuredMedian*SumInsuredInflation^y`, and the sum-insured drift `SumInsuredInflation^y`.
@@ -213,23 +213,24 @@ This file prices premium deterministically (no randomness) from the assumed loss
 
 `Claim` fields: `ID`, `PolicyID`, `OccurrenceDate`, `ReportDate`, `CloseDate` (the final close after any reopen), `Ultimate` (the true cost: ground-up loss minus excess, capped at the cover for own damage; never written to CSV), `CoverLimit` (sum insured minus excess for own damage, zero meaning unlimited for third party; never written to CSV), `InitialEstimate` (the opening case, set to `Ultimate` here and replaced by the case-estimate stage), `RiskFactor` (carried from the policy), `Nil` (closes without payment; carried to runoff, never written to CSV), `OwnDamage` (drives recovery eligibility; never written to CSV), and the reopen fields `FirstCloseDate`, `ReopenDate`, `ReopenUltimate` (the episode's true additional cost) and `ReopenEstimate` (the case it re-opens at) - all zero when the claim never reopens. `(c Claim) Reopened() bool` is `ReopenDate != zero`.
 
-`ClaimSimulator` holds `params`, an `InflationIndex`, `sumInsuredInflation`, `startYear`, and an exclusive `windowEnd`. It is built fluently:
+`ClaimSimulator` holds `params`, an `InflationIndex`, `sumInsuredInflation`, `startYear`, a `windowStart`, and an exclusive `windowEnd`. It is built fluently:
 
 - `NewClaimSimulator(p lob.ClaimParams) *ClaimSimulator` - sets only params (no inflation, nominal sum insured, no window).
 - `WithInflation(x InflationIndex)` - sets the occurrence-date inflation index (the zero value is the identity).
 - `WithBaseYear(sumInsuredInflation float64, startYear int)` - lets own-damage severity be expressed in base-year sum-insured terms.
-- `WithWindow(startYear, years int)` - sets `windowEnd = Jan 1 of startYear+years` (exclusive), constraining occurrences to `[startYear, startYear+years)` so the trailing underwriting year does not spill a partial accident year into claims.csv.
+- `WithWindow(startYear, years int)` - sets `windowStart = Jan 1 of startYear` and `windowEnd = Jan 1 of startYear+years` (exclusive), constraining occurrences to `[startYear, startYear+years)` so the trailing underwriting year does not spill a partial accident year into claims.csv and the warm-up underwriting year adds no claims before the window.
 
 Helpers:
 
 - `baseSumInsured(pol) float64` - deflates the drifted sum insured to base-year dollars: `SumInsured / sumInsuredInflation^(coverYear-startYear)`, or the nominal value when the base-year knob is unset (`<= 0`).
-- `exposedFraction(pol) float64` - the share of a policy's cover days lying inside the window, used to pro-rate frequency. Returns 1 when windowing is off or cover ends before `windowEnd`; otherwise the days from `CoverStart` up to the exclusive `windowEnd` over the 365 cover days (`CoverStart` to `CoverEnd` inclusive), the same span `simulateClaim` draws occurrences from.
+- `occurrenceSpan(pol) (first Date, days int)` - the part of the cover claims can occur in: the cover (`CoverStart` to `CoverEnd` inclusive) clipped to `[windowStart, windowEnd)` when a window is set. `days` is zero or negative when the cover misses the window.
+- `exposedFraction(pol) float64` - `occurrenceSpan` days over the 365 cover days, floored at 0, used to pro-rate frequency: 1 when windowing is off or the window holds the whole cover.
 
 Core generation:
 
 - `Simulate(src, book []policy.Policy) []Claim` - for each policy, splits a `claims-policy-<id>` stream, draws a Poisson count with mean `BaseFrequency * RiskFactor * exposedFraction(pol)`, and calls `simulateClaim` that many times (appending only reportable ones). It then stable-sorts by report date, then policy ID, then occurrence date - resembling a claims-system registration order - and assigns 1-based sequential IDs after sorting.
 - `simulateClaim(src, pol) (Claim, bool)` - draws one claim in a fixed order so draw counts stay constant:
-  1. Occurrence date: uniform over the cover span. When windowing caps the span at the exclusive `windowEnd`, the usual `span++` (to include the final cover day) is dropped so the exclusive boundary is honoured.
+  1. Occurrence date: uniform over `occurrenceSpan(pol)`, one uniform draw whether or not the window clips the cover.
   2. Report lag: lognormal `(log(ReportLagMedian), ReportLagSigma)`, rounded to days.
   3. Ground-up loss: `drawGroundUpLoss`.
   4. Claims inflation: multiply the loss by `inflation.For(occurrenceDate)` (applies to both severity components).
@@ -315,7 +316,7 @@ Cells are **incremental**: a cell is the movement in that development month. Inc
 
 ### 10.3 `exposure.go` - exposure by month and year
 
-- `ExposureByMonth(policies, startMonth, months, basis) []MonthExposure` - premium, exposure units in policy-years (`days / 365.25`) and a policy count per origin month, earned day pro-rata on the accident basis and landed whole at inception on the underwriting basis. The count follows the basis too: in force on the accident basis, where a policy counts in every month it covers so the column does not sum to the book's policy count, and inceptions on the underwriting basis, where it does. Exposure outside the window is not counted, so the accident basis thins at both ends while the underwriting basis books a whole policy year at an inception month whose claims are cut off at the window end.
+- `ExposureByMonth(policies, startMonth, months, basis) []MonthExposure` - premium, exposure units in policy-years (`days / 365.25`) and a policy count per origin month, earned day pro-rata on the accident basis and landed whole at inception on the underwriting basis. The count follows the basis too: in force on the accident basis, where a policy counts in every month it covers so the column does not sum to the book's policy count, and inceptions on the underwriting basis, where it does apart from the warm-up year. Exposure outside the window is not counted. Because the book writes a warm-up underwriting year, the accident basis carries a full book in force from the first month and does not thin at either end; the underwriting basis books a whole policy year at an inception month whose claims are cut off at the window end, and does not count warm-up policies, which incept before the window.
 - `EarnedPremiumByYear(policies, startYear, years) []float64` - the monthly premiums rolled up per calendar year, so the two views agree by construction.
 
 ### 10.4 `triangle.go` - the cumulative triangle and its factors

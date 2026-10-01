@@ -69,7 +69,8 @@ type ClaimSimulator struct {
 	inflation           InflationIndex
 	sumInsuredInflation float64
 	startYear           int
-	windowEnd           shared.Date // zero value means no windowing
+	windowStart         shared.Date // zero value means no windowing
+	windowEnd           shared.Date // exclusive
 }
 
 // NewClaimSimulator builds a claim simulator from the claim parameters.
@@ -110,24 +111,39 @@ func (s *ClaimSimulator) baseSumInsured(pol policy.Policy) float64 {
 // each policy's frequency is pro-rated by its in-window exposed fraction of the
 // cover term, and occurrences are drawn only over the in-window portion of the
 // cover. This stops the trailing underwriting year from spilling a partial,
-// out-of-window accident year into claims.csv (MF-2). Unset leaves full-term
-// behaviour.
+// out-of-window accident year into claims.csv (MF-2), and the warm-up
+// underwriting year before the window from adding claims before it (MR-6).
+// Unset leaves full-term behaviour.
 func (s *ClaimSimulator) WithWindow(startYear, years int) *ClaimSimulator {
+	s.windowStart = shared.NewDate(startYear, time.January, 1)
 	s.windowEnd = shared.NewDate(startYear+years, time.January, 1)
 	return s
 }
 
-// exposedFraction is the share of a policy's cover days that lie inside the
-// window; 1 when the window is unset or the cover ends before window end.
-// Cover runs from CoverStart to CoverEnd inclusive, and the window end is
-// exclusive, matching the occurrence span simulateClaim draws from.
-func (s *ClaimSimulator) exposedFraction(pol policy.Policy) float64 {
-	if s.windowEnd.IsZero() || pol.CoverEnd.Before(s.windowEnd) {
-		return 1
+// occurrenceSpan is the part of a policy's cover that claims can occur in:
+// its first day and its number of days. Cover runs from CoverStart to
+// CoverEnd inclusive; the window, when set, clips it to [windowStart,
+// windowEnd). days is zero or negative when the cover misses the window.
+func (s *ClaimSimulator) occurrenceSpan(pol policy.Policy) (first shared.Date, days int) {
+	first, end := pol.CoverStart, pol.CoverEnd.AddDays(1) // end is exclusive
+	if !s.windowStart.IsZero() {
+		if first.Before(s.windowStart) {
+			first = s.windowStart
+		}
+		if s.windowEnd.Before(end) {
+			end = s.windowEnd
+		}
 	}
+	return first, shared.DaysBetween(first, end)
+}
+
+// exposedFraction is the share of a policy's cover days that lie inside the
+// window: 1 when the window is unset or holds the whole cover, 0 when the
+// cover misses it.
+func (s *ClaimSimulator) exposedFraction(pol policy.Policy) float64 {
 	coverDays := shared.DaysBetween(pol.CoverStart, pol.CoverEnd) + 1
-	inWindow := shared.DaysBetween(pol.CoverStart, s.windowEnd)
-	return math.Max(0, float64(inWindow)) / float64(coverDays)
+	_, days := s.occurrenceSpan(pol)
+	return math.Max(0, float64(days)) / float64(coverDays)
 }
 
 // Simulate draws claim events for every policy. Claims are returned sorted
@@ -164,16 +180,8 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 // the claim's true cost (Ultimate); the case estimate is a separate, later
 // view of it.
 func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Policy) (Claim, bool) {
-	end := pol.CoverEnd
-	capToWindow := !s.windowEnd.IsZero() && !end.Before(s.windowEnd)
-	if capToWindow {
-		end = s.windowEnd
-	}
-	span := shared.DaysBetween(pol.CoverStart, end)
-	if !capToWindow {
-		span++ // include the final cover day, as the pre-window model did
-	}
-	occurrence := pol.CoverStart.AddDays(int(src.Uniform() * float64(span)))
+	first, span := s.occurrenceSpan(pol)
+	occurrence := first.AddDays(int(src.Uniform() * float64(span)))
 
 	lag := src.LogNormal(math.Log(s.params.ReportLagMedian), s.params.ReportLagSigma)
 	report := occurrence.AddDays(int(math.Round(lag)))
