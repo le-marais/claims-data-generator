@@ -178,18 +178,16 @@ From occurrence to final close, with the optional reopen. A claim's dates, cost 
 ```mermaid
 stateDiagram-v2
     state "Occurred, not yet reported<br/>(pure IBNR)" as Unreported
-    state "Open, first episode" as FirstEpisode
+    state "Open, first episode<br/>revisions and interim payments" as FirstEpisode
     state reopens <<choice>>
-    state "Reopened, second episode" as SecondEpisode
+    state "Reopened, second episode<br/>revisions and interim payments" as SecondEpisode
     state "Closed for good" as Settled
     state "Recoveries received" as Recovered
     [*] --> Unreported: occurrence date
     Unreported --> FirstEpisode: report date, the case opens
-    FirstEpisode --> FirstEpisode: revisions, interim payments
     FirstEpisode --> reopens: close date, the case released to zero
     reopens --> SecondEpisode: reopening.probability, after a lognormal lag
     reopens --> Settled: otherwise
-    SecondEpisode --> SecondEpisode: revisions, interim payments
     SecondEpisode --> Settled: second close date, the case released to zero
     Settled --> Recovered: own damage only, after a lognormal lag
     Settled --> [*]
