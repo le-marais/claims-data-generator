@@ -46,7 +46,7 @@ The `internal/domain/shared.RandomSource` interface is the seam between the pure
 
 ## 3. End-to-end data flow
 
-`application.GenerateDataset` is the composition root. It runs six ordered stages, each drawing from its own labelled random sub-stream so that toggling one stage never reshuffles another's draws:
+`application.GenerateDataset` is the composition root. It runs seven ordered stages, each drawing from its own labelled random sub-stream so that toggling one stage never reshuffles another's draws:
 
 ```
 seed --> random.NewSource
@@ -55,6 +55,7 @@ seed --> random.NewSource
    src.Split("inflation")  --> claim.NewInflationIndex            --> InflationIndex
    src.Split("claims")     --> claim.ClaimSimulator.Simulate      --> []Claim   (needs book, inflation, base year, window)
    src.Split("reopening")  --> claim.ReopenSimulator.Apply        --> []Claim   (mutates claims in place)
+   src.Split("case-estimate") --> transaction.CaseEstimator.Apply --> []Claim   (sets opening cases in place)
    src.Split("runoff")     --> transaction.RunoffSimulator.Simulate --> []Transaction  (needs claims)
    src.Split("recovery")   --> transaction.RecoverySimulator.Apply --> []Transaction  (needs claims + txs)
              |
@@ -101,7 +102,7 @@ type RandomSource interface {
 
 Two conventions keep parameter toggles from disturbing unrelated draws:
 
-1. **Labelled sub-streams keyed by entity ID.** Each policy draws from `src.Split("policy-<id>")`, each claim from `claims-policy-<id>`, `reopen-claim-<id>`, `runoff-claim-<id>`, `recovery-claim-<id>`, and recovery types further split by `SALVAGE`/`SUBROGATION`. Keying on the global sequential ID makes an entity's draws stable regardless of what other entities do.
+1. **Labelled sub-streams keyed by entity ID.** Each policy draws from `src.Split("policy-<id>")`, each claim from `claims-policy-<id>`, `reopen-claim-<id>`, `case-estimate-claim-<id>`, `runoff-claim-<id>`, `recovery-claim-<id>`, and recovery types further split by `SALVAGE`/`SUBROGATION`. Keying on the global sequential ID makes an entity's draws stable regardless of what other entities do.
 2. **Constant draw counts.** `simulateClaim` always draws the nil `Bernoulli`, even when `NilProbability` is 0 (`Bernoulli(0)` still consumes one uniform and returns false), so turning nil claims off does not reshuffle later draws. `shared.MeanOneLogNormal` is the deliberate mirror image: with `sigma <= 0` it returns 1 without drawing, so a zero-volatility knob does not consume a draw where none is conceptually needed.
 
 The one intentional exception is `ReopenSimulator.Apply`, which short-circuits entirely when reopen probability is `<= 0` (it takes no draws at all in that case).
@@ -133,7 +134,7 @@ The one intentional exception is `ReopenSimulator.Apply`, which short-circuits e
 
 ### 5.3 `distribution.go` - mean-one lognormal noise
 
-- `MeanOneLogNormal(src RandomSource, sigma float64) float64` - a lognormal with mean exactly 1. With `sigma <= 0` it returns 1 with no draw (preserving the shift-free contract); otherwise `src.LogNormal(-sigma*sigma/2, sigma)`, where the `-sigma^2/2` offset centres the multiplicative noise on 1. This is the standard multiplicative noise used for book size, inflation, reopen estimates, and runoff revisions.
+- `MeanOneLogNormal(src RandomSource, sigma float64) float64` - a lognormal with mean exactly 1. With `sigma <= 0` it returns 1 with no draw (preserving the shift-free contract); otherwise `src.LogNormal(-sigma*sigma/2, sigma)`, where the `-sigma^2/2` offset centres the multiplicative noise on 1. This is the standard multiplicative noise used for book size, inflation, reopen costs, opening case estimates, and runoff revisions.
 
 ### 5.4 `random.go`
 
@@ -149,15 +150,15 @@ The `RandomSource` interface, covered in section 4.1.
 
 - **`BookParams`** (step 1): `GrowthFactor` (year-on-year policy-count trend), `SizeVolatility` (sigma of mean-1 size noise), `Spread` (heterogeneity knob reused for both the sum-insured lognormal sigma and the risk-factor coefficient of variation), `SumInsuredMedian`, `SumInsuredInflation` (annual median drift), `ExcessChoices []ExcessChoice`.
 - **`ExcessChoice`**: `Value` (deductible dollars), `Weight` (unnormalised selection weight).
-- **`PricingParams`** (premium): the insurer's assumed loss cost, independent of the claims model. `TargetLossRatio` (premium = assumed expected loss / this), `BaseFrequency`, `Severity SeverityParams`, `ReopenProbability`, `ReopenEstimateFactor`, `InflationMean` (all assumed values). Carries the `ExpectedPolicyLoss` method (in `expectedloss.go`). Defaulting these to the true claims values prices the book perfectly; deviating them models underpricing or adverse experience.
+- **`PricingParams`** (premium): the insurer's assumed loss cost, independent of the claims model. `TargetLossRatio` (premium = assumed expected loss / this), `BaseFrequency`, `Severity SeverityParams`, `ReopenProbability`, `ReopenEstimateFactor`, `InflationMean` (all assumed values). Carries the `ExpectedPolicyLoss` and `ExpectedSectionLoss` methods (in `expectedloss.go`). Defaulting these to the true claims values prices the book perfectly; deviating them models underpricing or adverse experience.
 - **`ClaimParams`** (step 2): `BaseFrequency`, `ReportLagMedian`, `ReportLagSigma`, `Severity SeverityParams`, `CloseLag CloseLagParams`, `Inflation InflationParams`, `NilProbability`, `Recoveries RecoveryParams`, `Reopening ReopeningParams`.
 - **`SeverityParams`**: `ThirdPartyWeight` (probability a claim is third party), `OwnDamageMedianFraction` (own-damage median as a fraction of sum insured), `OwnDamageSigma`, `ThirdPartyScale` (Pareto minimum), `ThirdPartyAlpha` (Pareto tail index, must exceed 1 for a finite mean).
 - **`CloseLagParams`**: `Shape`, `MeanDays` (own-damage gamma base), `SizeThreshold`/`SizeMultiplier` (stretch the mean lag for large own-damage claims), `RiskLoading` (exponent applied to the risk factor), `ThirdPartyShape`/`ThirdPartyMeanDays` (the slower bodily-injury regime, not size-stretched).
 - **`InflationParams`**: `Mean` (average annual claims-inflation factor), `Volatility` (sigma of mean-1 noise per year).
 - **`RecoveryParams`**: `Salvage`, `Subrogation`, each a `RecoveryTypeParams`.
 - **`RecoveryTypeParams`**: `Probability` (0 switches the type off), `MeanShare` (mean recovery as a share of gross paid), `Concentration` (Beta concentration), `LagMedianDays`, `LagSigma` (lognormal close-to-receipt lag).
-- **`ReopeningParams`**: `Probability` (0 switches reopening off), `EstimateFactor` (reopen estimate as a factor of the original initial estimate), `EstimateSigma`, `LagMedianDays`, `LagSigma`.
-- **`RunoffParams`** (steps 3-4): `CaseAdequacyMean` (mean of ultimate/initial estimate - systematic over/under-reserving), `CaseAdequacySigma`, `PaymentsPerYear` (Poisson intensity of interim payments), `SettlementShare` (fraction of ultimate held for the final settlement), `Concentration` (Dirichlet concentration splitting the interim remainder), `RevisionsPerYear`, `RevisionSigma` (initial revision noise, decays with age).
+- **`ReopeningParams`**: `Probability` (0 switches reopening off), `EstimateFactor` (the reopen's mean additional cost as a factor of the claim's ultimate, capped for own damage at the cover left), `EstimateSigma`, `LagMedianDays`, `LagSigma`.
+- **`RunoffParams`** (steps 3-4): `CaseAdequacyMean` (true ultimate over the expected opening case - above 1 cases open deficient, below 1 redundant; it moves reserves, never the loss cost), `CaseAdequacySigma` (noise on each opening case), `PaymentsPerYear` (Poisson intensity of interim payments), `SettlementShare` (fraction of ultimate held for the final settlement), `Concentration` (Dirichlet concentration splitting the interim remainder), `RevisionsPerYear`, `RevisionSigma` (initial revision noise, decays with age).
 
 ### 6.2 Validation (`lob.go`)
 
@@ -185,12 +186,13 @@ This file prices premium deterministically (no randomness) from the assumed loss
 - `limitedStopLossLognormal(median, sigma, excess, cap)` - `E[(min(X,cap)-excess)+]`, i.e. the layer between `excess` and `cap`. Returns 0 when `cap <= excess`, else the difference of two stop-loss layers. This is the own-damage cover between the deductible and a total-loss cap.
 - `stopLossPareto(scale, alpha, excess)` - `E[(X-excess)+]` for a Pareto. Mean is `scale*alpha/(alpha-1)`. For `excess <= scale` it is `mean - excess`; otherwise the closed form `(scale/(alpha-1))*(scale/excess)^(alpha-1)`.
 - `(p PricingParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflationFactor, siDrift float64) float64` - the deterministic expected ultimate gross incurred loss for one policy under the pricing assumptions. It backs out the base-year sum insured (`baseSI = sumInsured/siDrift`), trends the assumed own-damage median by the claims index (`odMedian = inflationFactor*baseSI*OwnDamageMedianFraction`), prices own damage as a limited stop-loss capped at the drifted `sumInsured`, prices third party as an uncapped Pareto stop-loss on a claims-trended scale, mixes them by the assumed `ThirdPartyWeight`, applies a reopen uplift `1 + ReopenProbability*ReopenEstimateFactor`, and multiplies by the assumed `BaseFrequency*riskFactor`. Recoveries are excluded (gross basis). It draws no randomness, so pricing never perturbs a sub-stream.
+- `(p PricingParams) ExpectedSectionLoss(...) (ownDamage, thirdParty float64)` - the same expected loss split into the policy's own-damage and third-party liability sections; `ExpectedPolicyLoss` is their sum.
 
 ## 7. Domain: `policy` - the book (step 1)
 
 `internal/domain/policy/book.go` simulates the exposure claims arise from.
 
-`Policy{ID, CoverStart, CoverEnd, SumInsured, Excess, RiskFactor, Premium}` is one 12-month motor policy. `CoverEnd` is always `CoverStart.AddDays(364)`. Money fields are `shared.Money`; `RiskFactor` is a `float64`.
+`Policy{ID, CoverStart, CoverEnd, SumInsured, Excess, RiskFactor, Premium, ThirdPartyPremium}` is one 12-month motor policy. `ThirdPartyPremium` is the third-party liability section of `Premium`, priced the same way on that section's expected loss; the realism gate scores the liability claims against it, and it is never written to CSV. `CoverEnd` is always `CoverStart.AddDays(364)`. Money fields are `shared.Money`; `RiskFactor` is a `float64`.
 
 `BookSimulator` holds `book lob.BookParams` and `pricing lob.PricingParams` (the latter drives premium pricing, independent of the claims model). `NewBookSimulator(book, pricing)` constructs it.
 
@@ -198,7 +200,7 @@ This file prices premium deterministically (no randomness) from the assumed loss
   - For `y > 0`, applies growth with noise: `size = round(size * GrowthFactor * MeanOneLogNormal(sizeSrc, SizeVolatility))`, clamped to a minimum of 1. So the book trends upward but individual years can shrink.
   - Computes the drifted median sum insured `SumInsuredMedian*SumInsuredInflation^y`, the assumed pricing inflation factor `pricing.InflationMean^y`, and the sum-insured drift `SumInsuredInflation^y`.
   - Emits `size` policies, each from its own `policy-<id>` sub-stream, incrementing the global `id`.
-- `simulatePolicy(src, id, year int, medianSI, inflation, siDrift float64) Policy` - one policy: cover start uniform within the calendar year (leap-year aware via `DaysBetween`), sum insured lognormal `(log(medianSI), Spread)`, risk factor a mean-1 gamma with variance `Spread^2` (`Gamma(1/spread2, spread2)`), excess via `drawExcess`, and premium `pricing.ExpectedPolicyLoss(...) / pricing.TargetLossRatio`.
+- `simulatePolicy(src, id, year int, medianSI, inflation, siDrift float64) Policy` - one policy: cover start uniform within the calendar year (leap-year aware via `DaysBetween`), sum insured lognormal `(log(medianSI), Spread)`, risk factor a mean-1 gamma with variance `Spread^2` (`Gamma(1/spread2, spread2)`), excess via `drawExcess`, and premium from `pricing.ExpectedSectionLoss(...)`: the sum of both sections over `pricing.TargetLossRatio`, with the third-party section alone giving `ThirdPartyPremium`.
 - `drawExcess(src) float64` - weighted categorical draw over `ExcessChoices`: draw `u = Uniform()*totalWeight`, walk the choices subtracting weights, return the first whose running total crosses `u`; fall back to the last choice on floating-point edges.
 
 ## 8. Domain: `claim` - claim events (step 2)
@@ -207,7 +209,7 @@ This file prices premium deterministically (no randomness) from the assumed loss
 
 ### 8.1 `claim.go`
 
-`Claim` fields: `ID`, `PolicyID`, `OccurrenceDate`, `ReportDate`, `CloseDate` (the final close after any reopen), `InitialEstimate` (ground-up loss minus excess), `RiskFactor` (carried from the policy), `Nil` (closes without payment; carried to runoff, never written to CSV), `OwnDamage` (drives recovery eligibility; never written to CSV), and the reopen triple `FirstCloseDate`, `ReopenDate`, `ReopenEstimate` (all zero when the claim never reopens). `(c Claim) Reopened() bool` is `ReopenDate != zero`.
+`Claim` fields: `ID`, `PolicyID`, `OccurrenceDate`, `ReportDate`, `CloseDate` (the final close after any reopen), `Ultimate` (the true cost: ground-up loss minus excess, capped at the cover for own damage; never written to CSV), `CoverLimit` (sum insured minus excess for own damage, zero meaning unlimited for third party; never written to CSV), `InitialEstimate` (the opening case, set to `Ultimate` here and replaced by the case-estimate stage), `RiskFactor` (carried from the policy), `Nil` (closes without payment; carried to runoff, never written to CSV), `OwnDamage` (drives recovery eligibility; never written to CSV), and the reopen fields `FirstCloseDate`, `ReopenDate`, `ReopenUltimate` (the episode's true additional cost) and `ReopenEstimate` (the case it re-opens at) - all zero when the claim never reopens. `(c Claim) Reopened() bool` is `ReopenDate != zero`.
 
 `ClaimSimulator` holds `params`, an `InflationIndex`, `sumInsuredInflation`, `startYear`, and an exclusive `windowEnd`. It is built fluently:
 
@@ -230,8 +232,8 @@ Core generation:
   3. Ground-up loss: `drawGroundUpLoss`.
   4. Claims inflation: multiply the loss by `inflation.For(occurrenceYear)` (applies to both severity components).
   5. Own-damage cap: if own damage and the loss exceeds the drifted `SumInsured`, cap it (a total loss).
-  6. Estimate = loss - excess; if `<= 0` the claim did not pierce the excess and is unreportable (`ok = false`, but the draws above were still consumed).
-  7. Close date: `report + round(drawCloseLag(...))`.
+  6. Cost = loss - excess; if `<= 0` the claim did not pierce the excess and is unreportable (`ok = false`, but the draws above were still consumed). Otherwise it becomes the claim's `Ultimate` (floored at one cent) and, for now, its `InitialEstimate`; own damage records `CoverLimit = SumInsured - Excess`.
+  7. Close date: `report + round(drawCloseLag(...))`, sized on the cost.
   8. Nil flag: always drawn via `Bernoulli(NilProbability)`.
 - `drawGroundUpLoss(src, pol) (loss float64, ownDamage bool)` - a two-component mixture that always consumes exactly two draws: with probability `ThirdPartyWeight`, a Pareto `(ThirdPartyScale, ThirdPartyAlpha)` (uncapped, `ownDamage=false`); otherwise `baseSumInsured(pol)` times a lognormal fraction `(log(OwnDamageMedianFraction), OwnDamageSigma)` (`ownDamage=true`).
 
@@ -251,7 +253,7 @@ Shared close-lag logic, reused by the reopen pass:
 
 `ReopenSimulator{params lob.ClaimParams}`, built by `NewReopenSimulator(p)`, runs as a post-pass after claim IDs are assigned.
 
-- `Apply(src, claims []Claim) []Claim` - mutates reopened claims in place. If reopen probability is `<= 0` it returns immediately with no draws. Otherwise, for each claim it splits a `reopen-claim-<id>` stream and draws `Bernoulli(Probability)`; a claim that does not reopen consumes exactly that one draw. A reopening claim then draws, in order: a reopen lag (lognormal, floored to 1 day), a reopen estimate (`InitialEstimate * EstimateFactor * MeanOneLogNormal`, floored to one cent), and a second close lag (via the shared `drawCloseLag`, floored to 1 day). It records `FirstCloseDate = old CloseDate`, `ReopenDate = FirstCloseDate + lag`, `ReopenEstimate`, and moves `CloseDate` to `ReopenDate + closeLag`. The day floors guarantee `ReopenDate > FirstCloseDate` and final `CloseDate > ReopenDate`.
+- `Apply(src, claims []Claim) []Claim` - mutates reopened claims in place. If reopen probability is `<= 0` it returns immediately with no draws. Otherwise, for each claim it splits a `reopen-claim-<id>` stream and draws `Bernoulli(Probability)`; a claim that does not reopen consumes exactly that one draw. A reopening claim then draws, in order: a reopen lag (lognormal, floored to 1 day), the reopen's additional cost (`Ultimate * EstimateFactor * MeanOneLogNormal`, floored to one cent, then capped for own damage at the cover left - `CoverLimit` less what the first episode pays, nothing for a nil claim; a claim with no cover left, such as a paid total loss, does not reopen), and a second close lag (via the shared `drawCloseLag`, floored to 1 day). It records `FirstCloseDate = old CloseDate`, `ReopenDate = FirstCloseDate + lag`, `ReopenUltimate` (and `ReopenEstimate` equal to it until the case-estimate stage), and moves `CloseDate` to `ReopenDate + closeLag`. The day floors guarantee `ReopenDate > FirstCloseDate` and final `CloseDate > ReopenDate`.
 
 ## 9. Domain: `transaction` - runoff and recoveries (steps 3-4)
 
@@ -261,21 +263,26 @@ Shared close-lag logic, reused by the reopen pass:
 
 ### 9.1 `runoff.go` - ultimate-first case runoff
 
-The design is ultimate-first: the true ultimate cost is drawn up front, payments split it over the claim's life, and the case estimate is a noisy view of the remaining cost that converges to zero at close. Development happens in episodes: a normal claim runs one episode; a reopened claim runs a first episode to first close, re-raises the case to the reopen estimate, then runs a second episode to final close.
+The design is ultimate-first: the claim stage fixes the true ultimate cost, the case-estimate stage sets the case the claim opens at, payments split the ultimate over the claim's life, and the case estimate is a noisy view of the remaining cost that converges to zero at close. Development happens in episodes: a normal claim runs one episode; a reopened claim runs a first episode to first close, re-raises the case to the reopen estimate, then runs a second episode to final close.
 
 `RunoffSimulator{params lob.RunoffParams}`, built by `NewRunoffSimulator(p)`:
 
 - `Simulate(src, claims) []Transaction` - concatenates each claim's rows (from a `runoff-claim-<id>` stream, in claim order, each claim chronological), then assigns global 1-based IDs.
 - `simulateClaim(src, c) []Transaction` - drives an `emitter`. It emits the opening `ESTIMATE` at report date, runs the first episode from report to first close (nil per `c.Nil`), and, if reopened, re-raises the case to `ReopenEstimate` and runs a second episode (never nil, revisions floored).
-- `runEpisode(src, e, start, close, opening, isNil, floorRevisions)` - develops one episode. All offsets are report-relative (`base = DaysBetween(report, start)`). On the nil path it emits no payments: it draws revisions, moves the case toward `remaining * MeanOneLogNormal(sigma)` at each (with `sigma = RevisionSigma*(1 - offset/duration)` shrinking toward close and a one-cent floor to keep the case open), then releases the case to zero at close. On the non-nil path it draws the ultimate and interim payments, merges revisions and payments (revisions sort before payments on the same day), walks them tracking cumulative `paid`, re-centres the case on `ultimate - paid` at each revision, pays the remaining ultimate as a final settlement, and snaps the case to exactly zero at close. Because the first revision re-centres on the true remaining, incurred development carries little systematic IBNER signal after it.
-- `drawUltimate(src, initial) shared.Money` - `initial * LogNormal(mu, sigma)` with `sigma = CaseAdequacySigma` and `mu = log(CaseAdequacyMean) - sigma^2/2`, so the multiplier has mean `CaseAdequacyMean`. Floored to one cent.
+- `runEpisode(src, e, start, close, ultimate, isNil, floorRevisions)` - develops one episode, paying exactly `ultimate` (`Ultimate` for the first episode, `ReopenUltimate` for the second). All offsets are report-relative (`base = DaysBetween(report, start)`). On the nil path it emits no payments: it draws revisions, moves the case toward `remaining * MeanOneLogNormal(sigma)` at each (with `sigma = RevisionSigma*(1 - offset/duration)` shrinking toward close and a one-cent floor to keep the case open), then releases the case to zero at close. On the non-nil path it draws interim payments, merges revisions and payments (revisions sort before payments on the same day), walks them tracking cumulative `paid`, re-centres the case on `ultimate - paid` at each revision, pays the remaining ultimate as a final settlement, and snaps the case to exactly zero at close. Because the first revision re-centres on the true remaining, incurred development carries little systematic IBNER signal after it.
 - `drawInterimPayments(src, ultimate, duration, years) []event` - splits `(1 - SettlementShare)` of the ultimate across `Poisson(PaymentsPerYear*years)` interior days, weighted by a Dirichlet built from `Gamma(Concentration, 1)` draws. Returns nil (settle everything at close) for `duration < 2`, zero count, degenerate weights, or rounding that would over-pay.
 - `drawRevisions(src, duration, years) []event` - `Poisson(RevisionsPerYear*years)` pure-revision events on interior days (nil for `duration < 2`).
 - `interiorOffset(src, duration) int` - a day strictly between report and close, `1 + int(Uniform()*(duration-1))`.
 - `event{offset, kind, amount}` with `kind` in `{kindRevision=0, kindPayment=1}` is the internal merge unit.
 - `emitter{claimID, report, outstanding, txs}` keeps the outstanding case non-negative by construction: `estimate(offset, movement)` appends a signed `ESTIMATE` (no-op for zero) and updates `outstanding`; `reviseTo(offset, target)` moves outstanding to `target` in one row; `pay(offset, amount)` strengthens the case up to the payment first if needed, emits the `PAYMENT`, then reduces the case by the same amount so every payment fully releases its own case.
 
-### 9.2 `recovery.go` - salvage and subrogation
+### 9.2 `estimate.go` - the opening case estimate
+
+`CaseEstimator{mean, sigma}`, built by `NewCaseEstimator(p lob.RunoffParams)` from `CaseAdequacyMean` and `CaseAdequacySigma`, runs after reopening and before the runoff.
+
+- `Apply(src, claims) []Claim` - for each claim, splits a `case-estimate-claim-<id>` stream and sets `InitialEstimate = Ultimate * MeanOneLogNormal(sigma) / mean` (floored to one cent), and for a reopened claim `ReopenEstimate` from `ReopenUltimate` the same way. Across claims the true ultimate over the opening case averages `mean`. It never touches `Ultimate` or `ReopenUltimate`, so the adequacy knobs move case reserves and incurred development but no payment. A zero sigma draws nothing.
+
+### 9.3 `recovery.go` - salvage and subrogation
 
 Recoveries are pure cash events on own-damage claims that paid something; they land after close and never touch the (gross) case estimate.
 
@@ -338,7 +345,7 @@ Cells are **incremental**: a cell is the movement in that development month. Inc
 
 - `GenerateRequest{LOB lob.LineOfBusiness, StartYear, Years, InitialBookSize int}` and `Dataset{Policies, Claims, Transactions}`.
 - `(r GenerateRequest) validate()` (unexported) - requires `Years >= 1` and `InitialBookSize >= 1`, then delegates to `LOB.Validate()` (`StartYear` is not validated).
-- `GenerateDataset(src shared.RandomSource, req GenerateRequest) (Dataset, error)` - validates, then runs the six stages of section 3 over independently labelled sub-streams (`book`, `inflation`, `claims`, `reopening`, `runoff`, `recovery`), wiring the claim simulator fluently with the inflation index, base year (`SumInsuredInflation`, `StartYear`), and window. Output depends only on the master seed plus the request.
+- `GenerateDataset(src shared.RandomSource, req GenerateRequest) (Dataset, error)` - validates, then runs the seven stages of section 3 over independently labelled sub-streams (`book`, `inflation`, `claims`, `reopening`, `case-estimate`, `runoff`, `recovery`), wiring the claim simulator fluently with the inflation index, base year (`SumInsuredInflation`, `StartYear`), and window. Output depends only on the master seed plus the request.
 
 ### 11.2 `summary.go` - per-year table
 
@@ -358,7 +365,8 @@ Cells are **incremental**: a cell is the movement in that development month. Inc
 
 - `const developmentYears = 10` (Schedule P shape) - lives only in `aggregate.go` now.
 - `Aggregate(ds, startYear, years, basis) (Aggregates, error)` - one pure aggregation pass per run: the monthly grid and exposure on the requested basis, plus the accident-basis annual triangles and earned premium. `Annual` and `EarnedPremium` are always accident-basis, because Schedule P is an accident-year presentation.
-- `EvaluateRealism(ag, refs) triangle.Report` - a thin adapter: builds a `Comparison` from the aggregate's net paid and incurred triangles and its earned premium, then returns `CompareToReference`. Used as a test gate (`TestDefaultPresetIsRealistic`) and by the UI.
+- `LiabilityComparison(ds, startYear, years) (triangle.Comparison, error)` - what the realism gate scores: the accident-basis annual net paid and incurred triangles and earned premium of the third-party liability section alone. `liabilitySection` narrows the dataset to the third-party claims and gives each policy its `ThirdPartyPremium` as premium; the result is then built like every other aggregate view, as the monthly grid coarsened to annual. The Schedule P private passenger auto reference is a liability line with no physical damage, so own damage is not scored. It lives with the gate rather than in `Aggregates`, so a run that does not score realism (the CLI) never builds it.
+- `EvaluateRealism(ds, startYear, years, refs) (triangle.Report, error)` - a thin adapter: builds the `LiabilityComparison`, then returns `CompareToReference`. Used as a test gate (`TestDefaultPresetIsRealistic`) and by the UI.
 
 ## 12. Infrastructure layer
 
@@ -372,7 +380,7 @@ Cells are **incremental**: a cell is the movement in that development month. Inc
 - Preset registry: `motorPersonalYAML []byte` (`//go:embed motor-personal.yaml`), `presetInfos []PresetInfo{ID, Name}` (currently just motor-personal), and `presetYAML map[string][]byte`. `Presets()` returns a clone of the registry; `PresetParams(id)` returns the raw (unvalidated) `LOBParams` to prefill the UI editor; `Preset(id)` returns a validated domain object.
 - `LoadFile(path)`, `MotorPersonal()` - file-based and embedded-preset loaders.
 
-The embedded `motor-personal.yaml` is the annotated personal-motor preset, calibrated so generated triangles fall within the P5-P95 Schedule P bands. Its comments flag the tightest-margin metric (paid ATA age 2-3) and explain the target-loss-ratio pricing.
+The embedded `motor-personal.yaml` is the annotated personal-motor preset, whose third-party section is calibrated so its triangles fall within the P5-P95 Schedule P liability bands; own-damage settlement is set by judgement as a short-tail class. Its comments explain the realism scope and the target-loss-ratio pricing.
 
 ### 12.2 `random` - covered in section 4.2.
 
@@ -412,10 +420,10 @@ exposure.csv:     origin_month,premium,exposure_units,policies
 
 - `Server{refs, mux}` and `NewServer(refs)` register routes: `GET /api/lobs`, `GET /api/lobs/{id}/preset`, `POST /api/generate`, and `GET /` (a file server over the embedded `static` subtree).
 - `ServeHTTP` is a security front gate before dispatch (the server is loopback-only): it rejects non-local `Host` (403 "forbidden host") and, when an `Origin` header is present, non-local origins (403 "forbidden origin"), guarding against DNS rebinding and cross-site use. `localHost` accepts `127.0.0.1`, `localhost`, `::1` (with optional port); `localOrigin` parses the origin and checks its host.
-- `handleLOBs` returns the preset list as `lobInfoJSON{id, name}`. `handlePreset` returns the raw `LOBParams` for a preset id (404 on unknown). `handleGenerate` caps the body at 1 MiB, decodes a strict `generateRequest{seed string, start_year, years, initial_book_size, out_dir, origin_basis, params}` (an empty `origin_basis` defaults to accident), parses the seed, requires and absolutises `out_dir`, runs `GenerateDataset` and `WriteDataset`, then `application.Aggregate` and `WriteAggregates`, and returns `buildResponse` (validation and domain errors map to 400, CSV write errors to 500).
+- `handleLOBs` returns the preset list as `lobInfoJSON{id, name}`. `handlePreset` returns the raw `LOBParams` for a preset id (404 on unknown). `handleGenerate` caps the body at 1 MiB, decodes a strict `generateRequest{seed string, start_year, years, initial_book_size, out_dir, origin_basis, params}` (an empty `origin_basis` defaults to accident), parses the seed, requires and absolutises `out_dir`, runs `GenerateDataset` and `WriteDataset`, then `application.Aggregate` and `WriteAggregates`, then `application.EvaluateRealism`, and returns `buildResponse` (validation and domain errors map to 400, CSV write and aggregation errors to 500).
 - `writeJSON`, `writeError` - JSON response helpers.
 
-`internal/infrastructure/web/viewmodel.go` builds the `/api/generate` response DTOs. `buildResponse(req, ds, ag, refs)` assembles a `generateResponseJSON{run, summary, triangles, distributions, realism}`: `run.origin_basis` echoes `ag.Basis`, the triangles are `ag.Annual`'s paid, net paid and incurred (already coarsened to 10 development years), and the summary, distributions and realism are delegated to the application layer, mapping each into JSON view models. Notable serialisation choices: `LossRatio` and per-age factors are pointers so they serialise as `null` when undefined or `NaN`; the `finite` helper replaces `NaN`/`Inf` band numbers with 0 so the response stays valid JSON.
+`internal/infrastructure/web/viewmodel.go` builds the `/api/generate` response DTOs. `buildResponse(req, ds, ag, realism)` assembles a `generateResponseJSON{run, summary, triangles, distributions, realism}`: `run.origin_basis` echoes `ag.Basis`, the triangles are `ag.Annual`'s paid, net paid and incurred for the whole book (already coarsened to 10 development years), the realism report (computed by `handleGenerate` via `EvaluateRealism`, so a grid error maps to a 500) scores the liability section only (the Realism tab says so under its banner), and the summary and distributions are delegated to the application layer, mapping each into JSON view models. Notable serialisation choices: `LossRatio` and per-age factors are pointers so they serialise as `null` when undefined or `NaN`; the `finite` helper replaces `NaN`/`Inf` band numbers with 0 so the response stays valid JSON.
 
 The front end (`static/index.html`, `static/app.js`, `static/style.css`) is a single-page app: a sidebar form (line-of-business select, run flags including an origin-basis select, and an editable parameter panel prefilled from the preset) posts to `/api/generate` and renders four tabs - Summary, Triangles (with a Paid gross / Paid net / Incurred toggle and age-to-age factors), Distributions, and Realism. The tabs are unchanged: they read the annual triangles, not the monthly grid, which has no browser view.
 
@@ -442,5 +450,6 @@ Invariants worth remembering:
 - **Case releases to zero.** Every runoff episode ends with the outstanding case revised to exactly zero on the close date, and each payment fully releases its own case, so outstanding case is always the running sum of `ESTIMATE` amounts and is never negative.
 - **Recoveries stay below gross paid.** A claim's cumulative recovered is strictly less than its gross paid (by at least one cent), and recovery rows are the only transactions dated after the final close.
 - **All claims close.** There is no valuation date; every claim runs to closure, gross paid equals the ultimate (zero for a never-reopened nil claim).
+- **Paid never exceeds the cover.** Gross paid is exactly `Ultimate + ReopenUltimate` (just `ReopenUltimate` for a nil claim), and for own damage that never exceeds sum insured minus excess.
 
 Deliberate simplifications (from the README's assumptions): own-damage severity trends only at the claims index and is capped at the sum insured; case estimates re-centre on the true ultimate at the first revision, so incurred carries little IBNER; nil claims draw severity and probability independently of claim size; there is no seasonality, catastrophe, or event clustering; and each year's book is an independent cohort with no renewals. The insurer prices risk perfectly *by default* - the preset's `pricing` assumptions equal the true claims values, so premium tracks expected loss and loss ratios are more stable than a real book's - but this is configurable: deviating the `pricing` block from the claims values models underpricing or adverse experience, and the realized loss ratio then moves off target.

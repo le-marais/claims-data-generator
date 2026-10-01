@@ -2,10 +2,13 @@ package application_test
 
 import (
 	"fmt"
+	"math"
+	"reflect"
 	"testing"
 
 	refdata "github.com/le-marais/claimsgen/data/reference"
 	"github.com/le-marais/claimsgen/internal/application"
+	"github.com/le-marais/claimsgen/internal/domain/transaction"
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
@@ -36,11 +39,10 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ag, err := application.Aggregate(ds, req.StartYear, req.Years, triangle.AccidentMonth)
+			report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, refs)
 			if err != nil {
 				t.Fatal(err)
 			}
-			report := application.EvaluateRealism(ag, refs)
 			if !report.Pass() {
 				t.Errorf("generated data outside Schedule P bands:\n%s", report)
 			}
@@ -60,11 +62,10 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ag, err := application.Aggregate(ds, req.StartYear, req.Years, triangle.AccidentMonth)
+	report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, refs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	report := application.EvaluateRealism(ag, refs)
 	if len(report.PaidATA) != 9 {
 		t.Errorf("paid ATA checks = %d, want 9 (10 development years)", len(report.PaidATA))
 	}
@@ -73,5 +74,77 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 	}
 	if report.LossRatio.Value <= 0 {
 		t.Errorf("loss ratio = %v, want positive", report.LossRatio.Value)
+	}
+}
+
+// The reference is a liability line, so the gate must score the third-party
+// section alone: own-damage settlement speed cannot move it.
+func TestRealismScoresOnlyTheLiabilitySection(t *testing.T) {
+	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report := func(ownDamageMeanDays float64) triangle.Report {
+		req := request(t)
+		req.Years = 10
+		req.InitialBookSize = 3000
+		req.LOB.Claims.CloseLag.MeanDays = ownDamageMeanDays
+		ds, err := application.GenerateDataset(t.Context(), random.NewSource(5), req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, refs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return report
+	}
+	if fast, slow := report(20), report(2000); !reflect.DeepEqual(fast, slow) {
+		t.Fatalf("own-damage close lag moved the realism report:\nfast:\n%s\nslow:\n%s", fast, slow)
+	}
+}
+
+func TestLiabilitySectionPremiumAndClaims(t *testing.T) {
+	req := request(t)
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(8), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ag, err := application.Aggregate(ds, req.StartYear, req.Years, triangle.AccidentMonth)
+	if err != nil {
+		t.Fatal(err)
+	}
+	liability, err := application.LiabilityComparison(ds, req.StartYear, req.Years)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, ep := range liability.EarnedPremium {
+		if ep <= 0 || ep >= ag.EarnedPremium[i] {
+			t.Fatalf("year %d liability earned premium %v not a proper share of %v", i, ep, ag.EarnedPremium[i])
+		}
+	}
+	tpPaid := 0.0
+	byClaim := map[int]bool{}
+	for _, c := range ds.Claims {
+		byClaim[c.ID] = c.OwnDamage
+	}
+	for _, tx := range ds.Transactions {
+		if tx.Type == transaction.Payment && !byClaim[tx.ClaimID] {
+			tpPaid += tx.Amount.Dollars()
+		}
+	}
+	row := func(tr triangle.Triangle) float64 {
+		sum := 0.0
+		for _, r := range tr.Cells {
+			sum += r[len(r)-1]
+		}
+		return sum
+	}
+	// Third-party claims carry no recoveries, so their net paid is gross paid.
+	if got := row(liability.Paid); math.Abs(got-tpPaid) > 0.01 {
+		t.Fatalf("liability paid triangle holds %v, want the third-party claims' total paid %v", got, tpPaid)
+	}
+	if row(liability.Paid) >= row(ag.Annual.Paid) {
+		t.Fatal("liability triangle should exclude own-damage payments")
 	}
 }

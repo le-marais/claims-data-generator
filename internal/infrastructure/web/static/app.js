@@ -43,7 +43,7 @@ const FIELD_GROUPS = [
       { path: ["claims", "severity", "third_party_alpha"], label: "Third party alpha", tip: "Pareto tail index; must exceed 1." },
       { path: ["claims", "close_lag", "shape"], label: "Close lag shape", tip: "Gamma shape of the close lag." },
       { path: ["claims", "close_lag", "mean_days"], label: "Close lag mean days", tip: "Base mean report-to-close lag." },
-      { path: ["claims", "close_lag", "size_threshold"], label: "Close lag size threshold", tip: "Initial estimate above which the lag stretches." },
+      { path: ["claims", "close_lag", "size_threshold"], label: "Close lag size threshold", tip: "Claim cost above which the own-damage lag stretches." },
       { path: ["claims", "close_lag", "size_multiplier"], label: "Close lag size multiplier", tip: "Stretch factor for large claims." },
       { path: ["claims", "close_lag", "risk_loading"], label: "Close lag risk loading", tip: "Exponent on the policy risk factor." },
       { path: ["claims", "close_lag", "third_party_shape"], label: "Third-party close lag shape", tip: "Gamma shape of the close lag for third-party (long-tail) claims." },
@@ -51,7 +51,7 @@ const FIELD_GROUPS = [
       { path: ["claims", "inflation", "mean"], label: "Claims inflation", tip: "Average annual claims inflation factor, applied by occurrence year (1.0 = flat)." },
       { path: ["claims", "nil_probability"], label: "Nil claim probability", tip: "Probability a claim closes without payment at its first close; 0 switches nil claims off." },
       { path: ["claims", "reopening", "probability"], label: "Reopen probability", tip: "Chance a closed claim reopens once; 0 switches reopening off." },
-      { path: ["claims", "reopening", "estimate_factor"], label: "Reopen estimate factor", tip: "Mean reopen case estimate as a factor of the original initial estimate." },
+      { path: ["claims", "reopening", "estimate_factor"], label: "Reopen estimate factor", tip: "Mean additional reopen cost as a factor of the claim's ultimate; own damage is capped at the cover left." },
     ],
   },
   {
@@ -66,8 +66,8 @@ const FIELD_GROUPS = [
   {
     label: "Runoff",
     fields: [
-      { path: ["runoff", "case_adequacy_mean"], label: "Case adequacy mean", tip: "Mean of ultimate over initial estimate." },
-      { path: ["runoff", "case_adequacy_sigma"], label: "Case adequacy sigma", tip: "How wrong individual initial estimates are." },
+      { path: ["runoff", "case_adequacy_mean"], label: "Case adequacy mean", tip: "True ultimate over the expected opening case: above 1 under-reserves. Moves case reserves, not losses." },
+      { path: ["runoff", "case_adequacy_sigma"], label: "Case adequacy sigma", tip: "Noise on each opening case estimate: how wrong individual estimates are." },
       { path: ["runoff", "payments_per_year"], label: "Payments per year", tip: "Poisson intensity of interim payments." },
       { path: ["runoff", "settlement_share"], label: "Settlement share", tip: "Fraction of ultimate paid at close." },
       { path: ["runoff", "concentration"], label: "Concentration", tip: "Dirichlet concentration across interim payments." },
@@ -515,8 +515,12 @@ function renderRealism(r) {
   banner.textContent = r.pass
     ? "✓ Pass - every metric inside the Schedule P P5-P95 reference band"
     : "✗ Fail - some metrics fall outside the Schedule P P5-P95 reference band";
+  const scope = document.createElement("p");
+  scope.className = "empty-note";
+  scope.textContent = "Scored on third-party liability claims against their share of premium: the Schedule P private passenger auto reference is a liability line with no own damage in it.";
   panel.append(
     banner,
+    scope,
     bandCard("Paid age-to-age factors vs reference P5-P95 (min/max faint)", r.paid_ata || []),
     bandCard("Incurred age-to-age factors vs reference P5-P95 (min/max faint)", r.incurred_ata || []),
     bandCard("Net loss ratio vs Schedule P P5-P95 (min/max faint)", [{ ...r.loss_ratio, label: "Net LR" }]),

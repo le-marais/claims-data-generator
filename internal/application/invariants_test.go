@@ -23,12 +23,14 @@ func TestDatasetInvariants(t *testing.T) {
 	policies := map[int]struct {
 		start, end shared.Date
 		excess     shared.Money
+		sumInsured shared.Money
 	}{}
 	for _, p := range ds.Policies {
 		policies[p.ID] = struct {
 			start, end shared.Date
 			excess     shared.Money
-		}{p.CoverStart, p.CoverEnd, p.Excess}
+			sumInsured shared.Money
+		}{p.CoverStart, p.CoverEnd, p.Excess, p.SumInsured}
 	}
 
 	type claimInfo struct {
@@ -167,6 +169,21 @@ func TestDatasetInvariants(t *testing.T) {
 			}
 		} else if s.paid <= 0 {
 			t.Fatalf("claim %d total paid %v not positive", c.ID, s.paid)
+		}
+		// Every payment adds up to exactly the true cost, and own damage never
+		// pays beyond the cover, reopen included.
+		want := c.Ultimate + c.ReopenUltimate
+		if c.Nil {
+			want = c.ReopenUltimate
+		}
+		if s.paid != want {
+			t.Fatalf("claim %d total paid %v, want its true cost %v", c.ID, s.paid, want)
+		}
+		if c.OwnDamage {
+			pol := policies[c.PolicyID]
+			if limit := pol.sumInsured - pol.excess; s.paid > limit {
+				t.Fatalf("own-damage claim %d paid %v, above sum insured minus excess %v", c.ID, s.paid, limit)
+			}
 		}
 		if c.Reopened() && !s.afterReopen {
 			t.Fatalf("reopened claim %d has no transactions after its first close", c.ID)

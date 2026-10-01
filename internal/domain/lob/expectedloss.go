@@ -43,19 +43,27 @@ func stopLossPareto(scale, alpha, excess float64) float64 {
 }
 
 // ExpectedPolicyLoss is the deterministic expected ultimate gross incurred loss
-// for one policy under the pricing assumptions. Own damage is expressed in
-// base-year sum-insured terms (baseSI = sumInsured / siDrift) trended by the
-// claims index only, and capped at the drifted sumInsured (a total loss). Third
-// party keeps the claims index. It draws no randomness, so pricing never
-// perturbs a sub-stream. Recoveries are excluded (gross basis).
+// for one policy under the pricing assumptions: the sum of its two sections
+// (see ExpectedSectionLoss). It draws no randomness, so pricing never perturbs
+// a sub-stream. Recoveries are excluded (gross basis).
 func (p PricingParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflationFactor, siDrift float64) float64 {
+	ownDamage, thirdParty := p.ExpectedSectionLoss(sumInsured, excess, riskFactor, inflationFactor, siDrift)
+	return ownDamage + thirdParty
+}
+
+// ExpectedSectionLoss splits ExpectedPolicyLoss into the policy's own-damage
+// and third-party liability sections. Own damage is expressed in base-year
+// sum-insured terms (baseSI = sumInsured / siDrift) trended by the claims index
+// only, and capped at the drifted sumInsured (a total loss). Third party keeps
+// the claims index and is uncapped. Both carry the reopen uplift.
+func (p PricingParams) ExpectedSectionLoss(sumInsured, excess, riskFactor, inflationFactor, siDrift float64) (ownDamage, thirdParty float64) {
 	s := p.Severity
 	baseSI := sumInsured / siDrift
 	odMedian := inflationFactor * baseSI * s.OwnDamageMedianFraction
 	od := limitedStopLossLognormal(odMedian, s.OwnDamageSigma, excess, sumInsured)
 	tpScale := inflationFactor * s.ThirdPartyScale
 	tp := stopLossPareto(tpScale, s.ThirdPartyAlpha, excess)
-	perClaim := s.ThirdPartyWeight*tp + (1-s.ThirdPartyWeight)*od
 	reopenUplift := 1 + p.ReopenProbability*p.ReopenEstimateFactor
-	return p.BaseFrequency * riskFactor * perClaim * reopenUplift
+	perClaim := p.BaseFrequency * riskFactor * reopenUplift
+	return perClaim * (1 - s.ThirdPartyWeight) * od, perClaim * s.ThirdPartyWeight * tp
 }

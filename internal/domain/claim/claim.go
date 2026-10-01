@@ -17,11 +17,24 @@ import (
 // Claim is one reported claim event. All claims close: there is no
 // valuation date and every claim develops fully.
 type Claim struct {
-	ID              int
-	PolicyID        int
-	OccurrenceDate  shared.Date
-	ReportDate      shared.Date
-	CloseDate       shared.Date
+	ID             int
+	PolicyID       int
+	OccurrenceDate shared.Date
+	ReportDate     shared.Date
+	CloseDate      shared.Date
+	// Ultimate is the claim's true cost: the ground-up loss net of excess,
+	// capped at the cover for own damage. It is what the first episode pays
+	// in full (nothing, for a nil claim). The severity model sizes this, not
+	// the case estimate, so the case adequacy knobs move reserves, never the
+	// loss cost. Never written to CSV.
+	Ultimate shared.Money
+	// CoverLimit is the most the policy pays on the claim over its whole
+	// life, reopen included: sum insured minus excess for own damage, zero
+	// (unlimited) for third party. Never written to CSV.
+	CoverLimit shared.Money
+	// InitialEstimate is the opening case estimate on the report date. The
+	// claim stage sets it to Ultimate; the case-estimate stage replaces it
+	// with the claims handler's view (see transaction.CaseEstimator).
 	InitialEstimate shared.Money
 	// RiskFactor is carried from the policy for downstream stages.
 	RiskFactor float64
@@ -32,13 +45,16 @@ type Claim struct {
 	// component. Carried to the recovery stage (only own-damage claims
 	// yield salvage or subrogation) but never written to CSV.
 	OwnDamage bool
-	// FirstCloseDate, ReopenDate and ReopenEstimate describe the single
-	// optional reopen episode: the claim closed once, the case was re-raised
-	// after a lag, and CloseDate above is the final close. Zero values mean
-	// the claim never reopens. Carried to the runoff stage but never written
-	// to CSV.
+	// FirstCloseDate, ReopenDate, ReopenUltimate and ReopenEstimate describe
+	// the single optional reopen episode: the claim closed once, the case was
+	// re-raised after a lag, and CloseDate above is the final close.
+	// ReopenUltimate is the episode's true additional cost and ReopenEstimate
+	// the case it re-opens at, which the case-estimate stage sets. Zero values
+	// mean the claim never reopens. Carried to the runoff stage but never
+	// written to CSV.
 	FirstCloseDate shared.Date
 	ReopenDate     shared.Date
+	ReopenUltimate shared.Money
 	ReopenEstimate shared.Money
 }
 
@@ -149,7 +165,9 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 }
 
 // simulateClaim draws one claim; ok is false when the ground-up loss does
-// not exceed the excess, making the claim unreportable.
+// not exceed the excess, making the claim unreportable. The severity draw is
+// the claim's true cost (Ultimate); the case estimate is a separate, later
+// view of it.
 func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Policy) (Claim, bool) {
 	end := pol.CoverEnd
 	capToWindow := !s.windowEnd.IsZero() && !end.Before(s.windowEnd)
@@ -172,17 +190,23 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	// damage is then capped at the drifted sum insured, representing a total
 	// loss.
 	loss *= s.inflation.For(occurrence.Year())
+	coverLimit := shared.Money(0) // third-party liability is unlimited
 	if ownDamage {
 		if cap := pol.SumInsured.Dollars(); loss > cap {
 			loss = cap
 		}
+		coverLimit = pol.SumInsured - pol.Excess
 	}
-	estimate := loss - pol.Excess.Dollars()
-	if estimate <= 0 {
+	cost := loss - pol.Excess.Dollars()
+	if cost <= 0 {
 		return Claim{}, false
 	}
+	ultimate := shared.FromDollars(cost)
+	if ultimate < shared.OneCent {
+		ultimate = shared.OneCent // a reportable claim always costs something
+	}
 
-	closeDate := report.AddDays(int(math.Round(drawCloseLag(src, s.params.CloseLag, estimate, pol.RiskFactor, ownDamage))))
+	closeDate := report.AddDays(int(math.Round(drawCloseLag(src, s.params.CloseLag, cost, pol.RiskFactor, ownDamage))))
 
 	// Nil claims draw their severity and probability independently of claim
 	// size; real withdrawn claims skew small, so this is a known simplification.
@@ -197,7 +221,9 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 		OccurrenceDate:  occurrence,
 		ReportDate:      report,
 		CloseDate:       closeDate,
-		InitialEstimate: shared.FromDollars(estimate),
+		Ultimate:        ultimate,
+		CoverLimit:      coverLimit,
+		InitialEstimate: ultimate,
 		RiskFactor:      pol.RiskFactor,
 		Nil:             isNil,
 		OwnDamage:       ownDamage,

@@ -24,6 +24,10 @@ func NewReopenSimulator(p lob.ClaimParams) *ReopenSimulator {
 // Apply mutates reopened claims in place: CloseDate becomes the final
 // close and the reopen episode is recorded on the claim. A probability of
 // 0 makes no draw at all. Non-reopened claims are returned unchanged.
+//
+// The reopen's additional cost is capped at the cover the claim has left, so
+// total paid never exceeds CoverLimit. A claim already paid up to its limit
+// (a total loss) has nothing left to pay and does not reopen.
 func (s *ReopenSimulator) Apply(src shared.RandomSource, claims []Claim) []Claim {
 	r := s.params.Reopening
 	if r.Probability <= 0 {
@@ -39,18 +43,41 @@ func (s *ReopenSimulator) Apply(src shared.RandomSource, claims []Claim) []Claim
 		if lag < 1 {
 			lag = 1 // the reopen is strictly after the first close
 		}
-		estimate := c.InitialEstimate.MulFloat(r.EstimateFactor * shared.MeanOneLogNormal(stream, r.EstimateSigma))
-		if estimate < shared.OneCent {
-			estimate = shared.OneCent
+		additional := c.Ultimate.MulFloat(r.EstimateFactor * shared.MeanOneLogNormal(stream, r.EstimateSigma))
+		if additional < shared.OneCent {
+			additional = shared.OneCent
 		}
-		closeLag := int(math.Round(drawCloseLag(stream, s.params.CloseLag, estimate.Dollars(), c.RiskFactor, c.OwnDamage)))
+		if left, limited := c.coverLeft(); limited {
+			if left < shared.OneCent {
+				continue // paid up to the limit: nothing left to reopen for
+			}
+			if additional > left {
+				additional = left
+			}
+		}
+		closeLag := int(math.Round(drawCloseLag(stream, s.params.CloseLag, additional.Dollars(), c.RiskFactor, c.OwnDamage)))
 		if closeLag < 1 {
 			closeLag = 1 // the second close is strictly after the reopen
 		}
 		c.FirstCloseDate = c.CloseDate
 		c.ReopenDate = c.CloseDate.AddDays(lag)
-		c.ReopenEstimate = estimate
+		c.ReopenUltimate = additional
+		c.ReopenEstimate = additional // the case-estimate stage replaces this
 		c.CloseDate = c.ReopenDate.AddDays(closeLag)
 	}
 	return claims
+}
+
+// coverLeft is the cover still available after the first episode: the limit
+// less what that episode pays (nothing for a nil claim). limited is false for
+// unlimited (third-party) cover.
+func (c Claim) coverLeft() (left shared.Money, limited bool) {
+	if c.CoverLimit <= 0 {
+		return 0, false
+	}
+	paid := c.Ultimate
+	if c.Nil {
+		paid = 0
+	}
+	return c.CoverLimit - paid, true
 }

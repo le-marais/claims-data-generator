@@ -225,7 +225,12 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, buildResponse(req, ds, ag, s.refs))
+	realism, err := application.EvaluateRealism(ds, req.StartYear, req.Years, s.refs)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, buildResponse(req, ds, ag, realism))
 }
 
 var errTooManyRuns = errors.New("too many generation runs in flight; wait for one to finish")
