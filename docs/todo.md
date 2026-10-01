@@ -28,11 +28,14 @@ high-severity is open.
 
 ## Order
 
-1. **SL-7** - the only open item that changes what a reserving actuary sees in
-   the data.
-2. **RF-13** - gates the second line of business.
-3. **RF-14** - gates the same work, and compounds with every feature added.
-4. **CI-1** - gated on the roadmap's "open to the wider community" step.
+1. **SL-7** - the only open item here that changes what a reserving actuary
+   sees in the data.
+2. **CI-1** - small, and guards every merge from now on.
+3. **RF-13** - gates the second line of business; step (1) is due before the
+   parameters the model findings will add.
+4. **RF-14** - gates the same work, and compounds with every feature added.
+
+The sequence across this file and `docs/review.md` lives in `docs/roadmap.md`.
 
 ## 1. SL-7 (medium) - case estimates re-centre on the true ultimate at the first revision
 
@@ -56,11 +59,32 @@ high-severity is open.
   different remaining-source and floor rule, and a `remaining()` closure plus one
   unconditional keep-open floor removes both the duplication and a boolean
   parameter.
+- An earlier attempt (PR #4, 2026-08-09) was closed unmerged on 2026-10-01: it
+  conflicted with `main`, and its `pricing.case_adequacy_mean` no longer
+  applies, because since MR-1 case adequacy moves reserves only, never the
+  loss cost. Redo it on top of `main`; its decay idea (aim each revision at
+  `(ultimate - paid) x case_adequacy_mean^(u-1)` over the elapsed share `u` of
+  the episode) and its RF-4 refactor are still a useful starting point.
 - Cost note: this is the most expensive item here. It changes generated output,
   so it needs a golden-hash refresh and a realism-gate re-check, and the preset
   may need recalibrating.
 
-## 2. RF-13 (medium) - adding one line-of-business parameter touches five places
+## 2. CI-1 (low) - no CI and no dependency scanning
+
+Merges the old R-13 and I2.
+
+- Where: repo root. There is no `.github/workflows` and no evidence of
+  `govulncheck`. `AGENTS.md` documents `go test` and `go vet` as the gate, which
+  runs only when someone remembers and does not catch known-vulnerable
+  dependencies.
+- Moved up on 2026-10-01: PRs are now sometimes merged by an agent on the
+  maintainer's instruction, so an automatic test run on every PR is a cheap
+  safety net, not only a precondition for opening the tool up.
+- Action: add a minimal workflow running `go test ./...`, `go vet ./...` and
+  `govulncheck ./...` on every pull request. Consider `golangci-lint` in the
+  same pass.
+
+## 3. RF-13 (medium) - adding one line-of-business parameter touches five places
 
 - Where: the domain struct plus validation (`internal/domain/lob/lob.go`), the
   config DTO plus `ToDomain` (`internal/infrastructure/config/config.go`), the
@@ -78,12 +102,14 @@ high-severity is open.
   mirrored structs keep the domain tag-free, a legitimate choice, but if
   `ToDomain` keeps growing, consider code generation or accepting yaml/json tags
   on the `lob` package.
+- Every model finding queued in `docs/review.md` adds parameters, so at least
+  step (1) should land before or with them.
 - Principle to hold to (the old F8): give each stage a narrow, purpose-built
   input rather than a whole parameter block, so the compiler enforces isolation.
   `NewBookSimulator(book, pricing)` already shows it working - it takes a
   purpose-built `PricingParams` and structurally cannot read claims knobs.
 
-## 3. RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
+## 4. RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
 
 Merges the old F3 and F6, which describe the same problem from the parameter
 side.
@@ -111,18 +137,6 @@ side.
 - One data dependency stays and is deliberate: `Claim.OwnDamage` crosses from
   the claims stage to `recovery.go`, because only the severity draw knows the
   claim type and recovery eligibility genuinely depends on it.
-
-## 4. CI-1 (low) - no CI and no dependency scanning
-
-Merges the old R-13 and I2.
-
-- Where: repo root. There is no `.github/workflows` and no evidence of
-  `govulncheck`. `AGENTS.md` documents `go test` and `go vet` as the gate, which
-  runs only when someone remembers and does not catch known-vulnerable
-  dependencies.
-- Action: add a minimal workflow running `go test ./...`, `go vet ./...` and
-  `govulncheck ./...` before the roadmap's "open to the wider community" step.
-  Consider `golangci-lint` in the same pass.
 
 ## Exposure milestone (conditional, not work today)
 
