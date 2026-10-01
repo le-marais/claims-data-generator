@@ -176,9 +176,9 @@ Screenshots are regenerated with `tools/screenshots` (start the UI on port 8093,
 
 The layout is domain-driven: `internal/domain/` holds the simulation model (policy, claim, transaction, lob, triangle) with no outside dependencies, `internal/application/` the use cases, and `internal/infrastructure/` the adapters (config, CSV, Schedule P reader, gonum-backed randomness). See `docs/architecture.md` for the full tour.
 
-## Docs
+## For contributors: project docs
 
-`docs/` keeps five living docs, each describing the current state or open work only. Shipped and resolved items are deleted, not archived; git history keeps them.
+If you contribute to claimsgen, keep the five living docs in `docs/` current in the same pull request as your change. Each describes the current state or open work only: when you ship or resolve something, delete it rather than archiving it, and git history keeps it.
 
 - `docs/mission.md` - the core purpose of the app
 - `docs/roadmap.md` - where the app is heading; nothing already shipped
@@ -186,4 +186,4 @@ The layout is domain-driven: `internal/domain/` holds the simulation model (poli
 - `docs/review.md` - open review findings, recorded as reviews happen
 - `docs/todo.md` - smaller or administrative items still to be done
 
-`AGENTS.md` has the rules for keeping them current.
+See "Living docs" in `AGENTS.md` for the full rules.
