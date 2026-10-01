@@ -31,8 +31,6 @@ Prove the "one parameterizable engine" differentiator by adding a second short-t
 - **Per-line-of-business reference data and calibration.** The realism gate is motor-only today, and the `ui` command hardcodes the private-passenger-auto reference directory. Reference data needs to be keyed per line of business so each class calibrates against an appropriate Schedule P family. The curation work is already partly done: `data/reference/schedule p/` holds hand-curated companies for all six Schedule P lines - private passenger auto (embedded, 96 companies), commercial auto (92), other liability (92), workers compensation (61), products liability (13) and medical malpractice (8) - kept against `data/reference/gr-code-list.md`. Only the private-passenger-auto set is embedded and scored today. Note that Schedule P carries liability lines only, so a commercial *property* class has no direct reference family here; commercial auto is the closest short-tail fit.
 - **Any class-specific behavior** commercial property needs that motor does not (for example severity capped harder at sum insured, no third-party tail).
 
-Then open the tool to the wider actuarial community once a second class demonstrates reusability.
-
 ## Longer term
 
 - **Valuation-date extract** - the mission deliberately generates every claim to closure for out-of-sample testing, but a chosen-date cut (open claims, outstanding case, no future knowledge) is trivial to derive and would let the tool feed a reserving demo with zero manual steps - the MVP's own success criterion. `triangles.csv` already supports the triangle side of this by filtering on `origin_month + dev_month - 1`; the remaining work is the claim and transaction extracts.
