@@ -16,42 +16,61 @@ import (
 
 // Claim is one reported claim event. All claims close: there is no
 // valuation date and every claim develops fully.
+//
+// A claim has two parts. Record is what a claims system would hold and
+// claims.csv carries. Development is what the simulation knows about how the
+// claim develops - its true cost, its type, its reopen episode - which later
+// stages need and no CSV writes (RF-14). Both are embedded, so their fields
+// read as c.ID or c.Nil; the split makes the CSV surface explicit in the type
+// rather than in a comment on each field.
 type Claim struct {
+	Record
+	Development
+}
+
+// Record is the persisted claim: exactly the claims.csv columns.
+type Record struct {
 	ID             int
 	PolicyID       int
 	OccurrenceDate shared.Date
 	ReportDate     shared.Date
 	CloseDate      shared.Date
-	// Ultimate is the claim's true cost: the ground-up loss net of excess,
-	// capped at the cover for own damage. It is what the first episode pays
-	// in full (nothing, for a nil claim). The severity model sizes this, not
-	// the case estimate, so the case adequacy knobs move reserves, never the
-	// loss cost. Never written to CSV.
-	Ultimate shared.Money
-	// CoverLimit is the most the policy pays on the claim over its whole
-	// life, reopen included: sum insured minus excess for own damage, zero
-	// (unlimited) for third party. Never written to CSV.
-	CoverLimit shared.Money
 	// InitialEstimate is the opening case estimate on the report date. The
 	// claim stage sets it to Ultimate; the case-estimate stage replaces it
 	// with the claims handler's view (see transaction.CaseEstimator).
 	InitialEstimate shared.Money
-	// RiskFactor is carried from the policy for downstream stages.
+}
+
+// Development is the simulation's knowledge of how a claim develops, passed
+// from the claim stage to the reopen, case-estimate, runoff and recovery
+// stages. None of it is written to CSV.
+type Development struct {
+	// Ultimate is the claim's true cost: the ground-up loss net of excess,
+	// capped at the cover for own damage. It is what the first episode pays
+	// in full (nothing, for a nil claim). The severity model sizes this, not
+	// the case estimate, so the case adequacy knobs move reserves, never the
+	// loss cost.
+	Ultimate shared.Money
+	// CoverLimit is the most the policy pays on the claim over its whole
+	// life, reopen included: sum insured minus excess for own damage, zero
+	// (unlimited) for third party.
+	CoverLimit shared.Money
+	// RiskFactor is the policy's risk factor, kept for the reopen pass's
+	// close-lag draw, which runs after the claim stage has let go of the
+	// policy.
 	RiskFactor float64
-	// Nil is true when the claim closes without any payment. It is carried
-	// to the runoff stage but never written to CSV.
+	// Nil is true when the claim's first episode closes without payment.
 	Nil bool
 	// OwnDamage is true when the severity mixture picked the own-damage
-	// component. Carried to the recovery stage (only own-damage claims
-	// yield salvage or subrogation) but never written to CSV.
+	// component. Recovery eligibility depends on it: only own-damage claims
+	// yield salvage or subrogation.
 	OwnDamage bool
 	// FirstCloseDate, ReopenDate, ReopenUltimate and ReopenEstimate describe
 	// the single optional reopen episode: the claim closed once, the case was
-	// re-raised after a lag, and CloseDate above is the final close.
+	// re-raised after a lag, and CloseDate is the final close.
 	// ReopenUltimate is the episode's true additional cost and ReopenEstimate
 	// the case it re-opens at, which the case-estimate stage sets. Zero values
-	// mean the claim never reopens. Carried to the runoff stage but never
-	// written to CSV.
+	// mean the claim never reopens.
 	FirstCloseDate shared.Date
 	ReopenDate     shared.Date
 	ReopenUltimate shared.Money
@@ -82,12 +101,10 @@ func (c Claim) Reopened() bool {
 
 // ClaimSimulator generates claim events for a policy book.
 type ClaimSimulator struct {
-	params              lob.ClaimParams
-	inflation           InflationIndex
-	sumInsuredInflation float64
-	startYear           int
-	windowStart         shared.Date // zero value means no windowing
-	windowEnd           shared.Date // exclusive
+	params      lob.ClaimParams
+	inflation   InflationIndex
+	windowStart shared.Date // zero value means no windowing
+	windowEnd   shared.Date // exclusive
 }
 
 // NewClaimSimulator builds a claim simulator from the claim parameters.
@@ -103,25 +120,14 @@ func (s *ClaimSimulator) WithInflation(x InflationIndex) *ClaimSimulator {
 	return s
 }
 
-// WithBaseYear sets the sum-insured inflation rate and run start year so
-// own-damage severity can be expressed in base-year sum-insured terms (SL-4):
-// the drifted sum insured is deflated by sum_insured_inflation raised to the
-// policy's underwriting-year offset before scaling the loss. Unset (the zero
-// value) leaves severity scaled by the nominal sum insured.
-func (s *ClaimSimulator) WithBaseYear(sumInsuredInflation float64, startYear int) *ClaimSimulator {
-	s.sumInsuredInflation = sumInsuredInflation
-	s.startYear = startYear
-	return s
-}
-
-// baseSumInsured deflates the policy's drifted sum insured back to base-year
-// dollars. Identity when the base-year knob is unset.
+// baseSumInsured is the policy's sum insured in start-year dollars, which the
+// book stage records (Policy.BaseSumInsured). A hand-built policy without it
+// falls back to the nominal sum insured.
 func (s *ClaimSimulator) baseSumInsured(pol policy.Policy) float64 {
-	if s.sumInsuredInflation <= 0 {
-		return pol.SumInsured.Dollars()
+	if pol.BaseSumInsured > 0 {
+		return pol.BaseSumInsured
 	}
-	offset := pol.CoverStart.Year() - s.startYear
-	return pol.SumInsured.Dollars() / math.Pow(s.sumInsuredInflation, float64(offset))
+	return pol.SumInsured.Dollars()
 }
 
 // WithWindow constrains claim occurrences to the run window [startYear, startYear+years):
@@ -246,16 +252,20 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	isNil := src.Bernoulli(s.params.NilProbability)
 
 	return Claim{
-		PolicyID:        pol.ID,
-		OccurrenceDate:  occurrence,
-		ReportDate:      report,
-		CloseDate:       closeDate,
-		Ultimate:        ultimate,
-		CoverLimit:      coverLimit,
-		InitialEstimate: ultimate,
-		RiskFactor:      pol.RiskFactor,
-		Nil:             isNil,
-		OwnDamage:       ownDamage,
+		Record: Record{
+			PolicyID:        pol.ID,
+			OccurrenceDate:  occurrence,
+			ReportDate:      report,
+			CloseDate:       closeDate,
+			InitialEstimate: ultimate,
+		},
+		Development: Development{
+			Ultimate:   ultimate,
+			CoverLimit: coverLimit,
+			RiskFactor: pol.RiskFactor,
+			Nil:        isNil,
+			OwnDamage:  ownDamage,
+		},
 	}, true
 }
 

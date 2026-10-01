@@ -20,6 +20,12 @@ type Policy struct {
 	Excess     shared.Money
 	RiskFactor float64
 	Premium    shared.Money
+	// BaseSumInsured is the sum insured in start-year dollars: SumInsured
+	// deflated by the book's sum-insured drift to the policy's underwriting
+	// year. Own-damage severity is sized off it, so the claim stage reads a
+	// self-describing field instead of needing the book's drift rate. Never
+	// written to CSV.
+	BaseSumInsured float64
 	// ThirdPartyPremium is the third-party liability section of Premium,
 	// priced the same way on that section's expected loss. The realism gate
 	// scores the liability claims against it, because the Schedule P
@@ -139,9 +145,11 @@ func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, startYear, y
 		CoverStart: start,
 		CoverEnd:   start.AddDays(364),
 		SumInsured: shared.FromDollars(sumInsured),
-		Excess:     shared.FromDollars(excess),
-		RiskFactor: riskFactor,
-		Premium:    shared.FromDollars(premium),
+
+		BaseSumInsured: shared.FromDollars(sumInsured).Dollars() / siDrift,
+		Excess:         shared.FromDollars(excess),
+		RiskFactor:     riskFactor,
+		Premium:        shared.FromDollars(premium),
 
 		ThirdPartyPremium: shared.FromDollars(thirdPartyLoss / lossRatio),
 	}

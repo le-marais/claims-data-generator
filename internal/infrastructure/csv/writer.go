@@ -37,7 +37,7 @@ func WriteDataset(dir string, ds application.Dataset) error {
 	if err := writeFile(dir, "claims.csv",
 		"claim_id,policy_id,occurrence_date,report_date,close_date,initial_estimate",
 		len(ds.Claims), func(i int) string {
-			c := ds.Claims[i]
+			c := ds.Claims[i].Record // claims.csv carries the record only, never the development context
 			return fmt.Sprintf("%d,%d,%s,%s,%s,%s",
 				c.ID, c.PolicyID, c.OccurrenceDate, c.ReportDate, c.CloseDate, c.InitialEstimate)
 		}); err != nil {

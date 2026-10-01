@@ -53,7 +53,7 @@ seed --> random.NewSource
              |
    src.Split("book")       --> policy.BookSimulator.Simulate      --> []Policy
    src.Split("inflation")  --> claim.NewInflationIndex            --> InflationIndex
-   src.Split("claims")     --> claim.ClaimSimulator.Simulate      --> []Claim   (needs book, inflation, base year, window)
+   src.Split("claims")     --> claim.ClaimSimulator.Simulate      --> []Claim   (needs book, inflation, window)
    src.Split("reopening")  --> claim.ReopenSimulator.Apply        --> []Claim   (mutates claims in place)
    src.Split("case-estimate") --> transaction.CaseEstimator.Apply --> []Claim   (sets opening cases in place)
    src.Split("runoff")     --> transaction.RunoffSimulator.Simulate --> []Transaction  (needs claims)
@@ -193,7 +193,7 @@ This file prices premium deterministically (no randomness) from the assumed loss
 
 `internal/domain/policy/book.go` simulates the exposure claims arise from.
 
-`Policy{ID, CoverStart, CoverEnd, SumInsured, Excess, RiskFactor, Premium, ThirdPartyPremium}` is one 12-month motor policy. `ThirdPartyPremium` is the third-party liability section of `Premium`, priced the same way on that section's expected loss; the realism gate scores the liability claims against it, and it is never written to CSV. `CoverEnd` is always `CoverStart.AddDays(364)`. Money fields are `shared.Money`; `RiskFactor` is a `float64`.
+`Policy{ID, CoverStart, CoverEnd, SumInsured, Excess, RiskFactor, Premium, BaseSumInsured, ThirdPartyPremium}` is one 12-month motor policy. `BaseSumInsured` is the sum insured in start-year dollars (`SumInsured / SumInsuredInflation^y`, computed where the drift lives), which the claim stage sizes own damage off; it is never written to CSV. `ThirdPartyPremium` is the third-party liability section of `Premium`, priced the same way on that section's expected loss; the realism gate scores the liability claims against it, and it is never written to CSV. `CoverEnd` is always `CoverStart.AddDays(364)`. Money fields are `shared.Money`; `RiskFactor` is a `float64`.
 
 `BookSimulator` holds `book lob.BookParams` and `pricing lob.PricingParams` (the latter drives premium pricing, independent of the claims model). `NewBookSimulator(book, pricing)` constructs it.
 
@@ -211,18 +211,22 @@ This file prices premium deterministically (no randomness) from the assumed loss
 
 ### 8.1 `claim.go`
 
-`Claim` fields: `ID`, `PolicyID`, `OccurrenceDate`, `ReportDate`, `CloseDate` (the final close after any reopen), `Ultimate` (the true cost: ground-up loss minus excess, capped at the cover for own damage; never written to CSV), `CoverLimit` (sum insured minus excess for own damage, zero meaning unlimited for third party; never written to CSV), `InitialEstimate` (the opening case, set to `Ultimate` here and replaced by the case-estimate stage), `RiskFactor` (carried from the policy), `Nil` (closes without payment; carried to runoff, never written to CSV), `OwnDamage` (drives recovery eligibility; never written to CSV), and the reopen fields `FirstCloseDate`, `ReopenDate`, `ReopenUltimate` (the episode's true additional cost) and `ReopenEstimate` (the case it re-opens at) - all zero when the claim never reopens. `(c Claim) Reopened() bool` is `ReopenDate != zero`.
+`Claim` embeds two structs, so the CSV surface is explicit in the type (RF-14); their fields read as `c.ID` or `c.Nil`:
 
-`ClaimSimulator` holds `params`, an `InflationIndex`, `sumInsuredInflation`, `startYear`, a `windowStart`, and an exclusive `windowEnd`. It is built fluently:
+- `Record` is the persisted claim, exactly the `claims.csv` columns: `ID`, `PolicyID`, `OccurrenceDate`, `ReportDate`, `CloseDate` (the final close after any reopen), and `InitialEstimate` (the opening case, set to `Ultimate` here and replaced by the case-estimate stage). The CSV writer reads only the record, and a test ties its field count to the file's columns.
+- `Development` is what later stages need and no CSV writes: `Ultimate` (the true cost: ground-up loss minus excess, capped at the cover for own damage), `CoverLimit` (sum insured minus excess for own damage, zero meaning unlimited for third party), `RiskFactor` (the policy's, kept for the reopen pass's close-lag draw), `Nil` (the first episode closes without payment), `OwnDamage` (drives recovery eligibility), and the reopen fields `FirstCloseDate`, `ReopenDate`, `ReopenUltimate` (the episode's true additional cost) and `ReopenEstimate` (the case it re-opens at) - all zero when the claim never reopens.
+
+`(c Claim) Reopened() bool` is `ReopenDate != zero`; `Cost()` is the true total paid over both episodes and `TotalLoss()` is an own-damage claim whose cost reached its cover limit.
+
+`ClaimSimulator` holds `params`, an `InflationIndex`, a `windowStart`, and an exclusive `windowEnd`. It is built fluently:
 
 - `NewClaimSimulator(p lob.ClaimParams) *ClaimSimulator` - sets only params (no inflation, nominal sum insured, no window).
 - `WithInflation(x InflationIndex)` - sets the occurrence-date inflation index (the zero value is the identity).
-- `WithBaseYear(sumInsuredInflation float64, startYear int)` - lets own-damage severity be expressed in base-year sum-insured terms.
 - `WithWindow(startYear, years int)` - sets `windowStart = Jan 1 of startYear` and `windowEnd = Jan 1 of startYear+years` (exclusive), constraining occurrences to `[startYear, startYear+years)` so the trailing underwriting year does not spill a partial accident year into claims.csv and the warm-up underwriting year adds no claims before the window.
 
 Helpers:
 
-- `baseSumInsured(pol) float64` - deflates the drifted sum insured to base-year dollars: `SumInsured / sumInsuredInflation^(coverYear-startYear)`, or the nominal value when the base-year knob is unset (`<= 0`).
+- `baseSumInsured(pol) float64` - the policy's `BaseSumInsured`, or the nominal sum insured for a hand-built policy without one.
 - `occurrenceSpan(pol) (first Date, days int)` - the part of the cover claims can occur in: the cover (`CoverStart` to `CoverEnd` inclusive) clipped to `[windowStart, windowEnd)` when a window is set. `days` is zero or negative when the cover misses the window.
 - `exposedFraction(pol) float64` - `occurrenceSpan` days over the 365 cover days, floored at 0, used to pro-rate frequency: 1 when windowing is off or the window holds the whole cover.
 
@@ -349,7 +353,7 @@ Cells are **incremental**: a cell is the movement in that development month. Inc
 
 - `GenerateRequest{LOB lob.LineOfBusiness, StartYear, Years, InitialBookSize int}` and `Dataset{Policies, Claims, Transactions}`.
 - `(r GenerateRequest) validate()` (unexported) - requires `Years >= 1` and `InitialBookSize >= 1`, then delegates to `LOB.Validate()` (`StartYear` is not validated).
-- `GenerateDataset(src shared.RandomSource, req GenerateRequest) (Dataset, error)` - validates, then runs the seven stages of section 3 over independently labelled sub-streams (`book`, `inflation`, `claims`, `reopening`, `case-estimate`, `runoff`, `recovery`), wiring the claim simulator fluently with the inflation index, base year (`SumInsuredInflation`, `StartYear`), and window. Output depends only on the master seed plus the request.
+- `GenerateDataset(src shared.RandomSource, req GenerateRequest) (Dataset, error)` - validates, then runs the seven stages of section 3 over independently labelled sub-streams (`book`, `inflation`, `claims`, `reopening`, `case-estimate`, `runoff`, `recovery`), wiring the claim simulator fluently with the inflation index and window. The claim stage takes no book parameter: it reads each policy's `BaseSumInsured`. Output depends only on the master seed plus the request.
 
 ### 11.2 `summary.go` - per-year table
 

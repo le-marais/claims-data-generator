@@ -28,39 +28,10 @@ high-severity is open.
 
 ## Order
 
-1. **RF-14** - gates the second line of business, and compounds with every
-   feature added.
+Nothing is queued here. The open model findings are in `docs/review.md`, and
+the exposure milestone below is conditional.
 
 The sequence across this file and `docs/review.md` lives in `docs/roadmap.md`.
-
-## 1. RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
-
-Merges the old F3 and F6, which describe the same problem from the parameter
-side.
-
-- Where: `internal/domain/claim/claim.go` - `RiskFactor`, `Nil`, `OwnDamage`,
-  `FirstCloseDate`, `ReopenDate` and `ReopenEstimate`, each annotated "carried
-  to the runoff/recovery stage but never written to CSV". Every future feature
-  (a valuation-date extract, per-claim-type behavior for new lines) will want
-  more such fields.
-- `RiskFactor` is the clearest case: its comment says "carried from the policy
-  for downstream stages", but it is read only by the close-lag draw in
-  `claim.go` and the reopen close-lag draw in `reopen.go`. No transaction-stage
-  file references it (confirmed 2026-08-09). The comment asserts a
-  policy-to-transaction link that does not exist.
-- The related reach-through: `internal/application/generate.go` passes
-  `req.LOB.Book.SumInsuredInflation` into `ClaimSimulator.WithBaseYear`, so the
-  claims stage needs a *book* knob to interpret the sum insured it reads off
-  each policy.
-- Action: split the persisted claim record from a development-context struct
-  passed between stages, so the CSV surface is explicit in the type system
-  instead of a comment convention. Drop `RiskFactor` from the exported struct
-  and pass it at draw time (or fix the comment as a stopgap). Have the book
-  stage store a base-year sum insured on `Policy`, computed where the drift rate
-  already lives, so the claims stage reads a self-describing field.
-- One data dependency stays and is deliberate: `Claim.OwnDamage` crosses from
-  the claims stage to `recovery.go`, because only the severity draw knows the
-  claim type and recovery eligibility genuinely depends on it.
 
 ## Exposure milestone (conditional, not work today)
 

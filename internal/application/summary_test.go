@@ -22,8 +22,8 @@ func tinyDataset() application.Dataset {
 			{ID: 2, CoverStart: shared.NewDate(1999, time.January, 1), CoverEnd: shared.NewDate(1999, time.December, 31), Premium: shared.FromDollars(730)},
 		},
 		Claims: []claim.Claim{
-			{ID: 1, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.June, 1), ReportDate: shared.NewDate(1998, time.June, 11), CloseDate: shared.NewDate(1998, time.December, 1)},
-			{ID: 2, PolicyID: 2, OccurrenceDate: shared.NewDate(1999, time.March, 1), ReportDate: shared.NewDate(1999, time.March, 31), CloseDate: shared.NewDate(2000, time.March, 31)},
+			{Record: claim.Record{ID: 1, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.June, 1), ReportDate: shared.NewDate(1998, time.June, 11), CloseDate: shared.NewDate(1998, time.December, 1)}},
+			{Record: claim.Record{ID: 2, PolicyID: 2, OccurrenceDate: shared.NewDate(1999, time.March, 1), ReportDate: shared.NewDate(1999, time.March, 31), CloseDate: shared.NewDate(2000, time.March, 31)}},
 		},
 		Transactions: []transaction.Transaction{
 			{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.June, 11), Type: transaction.Estimate, Amount: shared.FromDollars(1200)},
@@ -64,8 +64,8 @@ func TestSummarizeCountsNilClaims(t *testing.T) {
 			{ID: 1, CoverStart: shared.NewDate(1998, time.January, 1), CoverEnd: shared.NewDate(1998, time.December, 31), Premium: shared.FromDollars(365)},
 		},
 		Claims: []claim.Claim{
-			{ID: 1, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1), ReportDate: shared.NewDate(1998, time.March, 11), CloseDate: shared.NewDate(1998, time.June, 1)},
-			{ID: 2, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.April, 1), ReportDate: shared.NewDate(1998, time.April, 11), CloseDate: shared.NewDate(1998, time.July, 1), Nil: true},
+			{Record: claim.Record{ID: 1, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1), ReportDate: shared.NewDate(1998, time.March, 11), CloseDate: shared.NewDate(1998, time.June, 1)}},
+			{Record: claim.Record{ID: 2, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.April, 1), ReportDate: shared.NewDate(1998, time.April, 11), CloseDate: shared.NewDate(1998, time.July, 1)}, Development: claim.Development{Nil: true}},
 		},
 		Transactions: []transaction.Transaction{
 			{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.March, 11), Type: transaction.Estimate, Amount: shared.FromDollars(1000)},
