@@ -19,7 +19,15 @@ Only motor personal exists as a line of business today.
 
 ## Near term
 
-The real-claims-data backlog from the mission is complete (claims inflation, nil claims, recoveries, reopened claims). The next candidate is the mid-term second line of business below.
+The real-claims-data backlog from the mission is complete (claims inflation, nil claims, recoveries, reopened claims). Before the second line of business, a model-realism pass on the findings that most limit a reserving demo, in this order (re-ranked 2026-10-01):
+
+1. **MR-13** (`docs/review.md`) - make the realism gate's loss-ratio drift check fit for purpose, since every later change must pass it.
+2. **MR-9** - a third-party report lag so there is IBNR to estimate, a size link in third-party settlement time, and pure IBNR in the incurred the gate scores.
+3. **SL-7** (`docs/todo.md`) - case adequacy bias that persists over a claim's life, so incurred-based methods have something to detect.
+4. **MR-7** - salvage only on total losses.
+5. **CI-1** - an automatic test run on every pull request; small enough to slot in at any point.
+
+The second line of business then folds in MR-12 (separate sum-insured and risk spreads), the per-class switches from MR-8 (liability limit, excess on liability claims) and RF-13.
 
 ## Mid term - second line of business
 
