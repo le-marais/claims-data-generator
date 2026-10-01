@@ -131,3 +131,34 @@ func TestExposedFractionCountsCoverDays(t *testing.T) {
 		t.Errorf("no window: exposedFraction = %v, want 1", got)
 	}
 }
+
+// MR-6: warm-up policies written before the window yield claims only inside
+// it, at a frequency pro-rated to their in-window cover.
+func TestWindowedOccurrencesStartAtWindowStart(t *testing.T) {
+	const startYear, years = 1998, 10
+	windowStart := shared.NewDate(startYear, time.January, 1)
+	var book []policy.Policy
+	for i := 1; i <= 2000; i++ {
+		start := shared.NewDate(startYear-1, time.July, 2) // half the cover before the window
+		book = append(book, policy.Policy{
+			ID: i, CoverStart: start, CoverEnd: start.AddDays(364),
+			SumInsured: shared.FromDollars(20000), Excess: shared.FromDollars(300), RiskFactor: 1.0,
+		})
+	}
+	sim := NewClaimSimulator(windowParams()).WithWindow(startYear, years)
+	if got, want := sim.exposedFraction(book[0]), 182.0/365; got != want {
+		t.Fatalf("exposedFraction = %v, want %v", got, want)
+	}
+	claims := sim.Simulate(random.NewSource(1), book)
+	if len(claims) == 0 {
+		t.Fatal("no claims generated")
+	}
+	for _, c := range claims {
+		if c.OccurrenceDate.Before(windowStart) {
+			t.Fatalf("claim %d occurred %s, before window start %s", c.ID, c.OccurrenceDate, windowStart)
+		}
+	}
+	if got := sim.exposedFraction(policy.Policy{CoverStart: shared.NewDate(1996, time.March, 1), CoverEnd: shared.NewDate(1997, time.February, 28)}); got != 0 {
+		t.Fatalf("cover entirely before the window: exposedFraction = %v, want 0", got)
+	}
+}

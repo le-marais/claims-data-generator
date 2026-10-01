@@ -32,10 +32,10 @@ pricing:
   target_loss_ratio: 0.72
   # Each underwriting year's rates miss the target by mean-one lognormal
   # noise of this sigma, as in an underwriting cycle, so cohort loss ratios
-  # scatter around the target. 0 switches it off. Above about 0.03 the
-  # realism gate's loss-ratio drift band starts to fail on some seeds, because
-  # the simulated inflation path already moves the loss ratio between halves
-  # of the window.
+  # scatter around the target. 0 switches it off. The realism gate's
+  # loss-ratio drift band caps it: the simulated inflation path already moves
+  # the loss ratio between halves of the window, and above about 0.03 more
+  # seeds fail the band (see MR-13 in docs/review.md).
   adequacy_volatility: 0.03
   base_frequency: 0.12
   severity:

@@ -41,20 +41,30 @@ func NewBookSimulator(book lob.BookParams, pricing lob.PricingParams) *BookSimul
 }
 
 // Simulate produces the book: policies written over the given calendar
-// years. Each year's size is the previous year's size times the growth
-// factor times a mean-1 lognormal noise, so the book trends upward but can
-// shrink in individual years. Each year's policies are priced to that year's
-// target loss ratio: the pricing target times mean-1 lognormal noise of sigma
+// years, plus a warm-up underwriting year before the first. The warm-up
+// year's policies are in force when the run window opens, so the first
+// accident year has a full book behind it rather than one ramping up from
+// nothing (MR-6); the claim stage keeps only their in-window occurrences. It
+// is sized initialSize / GrowthFactor, with no noise, so initialSize stays the
+// size of the first window year.
+//
+// Each later year's size is the previous year's size times the growth factor
+// times a mean-1 lognormal noise, so the book trends upward but can shrink in
+// individual years. Each year's policies are priced to that year's target
+// loss ratio: the pricing target times mean-1 lognormal noise of sigma
 // AdequacyVolatility, drawn on its own sub-stream so the knob never moves any
 // other draw.
 func (s *BookSimulator) Simulate(src shared.RandomSource, startYear, years, initialSize int) []Policy {
 	sizeSrc := src.Split("book-size")
 	adequacySrc := src.Split("pricing-adequacy")
 	var book []Policy
-	size := initialSize
+	size := warmUpSize(s.book, initialSize)
 	id := 1
-	for y := 0; y < years; y++ {
-		if y > 0 {
+	for y := -1; y < years; y++ {
+		switch {
+		case y == 0:
+			size = initialSize
+		case y > 0:
 			noise := shared.MeanOneLogNormal(sizeSrc, s.book.SizeVolatility)
 			size = int(math.Round(float64(size) * s.book.GrowthFactor * noise))
 			if size < 1 {
@@ -73,14 +83,25 @@ func (s *BookSimulator) Simulate(src shared.RandomSource, startYear, years, init
 	return book
 }
 
+// warmUpSize is the size of the warm-up underwriting year: the first window
+// year's size with one year of growth taken off, at least one policy. A
+// non-positive growth factor, which validation rejects but ProjectedSize may
+// see first, takes nothing off.
+func warmUpSize(book lob.BookParams, initialSize int) int {
+	if !(book.GrowthFactor > 0) {
+		return max(1, initialSize)
+	}
+	return max(1, int(math.Round(float64(initialSize)/book.GrowthFactor)))
+}
+
 // ProjectedSize is the number of policies a run would write if every year's
-// size noise came out at its mean of 1: the initial size compounded by the
-// growth factor, summed over the years. It mirrors the growth rule in
-// Simulate and lets a caller size a run before paying for it. The result is a
-// float64 because a large growth factor over many years overflows an int
-// long before the run would ever finish.
+// size noise came out at its mean of 1: the warm-up year plus the initial size
+// compounded by the growth factor, summed over the years. It mirrors the
+// growth rule in Simulate and lets a caller size a run before paying for it.
+// The result is a float64 because a large growth factor over many years
+// overflows an int long before the run would ever finish.
 func ProjectedSize(book lob.BookParams, years, initialSize int) float64 {
-	total, size := 0.0, float64(initialSize)
+	total, size := float64(warmUpSize(book, initialSize)), float64(initialSize)
 	for y := 0; y < years; y++ {
 		if y > 0 {
 			size = math.Max(size*book.GrowthFactor, 1) // Simulate floors each year at 1

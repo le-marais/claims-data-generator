@@ -19,30 +19,14 @@ have shipped too: pricing allows for nil claims and trends to the cover
 midpoint, the inflation index moves smoothly by occurrence date, and the
 exposed fraction counts cover days. So has MR-4: the loss ratio is scored
 against reference loss ratios developed to age 10. MR-5 is narrowed to the
-step that remains at the size threshold.
+step that remains at the size threshold. MR-6 has shipped: the book writes a
+warm-up underwriting year, so AY1998 has a full book in force.
 
 IDs are **MR** (model review). Severity uses the `docs/todo.md` scale: **high**
 undermines the mission, **medium** worth addressing soon, **low** fix when
 touching the area.
 
-## 1. MR-6 (medium) - the first accident year behaves like a start-up book
-
-- Where: `internal/domain/policy/book.go` (no policies in force at the window
-  start); the comment on `ExposureByMonth` in
-  `internal/domain/triangle/exposure.go`; `docs/detailed-architecture.md`
-  section 10.3.
-- AY1998 exposure ramps from 77 exposure units in January to about 1,700 a
-  month, and its claims are back-loaded (571 in January-June against 1,667 in
-  July-December). AY1998 paid 0.42 of ultimate in development year 1, against
-  about 0.53 for later years, before MR-2 shortened own-damage settlement;
-  the ramp-up itself is unchanged. On a valuation-date cut, the late-age factors
-  come from exactly this row.
-- The docs say the accident basis also thins at the end of the window. It does
-  not: December 2007 carries a normal month (2,295 units).
-- Action: simulate a warm-up underwriting year before the window and keep only
-  its in-window occurrences; correct the docs.
-
-## 2. MR-5 (low) - the own-damage size stretch is a cliff at the threshold
+## 1. MR-5 (low) - the own-damage size stretch is a cliff at the threshold
 
 - Where: `internal/domain/claim/claim.go`, `closeLagRegime`.
 - The hidden calendar trend this finding first described is fixed: the
@@ -59,7 +43,7 @@ touching the area.
   `size_multiplier`, so it breaks existing YAMLs; deferred on 2026-10-01 in
   favour of keeping the schema.
 
-## 3. MR-7 (low) - salvage is not tied to total losses
+## 2. MR-7 (low) - salvage is not tied to total losses
 
 - Where: `internal/domain/transaction/recovery.go`, `simulateClaim`.
 - 98% of salvage rows (3,723 of 3,798) land on partially damaged vehicles.
@@ -68,7 +52,7 @@ touching the area.
   cap (`Claim.Ultimate == Claim.CoverLimit` since MR-1), and size it off the
   sum insured.
 
-## 4. MR-8 (low) - third-party severity is a bare Pareto
+## 3. MR-8 (low) - third-party severity is a bare Pareto
 
 - Where: `internal/domain/claim/claim.go`, `drawGroundUpLoss`.
 - No third-party claim is below about $3,050 after excess, the mode sits at the
@@ -77,7 +61,7 @@ touching the area.
 - Action: a lognormal body with a Pareto tail, an optional liability limit, and
   a switch for applying the excess to third-party claims.
 
-## 5. MR-9 (low) - there is almost no pure IBNR, and third-party close lag ignores size
+## 4. MR-9 (low) - there is almost no pure IBNR, and third-party close lag ignores size
 
 - Where: `internal/domain/claim/claim.go` (one report lag for both claim types;
   `closeLagRegime` applies the size stretch to own damage only).
@@ -97,9 +81,30 @@ touching the area.
   generated incurred the gate scores, so the incurred check stays like for
   like.
 
-## 6. MR-12 (low) - one setting drives two kinds of variation
+## 5. MR-12 (low) - one setting drives two kinds of variation
 
 - Where: `internal/domain/policy/book.go`, `simulatePolicy`.
 - `spread` sets both the sum-insured lognormal sigma and the risk-factor
   standard deviation, so a YAML author cannot set them independently.
 - Action: split it into two parameters.
+
+## 6. MR-13 (low) - the loss-ratio drift band is far tighter than the reference
+
+- Where: `internal/domain/triangle/compare.go`, `driftTolerance`.
+- The gate fails a run whose second-half accident-year loss ratio is outside
+  [1/1.10, 1.10] of its first-half one. Across the 96 reference companies,
+  developed to age 10, that ratio runs from 0.54 (P5) to 1.47 (P95), median
+  0.91, and only 31% of them sit inside the band.
+- The generated drift comes mostly from the simulated inflation path, which
+  pricing knows only by its mean. Over 120 seeds of the preset at a 40k book
+  it has mean 1.007 and standard deviation 0.050, and 9 of 120 seeds fall
+  outside the band (3 of 120 before MR-6 gave AY1998 its full weight). The
+  gate passes because it runs three fixed seeds.
+- The band is a guard against systematic drift, such as pricing and claims
+  inflation trending apart, not a realism band. As a guard it also caps
+  realistic randomness: it is what holds the preset's `adequacy_volatility`
+  at 0.03.
+- Action: decide what the check is for. To keep it as a drift guard, score
+  the expected drift over several seeds, or remove the inflation path's
+  noise before scoring. To make it a realism check, use the reference P5-P95
+  band like the other metrics.

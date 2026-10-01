@@ -26,13 +26,16 @@ type MonthExposure struct {
 }
 
 // ExposureByMonth returns the exposure of each of the origin months starting
-// at startMonth. Exposure falling outside that span is not counted, so the
-// last months of a run window are thin on the accident basis. On the
-// underwriting basis a policy's whole premium and whole term are written in
-// full at its inception month, while the claim occurrences scored against
-// that exposure stop at the run window's end, so the final twelve origin
-// months are immature by construction: incurred against premium there
-// understates the eventual ratio.
+// at startMonth. Exposure falling outside that span is not counted. The book
+// writes a warm-up underwriting year before the run window, so on the accident
+// basis the first months carry a full book in force, and the last months are
+// full too, covered by the final underwriting year. On the underwriting basis
+// a policy's whole premium and whole term are written in full at its inception
+// month, while the claim occurrences scored against that exposure stop at the
+// run window's end, so the final twelve origin months are immature by
+// construction: incurred against premium there understates the eventual
+// ratio. Warm-up policies incept before the window and are not counted on
+// that basis.
 func ExposureByMonth(policies []policy.Policy, startMonth shared.Month, months int, basis OriginBasis) []MonthExposure {
 	out := make([]MonthExposure, months)
 	for i := range out {
