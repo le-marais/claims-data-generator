@@ -71,7 +71,7 @@ func TestRecoveriesDoNotShiftOtherStages(t *testing.T) {
 			len(dsOn.Policies), len(dsOff.Policies), len(dsOn.Claims), len(dsOff.Claims))
 	}
 	for i := range dsOn.Claims {
-		if dsOn.Claims[i] != dsOff.Claims[i] {
+		if !reflect.DeepEqual(dsOn.Claims[i], dsOff.Claims[i]) {
 			t.Fatalf("claim %d differs with recoveries on", dsOn.Claims[i].ID)
 		}
 	}

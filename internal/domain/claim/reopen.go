@@ -30,9 +30,10 @@ func (s *ReopenSimulator) WithInflation(x InflationIndex) *ReopenSimulator {
 	return s
 }
 
-// Apply mutates reopened claims in place: CloseDate becomes the final
-// close and the reopen episode is recorded on the claim. A probability of
-// 0 makes no draw at all. Non-reopened claims are returned unchanged.
+// Apply appends a reopen episode to each claim that reopens: the case is
+// re-raised a lag after the first close, and the second episode pays the
+// reopen's additional cost and closes the claim for good. A probability of 0
+// makes no draw at all. Claims that do not reopen are returned unchanged.
 //
 // The reopen's additional cost is capped at the cover the claim has left, so
 // total paid never exceeds CoverLimit. A claim already paid up to its limit
@@ -48,15 +49,17 @@ func (s *ReopenSimulator) Apply(src shared.RandomSource, claims []Claim) []Claim
 		if !stream.Bernoulli(r.Probability) {
 			continue
 		}
+		first := c.Episodes[0]
 		lag := int(math.Round(stream.LogNormal(math.Log(r.LagMedianDays), r.LagSigma)))
 		if lag < 1 {
 			lag = 1 // the reopen is strictly after the first close
 		}
-		additional := c.Ultimate.MulFloat(r.EstimateFactor * shared.MeanOneLogNormal(stream, r.EstimateSigma))
+		additional := first.Ultimate.MulFloat(r.EstimateFactor * shared.MeanOneLogNormal(stream, r.EstimateSigma))
 		if additional < shared.OneCent {
 			additional = shared.OneCent
 		}
-		if left, limited := c.coverLeft(); limited {
+		if c.CoverLimit > 0 {
+			left := c.CoverLimit - first.Paid()
 			if left < shared.OneCent {
 				continue // paid up to the limit: nothing left to reopen for
 			}
@@ -69,25 +72,10 @@ func (s *ReopenSimulator) Apply(src shared.RandomSource, claims []Claim) []Claim
 		if closeLag < 1 {
 			closeLag = 1 // the second close is strictly after the reopen
 		}
-		c.FirstCloseDate = c.CloseDate
-		c.ReopenDate = c.CloseDate.AddDays(lag)
-		c.ReopenUltimate = additional
-		c.ReopenEstimate = additional // the case-estimate stage replaces this
-		c.CloseDate = c.ReopenDate.AddDays(closeLag)
+		reopen := first.Close.AddDays(lag)
+		// The capped slice makes append copy, so a copy of the claim taken
+		// before this pass keeps its single episode.
+		c.Episodes = append(c.Episodes[:1:1], Episode{Open: reopen, Close: reopen.AddDays(closeLag), Ultimate: additional})
 	}
 	return claims
-}
-
-// coverLeft is the cover still available after the first episode: the limit
-// less what that episode pays (nothing for a nil claim). limited is false for
-// unlimited (third-party) cover.
-func (c Claim) coverLeft() (left shared.Money, limited bool) {
-	if c.CoverLimit <= 0 {
-		return 0, false
-	}
-	paid := c.Ultimate
-	if c.Nil {
-		paid = 0
-	}
-	return c.CoverLimit - paid, true
 }

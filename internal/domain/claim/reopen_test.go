@@ -1,6 +1,7 @@
 package claim_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/le-marais/claimsgen/internal/domain/claim"
@@ -30,7 +31,7 @@ func TestReopenZeroProbabilityIsANoOp(t *testing.T) {
 	before := claim.NewClaimSimulator(p).Simulate(random.NewSource(41), fixedBook(1000, 20000, 0, 1.0))
 	after := claim.NewReopenSimulator(p).Apply(random.NewSource(41), append([]claim.Claim(nil), before...))
 	for i := range after {
-		if after[i] != before[i] {
+		if !reflect.DeepEqual(after[i], before[i]) {
 			t.Fatalf("claim %d changed with reopening probability 0", after[i].ID)
 		}
 		if after[i].Reopened() {
@@ -39,28 +40,29 @@ func TestReopenZeroProbabilityIsANoOp(t *testing.T) {
 	}
 }
 
-func TestReopenDatesAndEstimates(t *testing.T) {
+func TestReopenDates(t *testing.T) {
 	claims := reopenFixture(t, reopeningParams(), 42)
 	reopened := 0
 	for _, c := range claims {
+		if len(c.Episodes) > 2 {
+			t.Fatalf("claim %d has %d episodes, want at most 2", c.ID, len(c.Episodes))
+		}
 		if !c.Reopened() {
-			if c.FirstCloseDate != (claim.Claim{}).FirstCloseDate || c.ReopenEstimate != 0 {
-				t.Fatalf("claim %d not reopened but carries reopen fields: %+v", c.ID, c)
-			}
 			continue
 		}
 		reopened++
-		if !c.ReopenDate.After(c.FirstCloseDate) {
-			t.Fatalf("claim %d reopen %s not strictly after first close %s", c.ID, c.ReopenDate, c.FirstCloseDate)
+		first, second := c.Episodes[0], c.Episodes[1]
+		if !second.Open.After(first.Close) {
+			t.Fatalf("claim %d reopen %s not strictly after first close %s", c.ID, second.Open, first.Close)
 		}
-		if !c.CloseDate.After(c.ReopenDate) {
-			t.Fatalf("claim %d final close %s not strictly after reopen %s", c.ID, c.CloseDate, c.ReopenDate)
+		if !second.Close.After(second.Open) {
+			t.Fatalf("claim %d final close %s not strictly after reopen %s", c.ID, second.Close, second.Open)
 		}
-		if c.FirstCloseDate.Before(c.ReportDate) {
-			t.Fatalf("claim %d first close %s before report %s", c.ID, c.FirstCloseDate, c.ReportDate)
+		if first.Close.Before(first.Open) {
+			t.Fatalf("claim %d first close %s before report %s", c.ID, first.Close, first.Open)
 		}
-		if c.ReopenEstimate <= 0 {
-			t.Fatalf("claim %d reopen estimate %v not positive", c.ID, c.ReopenEstimate)
+		if second.Nil {
+			t.Fatalf("claim %d reopen episode is nil, want it to pay", c.ID)
 		}
 	}
 	if reopened == 0 {
@@ -72,7 +74,7 @@ func TestReopenIsDeterministicPerSeed(t *testing.T) {
 	a := reopenFixture(t, reopeningParams(), 7)
 	b := reopenFixture(t, reopeningParams(), 7)
 	for i := range a {
-		if a[i] != b[i] {
+		if !reflect.DeepEqual(a[i], b[i]) {
 			t.Fatalf("claim %d differs between identical runs", a[i].ID)
 		}
 	}
@@ -86,7 +88,7 @@ func TestReopenLeavesNonReopenedClaimsUntouched(t *testing.T) {
 		if applied[i].Reopened() {
 			continue
 		}
-		if applied[i] != base[i] {
+		if !reflect.DeepEqual(applied[i], base[i]) {
 			t.Fatalf("non-reopened claim %d changed by the reopen pass", applied[i].ID)
 		}
 	}

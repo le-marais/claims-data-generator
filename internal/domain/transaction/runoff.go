@@ -7,9 +7,9 @@
 // estimate is a noisy assessor's view of the remaining cost that converges to
 // zero at close. The initial estimate is emitted as the first ESTIMATE row, so a
 // claim's outstanding case at any time is the running sum of its ESTIMATE
-// amounts. Runoff is developed in episodes: a normal claim runs one episode
-// to close, while a reopened claim runs a first episode to its first close,
-// a re-raise to the reopen estimate, and a second episode to the final close.
+// amounts. Runoff is developed one episode at a time: a reopened claim's
+// second episode re-raises the case from zero to its opening case and
+// develops to the final close.
 package transaction
 
 import (
@@ -75,21 +75,15 @@ type event struct {
 	amount shared.Money // payments only
 }
 
+// simulateClaim develops the claim's episodes in order. Each opens by moving
+// the case to the episode's opening case on its open date: on the report date
+// that is the claim's first ESTIMATE row, and on a reopen it re-raises the
+// case from zero.
 func (s *RunoffSimulator) simulateClaim(src shared.RandomSource, c claim.Claim) []Transaction {
-	e := &emitter{claimID: c.ID, report: c.ReportDate}
-	e.estimate(0, c.InitialEstimate)
-
-	firstClose := c.CloseDate
-	if c.Reopened() {
-		firstClose = c.FirstCloseDate
-	}
-	s.runEpisode(src, e, c.ReportDate, firstClose, c.Ultimate, c.Nil)
-
-	if c.Reopened() {
-		// The case is re-raised on the reopen date, then a second, smaller
-		// episode develops and pays the reopen's additional cost.
-		e.reviseTo(shared.DaysBetween(c.ReportDate, c.ReopenDate), c.ReopenEstimate)
-		s.runEpisode(src, e, c.ReopenDate, c.CloseDate, c.ReopenUltimate, false)
+	e := &emitter{claimID: c.ID, report: c.ReportDate()}
+	for _, ep := range c.Episodes {
+		e.reviseTo(shared.DaysBetween(e.report, ep.Open), ep.OpeningCase)
+		s.runEpisode(src, e, ep)
 	}
 	return e.txs
 }
@@ -105,19 +99,20 @@ func (s *RunoffSimulator) adequacyBias(u float64) float64 {
 }
 
 // runEpisode develops one open-close episode: interim payments and pure
-// revisions between start and close, a final settlement at close that brings
-// total paid in the episode to exactly ultimate, and the outstanding case
-// released to exactly zero. A nil episode emits no payments and ignores
-// ultimate.
+// revisions between its open and close dates, a final settlement at close
+// that brings total paid in the episode to exactly ultimate, and the
+// outstanding case released to exactly zero. A nil episode emits no payments
+// and ignores ultimate.
 //
 // Each revision moves the case to its aim times mean-one lognormal noise
 // whose sigma decays to zero at close. A paying episode aims at the remaining
 // cost (ultimate - paid) times the adequacy bias; a nil episode, whose handler
 // does not know it will pay nothing, aims at the current case. Every target
 // is floored at one cent, so the case stays open until the close date.
-func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, start, close shared.Date, ultimate shared.Money, isNil bool) {
-	base := shared.DaysBetween(e.report, start)
-	duration := shared.DaysBetween(start, close)
+func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, ep claim.Episode) {
+	ultimate, isNil := ep.Ultimate, ep.Nil
+	base := shared.DaysBetween(e.report, ep.Open)
+	duration := shared.DaysBetween(ep.Open, ep.Close)
 	years := float64(duration) / 365
 
 	var interims []event

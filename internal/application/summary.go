@@ -57,7 +57,7 @@ func Summarize(ds Dataset, startYear, years int) SummaryReport {
 		occurrenceYear[c.ID] = c.OccurrenceDate.Year()
 		if i := c.OccurrenceDate.Year() - startYear; i >= 0 && i < years {
 			rows[i].Claims++
-			if c.Nil {
+			if c.Nil() {
 				rows[i].NilClaims++
 			}
 			if c.Reopened() {

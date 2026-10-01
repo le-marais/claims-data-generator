@@ -22,8 +22,8 @@ func tinyDataset() application.Dataset {
 			{ID: 2, CoverStart: shared.NewDate(1999, time.January, 1), CoverEnd: shared.NewDate(1999, time.December, 31), Premium: shared.FromDollars(730)},
 		},
 		Claims: []claim.Claim{
-			{Record: claim.Record{ID: 1, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.June, 1), ReportDate: shared.NewDate(1998, time.June, 11), CloseDate: shared.NewDate(1998, time.December, 1)}},
-			{Record: claim.Record{ID: 2, PolicyID: 2, OccurrenceDate: shared.NewDate(1999, time.March, 1), ReportDate: shared.NewDate(1999, time.March, 31), CloseDate: shared.NewDate(2000, time.March, 31)}},
+			{ID: 1, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.June, 1), Episodes: []claim.Episode{{Open: shared.NewDate(1998, time.June, 11), Close: shared.NewDate(1998, time.December, 1)}}},
+			{ID: 2, PolicyID: 2, OccurrenceDate: shared.NewDate(1999, time.March, 1), Episodes: []claim.Episode{{Open: shared.NewDate(1999, time.March, 31), Close: shared.NewDate(2000, time.March, 31)}}},
 		},
 		Transactions: []transaction.Transaction{
 			{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.June, 11), Type: transaction.Estimate, Amount: shared.FromDollars(1200)},
@@ -64,8 +64,8 @@ func TestSummarizeCountsNilClaims(t *testing.T) {
 			{ID: 1, CoverStart: shared.NewDate(1998, time.January, 1), CoverEnd: shared.NewDate(1998, time.December, 31), Premium: shared.FromDollars(365)},
 		},
 		Claims: []claim.Claim{
-			{Record: claim.Record{ID: 1, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1), ReportDate: shared.NewDate(1998, time.March, 11), CloseDate: shared.NewDate(1998, time.June, 1)}},
-			{Record: claim.Record{ID: 2, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.April, 1), ReportDate: shared.NewDate(1998, time.April, 11), CloseDate: shared.NewDate(1998, time.July, 1)}, Development: claim.Development{Nil: true}},
+			{ID: 1, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1), Episodes: []claim.Episode{{Open: shared.NewDate(1998, time.March, 11), Close: shared.NewDate(1998, time.June, 1)}}},
+			{ID: 2, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.April, 1), Episodes: []claim.Episode{{Open: shared.NewDate(1998, time.April, 11), Close: shared.NewDate(1998, time.July, 1), Nil: true}}},
 		},
 		Transactions: []transaction.Transaction{
 			{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.March, 11), Type: transaction.Estimate, Amount: shared.FromDollars(1000)},
@@ -112,10 +112,9 @@ func TestSummarizeCountsRecoveredByOccurrenceYear(t *testing.T) {
 func TestSummarizeCountsReopenedByOccurrenceYear(t *testing.T) {
 	ds := tinyDataset()
 	// Mark claim 1 (occurred 1998) as reopened.
-	ds.Claims[0].FirstCloseDate = ds.Claims[0].CloseDate
-	ds.Claims[0].ReopenDate = shared.NewDate(1999, time.February, 1)
-	ds.Claims[0].ReopenEstimate = shared.FromDollars(500)
-	ds.Claims[0].CloseDate = shared.NewDate(1999, time.June, 1)
+	ds.Claims[0].Episodes = append(ds.Claims[0].Episodes, claim.Episode{
+		Open: shared.NewDate(1999, time.February, 1), Close: shared.NewDate(1999, time.June, 1), OpeningCase: shared.FromDollars(500),
+	})
 	got := application.Summarize(ds, 1998, 2)
 	if got.Years[0].Reopened != 1 {
 		t.Errorf("1998 reopened = %d, want 1", got.Years[0].Reopened)

@@ -38,8 +38,8 @@ random.NewSource(seed)
   Split("book")          policy.BookSimulator.Simulate         -> []Policy
   Split("inflation")     claim.NewInflationIndex               -> InflationIndex
   Split("claims")        claim.ClaimSimulator.Simulate         -> []Claim
-  Split("reopening")     claim.ReopenSimulator.Apply           -> reopens claims in place
-  Split("case-estimate") transaction.CaseEstimator.Apply       -> sets opening cases in place
+  Split("reopening")     claim.ReopenSimulator.Apply           -> appends reopen episodes
+  Split("case-estimate") transaction.CaseEstimator.Apply       -> sets each episode's opening case
   Split("runoff")        transaction.RunoffSimulator.Simulate  -> []Transaction
   Split("recovery")      transaction.RecoverySimulator.Apply   -> []Transaction with recoveries
                                     |
@@ -71,13 +71,13 @@ The CLI writes the three dataset CSVs and, from `Aggregates`, `triangles.csv` an
 
 ### `claim` - claim events
 
-`ClaimSimulator.Simulate` draws each policy's claim count, then each claim's occurrence date, report lag, ground-up loss, inflation, cap, excess, close lag and nil flag in a fixed order, dropping claims that do not pierce the excess. It sorts the claims into registration order and numbers them. `InflationIndex` is the stochastic claims-inflation path, one factor per calendar year, interpolated smoothly through the year. `ReopenSimulator.Apply` is a post-pass that gives some closed claims a second episode with its own cost and close date.
+A `Claim`'s life is a list of `Episode`s, each with open and close dates, its true cost (`Ultimate`), a nil flag, and the case it opens at. The first episode runs from the report date to the first close; a reopened claim has a second. Stages append episodes and never rewrite one's dates or cost, so the claim's report date, final close, initial estimate and total cost are all read off its episodes. `Record()` is the claim's `claims.csv` row.
 
-`Claim` embeds `Record`, exactly the `claims.csv` columns, and `Development`, what later stages need and no CSV writes: the true `Ultimate`, the cover limit, the nil and own-damage flags, and the reopen fields.
+`ClaimSimulator.Simulate` draws each policy's claim count, then each claim's occurrence date, report lag, ground-up loss, inflation, cap, excess, close lag and nil flag in a fixed order, dropping claims that do not pierce the excess. It sorts the claims into registration order and numbers them. `InflationIndex` is the stochastic claims-inflation path, one factor per calendar year, interpolated smoothly through the year. `ReopenSimulator.Apply` is a post-pass that appends a second episode to some closed claims, with its own cost and close date.
 
 ### `transaction` - the ledger
 
-`CaseEstimator.Apply` sets each episode's opening case around its true cost. `RunoffSimulator.Simulate` turns each claim into `ESTIMATE` and `PAYMENT` rows episode by episode: interim payments and revisions in date order, then a final settlement and a release of the case to zero. `RecoverySimulator.Apply` adds `SALVAGE` and `SUBROGATION` rows after the final close of eligible own-damage claims.
+`CaseEstimator.Apply` sets each episode's opening case around its true cost. `RunoffSimulator.Simulate` turns each claim into `ESTIMATE` and `PAYMENT` rows one episode at a time: the case moves to the episode's opening case, then interim payments and revisions in date order, then a final settlement and a release of the case to zero. `RecoverySimulator.Apply` adds `SALVAGE` and `SUBROGATION` rows after the final close of eligible own-damage claims.
 
 The ledger is each claim's event stream, and every measure folds from it: outstanding case is the running sum of `ESTIMATE` rows, gross paid the sum of `PAYMENT` rows, and net paid subtracts the recoveries.
 

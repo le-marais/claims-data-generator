@@ -33,18 +33,16 @@ func testClaims(n int) []claim.Claim {
 		durations := []int{0, 10, 45, 180, 700}
 		estimates := []float64{800, 3000, 12000, 40000, 250000}
 		claims[i] = claim.Claim{
-			Record: claim.Record{
-				ID:              i + 1,
-				PolicyID:        i + 1,
-				OccurrenceDate:  report.AddDays(-2),
-				ReportDate:      report,
-				CloseDate:       report.AddDays(durations[i%5]),
-				InitialEstimate: shared.FromDollars(estimates[(i+2)%5]),
-			},
-			Development: claim.Development{
-				Ultimate:   shared.FromDollars(estimates[(i+2)%5]),
-				RiskFactor: 1.0,
-			},
+			ID:             i + 1,
+			PolicyID:       i + 1,
+			OccurrenceDate: report.AddDays(-2),
+			Episodes: []claim.Episode{{
+				Open:        report,
+				Close:       report.AddDays(durations[i%5]),
+				Ultimate:    shared.FromDollars(estimates[(i+2)%5]),
+				OpeningCase: shared.FromDollars(estimates[(i+2)%5]),
+			}},
+			RiskFactor: 1.0,
 		}
 	}
 	return claims
@@ -73,19 +71,19 @@ func TestRunoffInvariants(t *testing.T) {
 			t.Fatalf("claim %d has %d transactions, want at least initial estimate, payment, and closing movement", c.ID, len(rows))
 		}
 		first := rows[0]
-		if first.Type != transaction.Estimate || first.Amount != c.InitialEstimate || first.Date != c.ReportDate {
-			t.Fatalf("claim %d first row = %+v, want initial ESTIMATE %v on %s", c.ID, first, c.InitialEstimate, c.ReportDate)
+		if first.Type != transaction.Estimate || first.Amount != c.InitialEstimate() || first.Date != c.ReportDate() {
+			t.Fatalf("claim %d first row = %+v, want initial ESTIMATE %v on %s", c.ID, first, c.InitialEstimate(), c.ReportDate())
 		}
 		outstanding := shared.Money(0)
 		paid := shared.Money(0)
-		prevDate := c.ReportDate
+		prevDate := c.ReportDate()
 		for _, tx := range rows {
 			if tx.Date.Before(prevDate) {
 				t.Fatalf("claim %d transactions not chronological", c.ID)
 			}
 			prevDate = tx.Date
-			if tx.Date.Before(c.ReportDate) || tx.Date.After(c.CloseDate) {
-				t.Fatalf("claim %d transaction on %s outside report..close %s..%s", c.ID, tx.Date, c.ReportDate, c.CloseDate)
+			if tx.Date.Before(c.ReportDate()) || tx.Date.After(c.CloseDate()) {
+				t.Fatalf("claim %d transaction on %s outside report..close %s..%s", c.ID, tx.Date, c.ReportDate(), c.CloseDate())
 			}
 			switch tx.Type {
 			case transaction.Estimate:
@@ -109,8 +107,8 @@ func TestRunoffInvariants(t *testing.T) {
 			t.Fatalf("claim %d total paid = %v, want positive", c.ID, paid)
 		}
 		last := rows[len(rows)-1]
-		if last.Date != c.CloseDate {
-			t.Fatalf("claim %d last transaction on %s, want close date %s", c.ID, last.Date, c.CloseDate)
+		if last.Date != c.CloseDate() {
+			t.Fatalf("claim %d last transaction on %s, want close date %s", c.ID, last.Date, c.CloseDate())
 		}
 	}
 }
@@ -137,7 +135,7 @@ func TestTotalPaidIsExactlyTheUltimate(t *testing.T) {
 	claims := testClaims(400)
 	// Open every case well away from the truth: payments must not follow it.
 	for i := range claims {
-		claims[i].InitialEstimate = claims[i].Ultimate.MulFloat(0.5)
+		claims[i].Episodes[0].OpeningCase = claims[i].Episodes[0].Ultimate.MulFloat(0.5)
 	}
 	txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(3), claims)
 	paid := map[int]shared.Money{}
@@ -147,34 +145,32 @@ func TestTotalPaidIsExactlyTheUltimate(t *testing.T) {
 		}
 	}
 	for _, c := range claims {
-		if paid[c.ID] != c.Ultimate {
-			t.Fatalf("claim %d paid %v, want its ultimate %v", c.ID, paid[c.ID], c.Ultimate)
+		if paid[c.ID] != c.Episodes[0].Ultimate {
+			t.Fatalf("claim %d paid %v, want its ultimate %v", c.ID, paid[c.ID], c.Episodes[0].Ultimate)
 		}
 	}
 }
 
 func TestSameDayCloseSettlesInFull(t *testing.T) {
 	c := claim.Claim{
-		Record: claim.Record{
-			ID:              1,
-			PolicyID:        1,
-			OccurrenceDate:  shared.NewDate(1998, time.May, 1),
-			ReportDate:      shared.NewDate(1998, time.May, 3),
-			CloseDate:       shared.NewDate(1998, time.May, 3),
-			InitialEstimate: shared.FromDollars(1000),
-		},
-		Development: claim.Development{
-			Ultimate:   shared.FromDollars(1000),
-			RiskFactor: 1.0,
-		},
+		ID:             1,
+		PolicyID:       1,
+		OccurrenceDate: shared.NewDate(1998, time.May, 1),
+		Episodes: []claim.Episode{{
+			Open:        shared.NewDate(1998, time.May, 3),
+			Close:       shared.NewDate(1998, time.May, 3),
+			Ultimate:    shared.FromDollars(1000),
+			OpeningCase: shared.FromDollars(1000),
+		}},
+		RiskFactor: 1.0,
 	}
 	sim := transaction.NewRunoffSimulator(params())
 	txs := sim.Simulate(random.NewSource(4), []claim.Claim{c})
 	outstanding := shared.Money(0)
 	paid := shared.Money(0)
 	for _, tx := range txs {
-		if tx.Date != c.ReportDate {
-			t.Fatalf("transaction on %s, want all on %s", tx.Date, c.ReportDate)
+		if tx.Date != c.ReportDate() {
+			t.Fatalf("transaction on %s, want all on %s", tx.Date, c.ReportDate())
 		}
 		if tx.Type == transaction.Estimate {
 			outstanding += tx.Amount
@@ -221,7 +217,7 @@ func TestLongClaimsReviseMoreThanShortClaims(t *testing.T) {
 	var shortSum, shortN, longSum, longN float64
 	for _, c := range claims {
 		n := float64(len(grouped[c.ID]))
-		if shared.DaysBetween(c.ReportDate, c.CloseDate) >= 180 {
+		if shared.DaysBetween(c.ReportDate(), c.CloseDate()) >= 180 {
 			longSum += n
 			longN++
 		} else {
@@ -237,18 +233,16 @@ func TestLongClaimsReviseMoreThanShortClaims(t *testing.T) {
 
 func TestNilClaimHasNoPaymentsAndClosesToZero(t *testing.T) {
 	c := claim.Claim{
-		Record: claim.Record{
-			ID:              1,
-			PolicyID:        1,
-			OccurrenceDate:  shared.NewDate(2000, time.January, 1),
-			ReportDate:      shared.NewDate(2000, time.January, 10),
-			CloseDate:       shared.NewDate(2001, time.June, 1),
-			InitialEstimate: shared.FromDollars(5000),
-		},
-		Development: claim.Development{
-			RiskFactor: 1.0,
-			Nil:        true,
-		},
+		ID:             1,
+		PolicyID:       1,
+		OccurrenceDate: shared.NewDate(2000, time.January, 1),
+		Episodes: []claim.Episode{{
+			Open:        shared.NewDate(2000, time.January, 10),
+			Close:       shared.NewDate(2001, time.June, 1),
+			Nil:         true,
+			OpeningCase: shared.FromDollars(5000),
+		}},
+		RiskFactor: 1.0,
 	}
 	sim := transaction.NewRunoffSimulator(params())
 	txs := sim.Simulate(random.NewSource(1), []claim.Claim{c})
@@ -273,34 +267,36 @@ func TestNilClaimHasNoPaymentsAndClosesToZero(t *testing.T) {
 		t.Fatalf("nil claim outstanding at close %v, want 0", outstanding)
 	}
 	first := txs[0]
-	if first.Type != transaction.Estimate || first.Amount != c.InitialEstimate || first.Date != c.ReportDate {
+	if first.Type != transaction.Estimate || first.Amount != c.InitialEstimate() || first.Date != c.ReportDate() {
 		t.Fatalf("first row %+v is not the initial estimate on the report date", first)
 	}
-	if last := txs[len(txs)-1]; last.Date != c.CloseDate {
-		t.Fatalf("last row on %s, want close date %s", last.Date, c.CloseDate)
+	if last := txs[len(txs)-1]; last.Date != c.CloseDate() {
+		t.Fatalf("last row on %s, want close date %s", last.Date, c.CloseDate())
 	}
 }
 
 // reopenedClaim builds one claim with a reopen episode.
 func reopenedClaim(isNil bool) claim.Claim {
 	return claim.Claim{
-		Record: claim.Record{
-			ID:              1,
-			PolicyID:        1,
-			OccurrenceDate:  shared.NewDate(2000, time.January, 1),
-			ReportDate:      shared.NewDate(2000, time.January, 5),
-			CloseDate:       shared.NewDate(2001, time.February, 1),
-			InitialEstimate: shared.FromDollars(8000),
+		ID:             1,
+		PolicyID:       1,
+		OccurrenceDate: shared.NewDate(2000, time.January, 1),
+		Episodes: []claim.Episode{
+			{
+				Open:        shared.NewDate(2000, time.January, 5),
+				Close:       shared.NewDate(2000, time.June, 1),
+				Ultimate:    shared.FromDollars(8000),
+				Nil:         isNil,
+				OpeningCase: shared.FromDollars(8000),
+			},
+			{
+				Open:        shared.NewDate(2000, time.September, 1),
+				Close:       shared.NewDate(2001, time.February, 1),
+				Ultimate:    shared.FromDollars(3000),
+				OpeningCase: shared.FromDollars(3000),
+			},
 		},
-		Development: claim.Development{
-			FirstCloseDate: shared.NewDate(2000, time.June, 1),
-			ReopenDate:     shared.NewDate(2000, time.September, 1),
-			Ultimate:       shared.FromDollars(8000),
-			ReopenUltimate: shared.FromDollars(3000),
-			ReopenEstimate: shared.FromDollars(3000),
-			RiskFactor:     1.0,
-			Nil:            isNil,
-		},
+		RiskFactor: 1.0,
 	}
 }
 
@@ -315,7 +311,7 @@ func TestReopenedClaimRunsTwoEpisodes(t *testing.T) {
 		if tx.Type == transaction.Estimate {
 			outstanding += tx.Amount
 		}
-		if !tx.Date.After(c.FirstCloseDate) {
+		if !tx.Date.After(c.Episodes[0].Close) {
 			outstandingAtFirstClose = outstanding
 		} else if reopenRow == nil {
 			reopenRow = &txs[i]
@@ -327,14 +323,15 @@ func TestReopenedClaimRunsTwoEpisodes(t *testing.T) {
 	if reopenRow == nil {
 		t.Fatal("no transactions after the first close")
 	}
-	if reopenRow.Type != transaction.Estimate || reopenRow.Amount != c.ReopenEstimate || reopenRow.Date != c.ReopenDate {
-		t.Fatalf("re-raise row %+v, want ESTIMATE %v on %s", *reopenRow, c.ReopenEstimate, c.ReopenDate)
+	reopen := c.Episodes[1]
+	if reopenRow.Type != transaction.Estimate || reopenRow.Amount != reopen.OpeningCase || reopenRow.Date != reopen.Open {
+		t.Fatalf("re-raise row %+v, want ESTIMATE %v on %s", *reopenRow, reopen.OpeningCase, reopen.Open)
 	}
 	if outstanding != 0 {
 		t.Fatalf("outstanding at final close = %v, want 0", outstanding)
 	}
-	if last := txs[len(txs)-1]; last.Date != c.CloseDate {
-		t.Fatalf("last transaction on %s, want final close %s", last.Date, c.CloseDate)
+	if last := txs[len(txs)-1]; last.Date != c.CloseDate() {
+		t.Fatalf("last transaction on %s, want final close %s", last.Date, c.CloseDate())
 	}
 }
 
@@ -348,7 +345,7 @@ func TestReopenedNilClaimPaysOnlyInEpisodeTwo(t *testing.T) {
 		if tx.Type != transaction.Payment {
 			continue
 		}
-		if tx.Date.Before(c.ReopenDate) {
+		if tx.Date.Before(c.Episodes[1].Open) {
 			paidBeforeReopen += tx.Amount
 		} else {
 			paidAfterReopen += tx.Amount
@@ -357,8 +354,8 @@ func TestReopenedNilClaimPaysOnlyInEpisodeTwo(t *testing.T) {
 	if paidBeforeReopen != 0 {
 		t.Fatalf("reopened nil claim paid %v before the reopen, want 0", paidBeforeReopen)
 	}
-	if paidAfterReopen != c.ReopenUltimate {
-		t.Fatalf("reopened nil claim paid %v in episode 2, want its reopen ultimate %v", paidAfterReopen, c.ReopenUltimate)
+	if paidAfterReopen != c.Episodes[1].Ultimate {
+		t.Fatalf("reopened nil claim paid %v in episode 2, want its reopen ultimate %v", paidAfterReopen, c.Episodes[1].Ultimate)
 	}
 }
 
@@ -366,11 +363,10 @@ func TestReopenedClaimRowsChronological(t *testing.T) {
 	claims := testClaims(50)
 	for i := range claims {
 		if i%4 == 0 {
-			claims[i].FirstCloseDate = claims[i].CloseDate
-			claims[i].ReopenDate = claims[i].CloseDate.AddDays(60)
-			claims[i].ReopenUltimate = shared.FromDollars(2000)
-			claims[i].ReopenEstimate = shared.FromDollars(2000)
-			claims[i].CloseDate = claims[i].ReopenDate.AddDays(90)
+			reopen := claims[i].CloseDate().AddDays(60)
+			claims[i].Episodes = append(claims[i].Episodes, claim.Episode{
+				Open: reopen, Close: reopen.AddDays(90), Ultimate: shared.FromDollars(2000), OpeningCase: shared.FromDollars(2000),
+			})
 		}
 	}
 	txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(13), claims)
@@ -385,8 +381,8 @@ func TestReopenedClaimRowsChronological(t *testing.T) {
 
 func TestTinyReopenEstimateStillClosesOnFinalCloseDate(t *testing.T) {
 	c := reopenedClaim(false)
-	c.ReopenUltimate = shared.Money(2) // two cents over a five-month episode
-	c.ReopenEstimate = shared.Money(2)
+	c.Episodes[1].Ultimate = shared.Money(2) // two cents over a five-month episode
+	c.Episodes[1].OpeningCase = shared.Money(2)
 	for seed := uint64(1); seed <= 25; seed++ {
 		txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(seed), []claim.Claim{c})
 		outstanding := shared.Money(0)
@@ -398,8 +394,8 @@ func TestTinyReopenEstimateStillClosesOnFinalCloseDate(t *testing.T) {
 		if outstanding != 0 {
 			t.Fatalf("seed %d: outstanding at final close = %v, want 0", seed, outstanding)
 		}
-		if last := txs[len(txs)-1]; last.Date != c.CloseDate {
-			t.Fatalf("seed %d: last transaction on %s, want final close %s", seed, last.Date, c.CloseDate)
+		if last := txs[len(txs)-1]; last.Date != c.CloseDate() {
+			t.Fatalf("seed %d: last transaction on %s, want final close %s", seed, last.Date, c.CloseDate())
 		}
 	}
 }
@@ -409,18 +405,16 @@ func TestNilClaimTinyEstimateStillClosesOnCloseDate(t *testing.T) {
 	// targets can round to zero; the terminal release must still land on the
 	// close date.
 	c := claim.Claim{
-		Record: claim.Record{
-			ID:              1,
-			PolicyID:        1,
-			OccurrenceDate:  shared.NewDate(2000, time.January, 1),
-			ReportDate:      shared.NewDate(2000, time.January, 2),
-			CloseDate:       shared.NewDate(2003, time.January, 2),
-			InitialEstimate: shared.FromDollars(0.02),
-		},
-		Development: claim.Development{
-			RiskFactor: 1.0,
-			Nil:        true,
-		},
+		ID:             1,
+		PolicyID:       1,
+		OccurrenceDate: shared.NewDate(2000, time.January, 1),
+		Episodes: []claim.Episode{{
+			Open:        shared.NewDate(2000, time.January, 2),
+			Close:       shared.NewDate(2003, time.January, 2),
+			Nil:         true,
+			OpeningCase: shared.FromDollars(0.02),
+		}},
+		RiskFactor: 1.0,
 	}
 	sim := transaction.NewRunoffSimulator(params())
 	// Try several seeds so at least one exercises revisions that round toward zero.
@@ -445,8 +439,8 @@ func TestNilClaimTinyEstimateStillClosesOnCloseDate(t *testing.T) {
 		if outstanding != 0 {
 			t.Fatalf("seed %d: outstanding at close %v, want 0", seed, outstanding)
 		}
-		if last := txs[len(txs)-1]; last.Date != c.CloseDate {
-			t.Fatalf("seed %d: last transaction on %s, want close date %s", seed, last.Date, c.CloseDate)
+		if last := txs[len(txs)-1]; last.Date != c.CloseDate() {
+			t.Fatalf("seed %d: last transaction on %s, want close date %s", seed, last.Date, c.CloseDate())
 		}
 	}
 }
@@ -457,14 +451,14 @@ func incurredShare(txs []transaction.Transaction, claims []claim.Claim, day int)
 	rows := byClaim(txs)
 	total := 0.0
 	for _, c := range claims {
-		valuation := c.ReportDate.AddDays(day)
+		valuation := c.ReportDate().AddDays(day)
 		incurred := shared.Money(0)
 		for _, tx := range rows[c.ID] {
 			if !tx.Date.After(valuation) {
 				incurred += tx.Amount // ESTIMATE movements and payments both add to case plus paid
 			}
 		}
-		total += incurred.Dollars() / c.Ultimate.Dollars()
+		total += incurred.Dollars() / c.Episodes[0].Ultimate.Dollars()
 	}
 	return total / float64(len(claims))
 }
@@ -479,17 +473,15 @@ func TestCaseAdequacyBiasDecaysOverTheClaimLife(t *testing.T) {
 		for i := range claims {
 			report := shared.NewDate(1998, time.March, 1)
 			claims[i] = claim.Claim{
-				Record: claim.Record{
-					ID:              i + 1,
-					PolicyID:        i + 1,
-					OccurrenceDate:  report,
-					ReportDate:      report,
-					CloseDate:       report.AddDays(duration),
-					InitialEstimate: shared.FromDollars(10000 / mean),
-				},
-				Development: claim.Development{
-					Ultimate: shared.FromDollars(10000),
-				},
+				ID:             i + 1,
+				PolicyID:       i + 1,
+				OccurrenceDate: report,
+				Episodes: []claim.Episode{{
+					Open:        report,
+					Close:       report.AddDays(duration),
+					Ultimate:    shared.FromDollars(10000),
+					OpeningCase: shared.FromDollars(10000 / mean),
+				}},
 			}
 		}
 		return claims

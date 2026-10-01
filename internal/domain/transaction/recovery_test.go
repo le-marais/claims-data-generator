@@ -25,10 +25,10 @@ func recoveryFixture(t *testing.T, p lob.RecoveryParams, seed uint64) ([]claim.C
 	for i := range claims {
 		claims[i].OwnDamage = i%3 != 0 // two thirds own damage
 		if claims[i].OwnDamage && i%4 == 1 {
-			claims[i].CoverLimit = claims[i].Ultimate // a total loss: paid up to the cover limit
+			claims[i].CoverLimit = claims[i].Episodes[0].Ultimate // a total loss: paid up to the cover limit
 		}
 		if i%10 == 0 {
-			claims[i].Nil = true
+			claims[i].Episodes[0].Nil = true
 		}
 	}
 	txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(seed), claims)
@@ -45,8 +45,8 @@ func TestRecoveriesOnlyOnEligibleClaims(t *testing.T) {
 
 	eligible := map[transaction.Type]map[int]bool{transaction.Salvage: {}, transaction.Subrogation: {}}
 	for _, c := range claims {
-		eligible[transaction.Subrogation][c.ID] = c.OwnDamage && !c.Nil
-		eligible[transaction.Salvage][c.ID] = c.TotalLoss() && !c.Nil
+		eligible[transaction.Subrogation][c.ID] = c.OwnDamage && !c.Nil()
+		eligible[transaction.Salvage][c.ID] = c.TotalLoss() && !c.Nil()
 	}
 	got := map[transaction.Type]map[int]bool{transaction.Salvage: {}, transaction.Subrogation: {}}
 	for _, tx := range txs {
@@ -77,7 +77,7 @@ func TestRecoveryBoundsAndDates(t *testing.T) {
 	claims, txs := recoveryFixture(t, recoveryParams(), 2)
 	closeDate := map[int]shared.Date{}
 	for _, c := range claims {
-		closeDate[c.ID] = c.CloseDate
+		closeDate[c.ID] = c.CloseDate()
 	}
 	paid := map[int]shared.Money{}
 	recovered := map[int]shared.Money{}
@@ -150,7 +150,7 @@ func TestRecoveryMergeKeepsIDsSequentialAndClaimsChronological(t *testing.T) {
 	claims, txs := recoveryFixture(t, recoveryParams(), 5)
 	lastDate := map[int]shared.Date{}
 	for _, c := range claims {
-		lastDate[c.ID] = c.ReportDate
+		lastDate[c.ID] = c.ReportDate()
 	}
 	for i, tx := range txs {
 		if tx.ID != i+1 {
@@ -180,7 +180,7 @@ func TestSalvageArrivesSoonerThanSubrogationOnAverage(t *testing.T) {
 	claims, txs := recoveryFixture(t, recoveryParams(), 7)
 	closeDate := map[int]shared.Date{}
 	for _, c := range claims {
-		closeDate[c.ID] = c.CloseDate
+		closeDate[c.ID] = c.CloseDate()
 	}
 	var salvageSum, salvageN, subroSum, subroN float64
 	for _, tx := range txs {
