@@ -21,10 +21,13 @@ import (
 var errNoReferenceFiles = errors.New("no reference files found")
 
 type fileJSON struct {
-	ClassID       int           `json:"ClassId"`
-	Paid          triangleJSON  `json:"PaidTriangle"`
-	Incurred      triangleJSON  `json:"IncurredTriangle"`
-	EarnedPremium []premiumJSON `json:"EarnedPremium"`
+	ClassID  int          `json:"ClassId"`
+	Paid     triangleJSON `json:"PaidTriangle"`
+	Incurred triangleJSON `json:"IncurredTriangle"`
+	// FutureIncurred is the incurred development reported after the
+	// triangle's valuation date, as incremental amounts per origin year.
+	FutureIncurred []triangleRow `json:"FutureIncurred"`
+	EarnedPremium  []premiumJSON `json:"EarnedPremium"`
 }
 
 type triangleJSON struct {
@@ -92,12 +95,48 @@ func parse(name string, b []byte) (triangle.ReferenceSet, error) {
 	if err != nil {
 		return triangle.ReferenceSet{}, fmt.Errorf("incurred triangle: %w", err)
 	}
+	developed, err := develop(incurred, f.FutureIncurred)
+	if err != nil {
+		return triangle.ReferenceSet{}, fmt.Errorf("future incurred: %w", err)
+	}
 	return triangle.ReferenceSet{
-		Name:          strings.TrimSuffix(name, ".json"),
-		Paid:          paid,
-		Incurred:      incurred,
-		EarnedPremium: ep,
+		Name:              strings.TrimSuffix(name, ".json"),
+		Paid:              paid,
+		Incurred:          incurred,
+		EarnedPremium:     ep,
+		DevelopedIncurred: developed,
 	}, nil
+}
+
+// develop completes a cumulative triangle with later incremental development,
+// returning a new triangle; the input is not modified. With no later
+// development it returns the zero Triangle, which tells the comparison to
+// fall back to the triangle itself.
+func develop(tri triangle.Triangle, future []triangleRow) (triangle.Triangle, error) {
+	if len(future) == 0 {
+		return triangle.Triangle{}, nil
+	}
+	out := triangle.Triangle{StartYear: tri.StartYear, Cells: make([][]float64, len(tri.Cells))}
+	for i, row := range tri.Cells {
+		out.Cells[i] = append([]float64(nil), row...)
+	}
+	for _, f := range future {
+		i := f.Year - tri.StartYear
+		if i < 0 || i >= len(out.Cells) {
+			return triangle.Triangle{}, fmt.Errorf("origin year %d is not in the triangle", f.Year)
+		}
+		row := out.Cells[i]
+		if len(row) == 0 {
+			return triangle.Triangle{}, fmt.Errorf("origin year %d has no valued development to extend", f.Year)
+		}
+		cum := row[len(row)-1]
+		for _, v := range f.Values {
+			cum += v
+			row = append(row, cum)
+		}
+		out.Cells[i] = row
+	}
+	return out, nil
 }
 
 // LoadFS reads every reference company file in dir of fsys, files sorted by

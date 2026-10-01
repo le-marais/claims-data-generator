@@ -519,7 +519,7 @@ function renderRealism(r) {
     : "✗ Fail - some metrics fall outside the Schedule P P5-P95 reference band";
   const scope = document.createElement("p");
   scope.className = "empty-note";
-  scope.textContent = "Scored on third-party liability claims against their share of premium: the Schedule P private passenger auto reference is a liability line with no own damage in it.";
+  scope.textContent = "Scored on third-party liability claims against their share of premium: the Schedule P private passenger auto reference is a liability line with no own damage in it. The loss ratio band uses each company's loss ratio developed to age 10. Schedule P incurred includes bulk and IBNR reserves and generated incurred does not, so the incurred factors are a loose sanity bound.";
   panel.append(
     banner,
     scope,

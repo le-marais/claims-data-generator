@@ -8,11 +8,31 @@ import (
 )
 
 // ReferenceSet is one reference company's observed triangles.
+//
+// Incurred is Schedule P total incurred: paid, case, bulk and IBNR reserves.
+// The generated incurred it is compared with is case incurred (paid plus case
+// reserves) with no IBNR, so the incurred age-to-age check compares different
+// quantities: a reference company's IBNR held early and released later pulls
+// its factors below 1, while generated factors sit below 1 for other reasons
+// (nil claims releasing their case at close).
 type ReferenceSet struct {
 	Name          string
 	Paid          Triangle
 	Incurred      Triangle
 	EarnedPremium []float64
+	// DevelopedIncurred is Incurred completed with the company's later
+	// reported development, so every origin year is valued at the same, full
+	// age. The loss ratio is scored on it. The zero value means the later
+	// development is not available, and Incurred is used instead.
+	DevelopedIncurred Triangle
+}
+
+// developedIncurred is the incurred triangle the loss ratio is scored on.
+func (r ReferenceSet) developedIncurred() Triangle {
+	if len(r.DevelopedIncurred.Cells) > 0 {
+		return r.DevelopedIncurred
+	}
+	return r.Incurred
 }
 
 // Comparison is a generated dataset's aggregates, ready to score.
@@ -189,6 +209,10 @@ func usableRefs(refs []ReferenceSet) []ReferenceSet {
 // observed across the usable reference companies: volume-weighted age-to-age
 // factors for paid and incurred, and the overall ultimate loss ratio. Only
 // ages present in both generated and reference data are checked.
+//
+// The generated triangles run to full development, so the loss ratio is
+// scored against each company's developed incurred rather than its latest
+// diagonal, whose recent accident years are still immature (MR-4).
 func CompareToReference(c Comparison, refs []ReferenceSet) Report {
 	refs = usableRefs(refs)
 	paidRef := make([]Triangle, len(refs))
@@ -204,7 +228,7 @@ func CompareToReference(c Comparison, refs []ReferenceSet) Report {
 
 	var lrs []float64
 	for _, r := range refs {
-		if lr, ok := lossRatio(r.Incurred, r.EarnedPremium); ok {
+		if lr, ok := lossRatio(r.developedIncurred(), r.EarnedPremium); ok {
 			lrs = append(lrs, lr)
 		}
 	}
