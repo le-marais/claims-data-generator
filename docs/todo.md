@@ -30,15 +30,9 @@ high-severity is open.
 
 1. **SL-7** - the only open item that changes what a reserving actuary sees in
    the data.
-2. **MF-3** - a small change that removes the main friction from the "a new
-   class is just a YAML file" promise.
-3. **RF-13** - gates the second line of business.
-4. **RF-14** - gates the same work, and compounds with every feature added.
-5. **L2** - two lines in `.gitignore`.
-6. **CI-1** - gated on the roadmap's "open to the wider community" step.
-
-Item 5 is under an hour; batch it into any commit that touches the area rather
-than scheduling it.
+2. **RF-13** - gates the second line of business.
+3. **RF-14** - gates the same work, and compounds with every feature added.
+4. **CI-1** - gated on the roadmap's "open to the wider community" step.
 
 ## 1. SL-7 (medium) - case estimates re-centre on the true ultimate at the first revision
 
@@ -66,17 +60,7 @@ than scheduling it.
   so it needs a golden-hash refresh and a realism-gate re-check, and the preset
   may need recalibrating.
 
-## 2. MF-3 (medium) - sub-blocks must validate even when switched off
-
-- Where: `internal/domain/lob/lob.go`, `RecoveryTypeParams.validate` and
-  `SeverityParams.validate`.
-- A recovery type with `probability: 0` still has to supply a `mean_share` in
-  the open interval (0, 1), a positive concentration and a positive lag median.
-  A new-class YAML author is forced to invent parameters for features they
-  turned off, which cuts against the "a new class is a YAML file" promise.
-- Action: skip validation of a sub-block whose probability or weight is 0.
-
-## 3. RF-13 (medium) - adding one line-of-business parameter touches five places
+## 2. RF-13 (medium) - adding one line-of-business parameter touches five places
 
 - Where: the domain struct plus validation (`internal/domain/lob/lob.go`), the
   config DTO plus `ToDomain` (`internal/infrastructure/config/config.go`), the
@@ -99,7 +83,7 @@ than scheduling it.
   `NewBookSimulator(book, pricing)` already shows it working - it takes a
   purpose-built `PricingParams` and structurally cannot read claims knobs.
 
-## 4. RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
+## 3. RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
 
 Merges the old F3 and F6, which describe the same problem from the parameter
 side.
@@ -128,19 +112,7 @@ side.
   the claims stage to `recovery.go`, because only the severity draw knows the
   claim type and recovery eligibility genuinely depends on it.
 
-## 5. L2 (low) - agent-artifact ignore rules are not in the tracked gitignore
-
-- Where: `.gitignore`, which covers only `/output/`, `/claimsgen`, `*.exe` and
-  `tools/screenshots/node_modules/`.
-- It does not cover `.claude/` or `.superpowers/`, so a contributor running
-  Claude Code in a fresh clone would generate session artifacts (prompts,
-  scheduled-task metadata, agent memory) that are not ignored. The 2026-07-22
-  review recorded local `.git/info/exclude` rules covering these; this working
-  copy has none, so the tracked `.gitignore` is the only protection there is. No
-  such artifact is currently tracked - this is preventive.
-- Action: add the two patterns. Two lines.
-
-## 6. CI-1 (low) - no CI and no dependency scanning
+## 4. CI-1 (low) - no CI and no dependency scanning
 
 Merges the old R-13 and I2.
 
