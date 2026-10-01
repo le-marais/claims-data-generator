@@ -102,3 +102,32 @@ func TestWindowedOccurrencesStayInWindowAtExactBoundary(t *testing.T) {
 		}
 	}
 }
+
+// exposedFraction counts cover days, CoverStart to CoverEnd inclusive, against
+// the exclusive window end (MR-11): a 365-day cover with 364 days in the
+// window is exposed 364/365, not 364/364.
+func TestExposedFractionCountsCoverDays(t *testing.T) {
+	const startYear, years = 1998, 10
+	sim := NewClaimSimulator(windowParams()).WithWindow(startYear, years)
+	cover := func(start shared.Date) policy.Policy {
+		return policy.Policy{CoverStart: start, CoverEnd: start.AddDays(364)}
+	}
+	cases := []struct {
+		name string
+		pol  policy.Policy
+		want float64
+	}{
+		{"inside the window", cover(shared.NewDate(2007, time.January, 1)), 1},
+		{"ends on the window end", cover(shared.NewDate(2007, time.January, 2)), 364.0 / 365},
+		{"half out", cover(shared.NewDate(2007, time.July, 2)), 183.0 / 365},
+		{"one day in", cover(shared.NewDate(2007, time.December, 31)), 1.0 / 365},
+	}
+	for _, c := range cases {
+		if got := sim.exposedFraction(c.pol); got != c.want {
+			t.Errorf("%s: exposedFraction = %v, want %v", c.name, got, c.want)
+		}
+	}
+	if got := NewClaimSimulator(windowParams()).exposedFraction(cover(shared.NewDate(2007, time.July, 2))); got != 1 {
+		t.Errorf("no window: exposedFraction = %v, want 1", got)
+	}
+}

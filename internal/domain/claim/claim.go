@@ -77,7 +77,7 @@ func NewClaimSimulator(p lob.ClaimParams) *ClaimSimulator {
 	return &ClaimSimulator{params: p}
 }
 
-// WithInflation sets the occurrence-year inflation index. The zero-value
+// WithInflation sets the occurrence-date inflation index. The zero-value
 // index (the default) is the identity, so a simulator built without this
 // call applies no inflation.
 func (s *ClaimSimulator) WithInflation(x InflationIndex) *ClaimSimulator {
@@ -117,22 +117,17 @@ func (s *ClaimSimulator) WithWindow(startYear, years int) *ClaimSimulator {
 	return s
 }
 
-// exposedFraction is the share of a policy's cover term that lies inside the
+// exposedFraction is the share of a policy's cover days that lie inside the
 // window; 1 when the window is unset or the cover ends before window end.
+// Cover runs from CoverStart to CoverEnd inclusive, and the window end is
+// exclusive, matching the occurrence span simulateClaim draws from.
 func (s *ClaimSimulator) exposedFraction(pol policy.Policy) float64 {
-	if s.windowEnd.IsZero() {
+	if s.windowEnd.IsZero() || pol.CoverEnd.Before(s.windowEnd) {
 		return 1
 	}
-	end := pol.CoverEnd
-	if s.windowEnd.Before(end) {
-		end = s.windowEnd
-	}
-	term := shared.DaysBetween(pol.CoverStart, pol.CoverEnd)
-	if term <= 0 {
-		return 1
-	}
-	inWindow := shared.DaysBetween(pol.CoverStart, end)
-	return float64(inWindow) / float64(term)
+	coverDays := shared.DaysBetween(pol.CoverStart, pol.CoverEnd) + 1
+	inWindow := shared.DaysBetween(pol.CoverStart, s.windowEnd)
+	return math.Max(0, float64(inWindow)) / float64(coverDays)
 }
 
 // Simulate draws claim events for every policy. Claims are returned sorted
@@ -189,7 +184,7 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	// losses carry the same claims index but no sum-insured term at all. Own
 	// damage is then capped at the drifted sum insured, representing a total
 	// loss.
-	loss *= s.inflation.For(occurrence.Year())
+	loss *= s.inflation.For(occurrence)
 	coverLimit := shared.Money(0) // third-party liability is unlimited
 	if ownDamage {
 		if cap := pol.SumInsured.Dollars(); loss > cap {

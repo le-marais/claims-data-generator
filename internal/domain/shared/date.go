@@ -33,6 +33,20 @@ func (d Date) IsZero() bool { return d.t.IsZero() }
 // Equal reports whether two dates fall on the same instant.
 func (d Date) Equal(other Date) bool { return d.t.Equal(other.t) }
 
+// TrendYears places a date on the continuous time axis that claims inflation
+// trends along: years elapsed since the middle of the given start year,
+// measuring each day at its midpoint. 2 July of a non-leap start year is 0, the
+// same date a year later is 1, and 1 January of the start year is just under
+// -0.5. The inflation index anchors each simulated annual factor at the middle
+// of its year on this axis, and pricing trends premium along the same axis, so
+// the two read time identically.
+func TrendYears(d Date, startYear int) float64 {
+	yearStart := NewDate(d.Year(), time.January, 1)
+	daysInYear := DaysBetween(yearStart, NewDate(d.Year()+1, time.January, 1))
+	dayOfYear := DaysBetween(yearStart, d)
+	return float64(d.Year()-startYear) + (float64(dayOfYear)+0.5)/float64(daysInYear) - 0.5
+}
+
 // DaysBetween returns the number of days from a to b (negative if b is earlier).
 func DaysBetween(a, b Date) int {
 	return int(b.t.Sub(a.t) / (24 * time.Hour))

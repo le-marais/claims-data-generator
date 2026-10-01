@@ -7,6 +7,7 @@ import (
 
 	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/domain/policy"
+	"github.com/le-marais/claimsgen/internal/domain/shared"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 )
 
@@ -126,7 +127,8 @@ func TestPolicyFieldConsistency(t *testing.T) {
 		}
 		pp := pricingParams()
 		yearOffset := float64(p.CoverStart.Year() - 1998)
-		infl := math.Pow(pp.InflationMean, yearOffset)
+		// Pricing trends the loss cost to the middle of the cover (MR-3).
+		infl := math.Pow(pp.InflationMean, shared.TrendYears(p.CoverStart.AddDays(182), 1998))
 		siDrift := math.Pow(prm.SumInsuredInflation, yearOffset)
 		wantPremium := pp.ExpectedPolicyLoss(p.SumInsured.Dollars(), p.Excess.Dollars(), p.RiskFactor, infl, siDrift) / pp.TargetLossRatio
 		if math.Abs(p.Premium.Dollars()-wantPremium) > 0.01 {

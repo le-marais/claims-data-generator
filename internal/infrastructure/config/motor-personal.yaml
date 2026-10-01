@@ -23,8 +23,9 @@ book:
 # Pricing basis: the insurer's assumed loss cost, used only to set premium.
 # Independent of the claims block, which generates the true experience. When
 # these assumptions equal the claims values (as below) the book is priced
-# perfectly and the realized loss ratio lands on target_loss_ratio; deviate
-# them to model underpricing or adverse experience.
+# perfectly and the expected gross loss ratio lands on target_loss_ratio;
+# deviate them to model underpricing or adverse experience. Each policy's
+# assumed cost is trended at inflation_mean to the middle of its cover.
 pricing:
   target_loss_ratio: 0.72
   base_frequency: 0.12
@@ -34,6 +35,7 @@ pricing:
     own_damage_sigma: 1.0
     third_party_scale: 4000
     third_party_alpha: 2.2
+  nil_probability: 0.08
   reopen_probability: 0.04
   reopen_estimate_factor: 0.45
   inflation_mean: 1.04
@@ -63,9 +65,10 @@ claims:
     risk_loading: 0.3
     third_party_shape: 0.8
     third_party_mean_days: 425
-  # Claims inflation applied by occurrence year to every claim's ground-up
+  # Claims inflation applied by occurrence date to every claim's ground-up
   # loss. Stochastic: each year's factor is `mean` times lognormal noise of
-  # sigma `volatility`, compounded from 1.0 in the start year.
+  # sigma `volatility`, compounded from 1.0 in the start year. The index sits
+  # at each year's compounded value mid-year and moves smoothly between them.
   inflation:
     mean: 1.04
     volatility: 0.015

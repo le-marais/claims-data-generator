@@ -28,6 +28,7 @@ pricing:
     own_damage_sigma: 1.0
     third_party_scale: 5000
     third_party_alpha: 2.0
+  nil_probability: 0.05
   reopen_probability: 0.04
   reopen_estimate_factor: 0.45
   inflation_mean: 1.04
@@ -266,6 +267,9 @@ func TestMotorPresetPricesToTruth(t *testing.T) {
 	}
 	if l.Pricing.Severity != l.Claims.Severity {
 		t.Errorf("pricing severity %+v != claims %+v", l.Pricing.Severity, l.Claims.Severity)
+	}
+	if l.Pricing.NilProbability != l.Claims.NilProbability {
+		t.Errorf("pricing nil prob %v != claims %v", l.Pricing.NilProbability, l.Claims.NilProbability)
 	}
 	if l.Pricing.ReopenProbability != l.Claims.Reopening.Probability {
 		t.Errorf("pricing reopen prob %v != claims %v", l.Pricing.ReopenProbability, l.Claims.Reopening.Probability)

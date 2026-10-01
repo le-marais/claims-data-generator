@@ -8,7 +8,7 @@ A living view of where claimsgen is and what comes next. Grounded in `mission.md
 - **CLI** - `claimsgen generate` writes the three dataset CSVs (policies, claims, transactions) plus the monthly aggregate CSVs below.
 - **Browser UI** - `claimsgen ui`: configure a run (flags plus every line-of-business parameter), generate, and explore the result across summary, development triangles, distributions, and a realism check. Self-contained single binary, embedded reference data.
 - **Realism gate** - the third-party (liability) section of generated motor data is scored against the 96 hand-curated Schedule P private passenger auto liability reference companies, on its share of premium; the shipped preset must land inside the observed P5-P95 bands (`TestDefaultPresetIsRealistic`). Own damage has no 10-year Schedule P reference and is not scored.
-- **Claims inflation** - stochastic occurrence-year inflation index, one user-facing mean knob per line of business, applied to every claim's ground-up loss.
+- **Claims inflation** - stochastic inflation index, simulated per year and interpolated by occurrence date, one user-facing mean knob per line of business, applied to every claim's ground-up loss.
 - **Nil claims** - a share of reported claims close without payment, with a dedicated no-payment runoff path and a `nil_probability` off switch.
 - **Recoveries (salvage and subrogation)** - money coming back on own-damage claims after close, as SALVAGE and SUBROGATION transaction types; triangles and the realism gate go net of recoveries, and the triangle tab gains a gross/net toggle.
 - **Reopened claims** - a closed claim can reopen once and develop a second episode; claims.csv shows the final close date and the reopen appears in transactions as a case re-raised after a release to zero, with a reopen_probability off switch.
@@ -33,7 +33,7 @@ Then open the tool to the wider actuarial community once a second class demonstr
 ## Longer term
 
 - **Valuation-date extract** - the mission deliberately generates every claim to closure for out-of-sample testing, but a chosen-date cut (open claims, outstanding case, no future knowledge) is trivial to derive and would let the tool feed a reserving demo with zero manual steps - the MVP's own success criterion. `triangles.csv` already supports the triangle side of this by filtering on `origin_month + dev_month - 1`; the remaining work is the claim and transaction extracts.
-- **Payment-date (calendar-year) inflation** - the shipped inflation is occurrence-year, which keeps the ultimate-first invariant. Payment-date inflation creates the calendar-year development distortions reserving methods actually struggle with, but it makes the ultimate emergent and interacts with case adequacy, so it deserves its own design. Deferred in the claims-inflation spec.
+- **Payment-date (calendar-year) inflation** - the shipped inflation is by occurrence date, which keeps the ultimate-first invariant. Payment-date inflation creates the calendar-year development distortions reserving methods actually struggle with, but it makes the ultimate emergent and interacts with case adequacy, so it deserves its own design. Deferred in the claims-inflation spec.
 - **Long-tail classes** - assess whether the engine can extend to long-tail lines such as liability. Flagged in the mission as a later question, not a commitment.
 
 ## Known enablers and technical debt

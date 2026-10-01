@@ -100,6 +100,8 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"pricing.target_loss_ratio", func(l *LineOfBusiness) { l.Pricing.TargetLossRatio = 0 }},
 		{"pricing.base_frequency", func(l *LineOfBusiness) { l.Pricing.BaseFrequency = 0 }},
 		{"pricing.severity.third_party_alpha", func(l *LineOfBusiness) { l.Pricing.Severity.ThirdPartyAlpha = 1.0 }},
+		{"pricing.nil_probability", func(l *LineOfBusiness) { l.Pricing.NilProbability = 1.0 }},
+		{"pricing.nil_probability", func(l *LineOfBusiness) { l.Pricing.NilProbability = -0.1 }},
 		{"pricing.reopen_probability", func(l *LineOfBusiness) { l.Pricing.ReopenProbability = 1.5 }},
 		{"pricing.reopen_estimate_factor", func(l *LineOfBusiness) { l.Pricing.ReopenEstimateFactor = 0 }},
 		{"pricing.inflation_mean", func(l *LineOfBusiness) { l.Pricing.InflationMean = 0 }},

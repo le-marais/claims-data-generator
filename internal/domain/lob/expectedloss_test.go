@@ -180,3 +180,28 @@ func TestExpectedSectionLossSkipsZeroWeightComponent(t *testing.T) {
 		t.Fatalf("no own damage: got own damage %v, third party %v", od, tp)
 	}
 }
+
+// A nil claim pays nothing in its first episode but still pays a reopen, so
+// the expected payout per claim is 1 - nil + reopen probability x factor
+// (MR-3).
+func TestExpectedPolicyLossAllowsForNilClaims(t *testing.T) {
+	p := PricingParams{
+		BaseFrequency: 0.12,
+		Severity: SeverityParams{
+			ThirdPartyWeight:        0.2,
+			OwnDamageMedianFraction: 0.12,
+			OwnDamageSigma:          1.0,
+			ThirdPartyScale:         4000,
+			ThirdPartyAlpha:         2.2,
+		},
+		ReopenProbability:    0.04,
+		ReopenEstimateFactor: 0.45,
+	}
+	without := p.ExpectedPolicyLoss(20000, 300, 1.0, 1.0, 1.0)
+	p.NilProbability = 0.08
+	with := p.ExpectedPolicyLoss(20000, 300, 1.0, 1.0, 1.0)
+	want := without * (1 - 0.08 + 0.04*0.45) / (1 + 0.04*0.45)
+	if math.Abs(with-want) > 1e-9*want {
+		t.Fatalf("with nil claims: got %v, want %v", with, want)
+	}
+}

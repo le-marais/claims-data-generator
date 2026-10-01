@@ -51,6 +51,7 @@ type PricingParams struct {
 	TargetLossRatio      float64        `yaml:"target_loss_ratio" json:"target_loss_ratio"`
 	BaseFrequency        float64        `yaml:"base_frequency" json:"base_frequency"`
 	Severity             SeverityParams `yaml:"severity" json:"severity"`
+	NilProbability       float64        `yaml:"nil_probability" json:"nil_probability"`
 	ReopenProbability    float64        `yaml:"reopen_probability" json:"reopen_probability"`
 	ReopenEstimateFactor float64        `yaml:"reopen_estimate_factor" json:"reopen_estimate_factor"`
 	InflationMean        float64        `yaml:"inflation_mean" json:"inflation_mean"`
@@ -232,6 +233,7 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 				ThirdPartyScale:         d.Pricing.Severity.ThirdPartyScale,
 				ThirdPartyAlpha:         d.Pricing.Severity.ThirdPartyAlpha,
 			},
+			NilProbability:       d.Pricing.NilProbability,
 			ReopenProbability:    d.Pricing.ReopenProbability,
 			ReopenEstimateFactor: d.Pricing.ReopenEstimateFactor,
 			InflationMean:        d.Pricing.InflationMean,
