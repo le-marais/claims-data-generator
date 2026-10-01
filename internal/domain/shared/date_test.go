@@ -1,6 +1,9 @@
 package shared
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
 
 func TestDateString(t *testing.T) {
 	d := NewDate(2020, 3, 1)
@@ -38,5 +41,24 @@ func TestDateBefore(t *testing.T) {
 func TestDateYear(t *testing.T) {
 	if got := NewDate(2003, 7, 15).Year(); got != 2003 {
 		t.Errorf("Year() = %d, want 2003", got)
+	}
+}
+
+func TestTrendYears(t *testing.T) {
+	cases := []struct {
+		d    Date
+		want float64
+	}{
+		{NewDate(1998, 7, 2), 0},                     // day 183 of 365: the middle of the start year
+		{NewDate(1999, 7, 2), 1},                     // a year later
+		{NewDate(1998, 1, 1), 0.5/365 - 0.5},         // midday of 1 January
+		{NewDate(1998, 12, 31), 364.5/365 - 0.5},     // midday of 31 December
+		{NewDate(2000, 12, 31), 2 + 365.5/366 - 0.5}, // leap year: 366 days
+		{NewDate(1997, 7, 2), -1},                    // before the start year
+	}
+	for _, c := range cases {
+		if got := TrendYears(c.d, 1998); math.Abs(got-c.want) > 1e-12 {
+			t.Errorf("TrendYears(%s) = %v, want %v", c.d, got, c.want)
+		}
 	}
 }

@@ -42,9 +42,11 @@ type ExcessChoice struct {
 // PricingParams drives premium pricing: the insurer's assumed loss cost,
 // independent of the claims model. Each policy's premium is its assumed
 // expected ultimate loss (ExpectedPolicyLoss) divided by TargetLossRatio.
-// When these assumptions equal the true claims values the book is priced
-// perfectly and the realized loss ratio lands on the target; deviating them
-// models underpricing or adverse experience.
+// The target sets premium, never experience: the realized loss ratio emerges
+// from the claims model. With these assumptions equal to the true claims
+// values it lands around the target, moved by claim sampling and the
+// simulated inflation path; deviating them models underpricing or adverse
+// experience.
 type PricingParams struct {
 	// TargetLossRatio is the assumed loss ratio premium is priced to.
 	TargetLossRatio float64
@@ -52,11 +54,15 @@ type PricingParams struct {
 	BaseFrequency float64
 	// Severity is the assumed ground-up loss mixture.
 	Severity SeverityParams
+	// NilProbability is the assumed share of reported claims that close
+	// without payment. A nil claim still pays if it reopens.
+	NilProbability float64
 	// ReopenProbability and ReopenEstimateFactor are the assumed reopen uplift
 	// inputs: expected extra development is ReopenProbability * ReopenEstimateFactor.
 	ReopenProbability    float64
 	ReopenEstimateFactor float64
-	// InflationMean is the assumed mean annual claims-inflation trend.
+	// InflationMean is the assumed mean annual claims-inflation trend. Each
+	// policy's assumed loss cost is trended to the midpoint of its cover.
 	InflationMean float64
 }
 
@@ -73,7 +79,7 @@ type ClaimParams struct {
 	Severity       SeverityParams
 	CloseLag       CloseLagParams
 	// Inflation is the stochastic claims-inflation path applied by
-	// occurrence year to every claim's ground-up loss.
+	// occurrence date to every claim's ground-up loss.
 	Inflation InflationParams
 	// NilProbability is the chance a reported claim closes without payment;
 	// 0 switches nil claims off.
@@ -287,6 +293,7 @@ func (p PricingParams) validate() error {
 	if err := checkFinite(
 		namedFloat{"pricing.target_loss_ratio", p.TargetLossRatio},
 		namedFloat{"pricing.base_frequency", p.BaseFrequency},
+		namedFloat{"pricing.nil_probability", p.NilProbability},
 		namedFloat{"pricing.reopen_probability", p.ReopenProbability},
 		namedFloat{"pricing.reopen_estimate_factor", p.ReopenEstimateFactor},
 		namedFloat{"pricing.inflation_mean", p.InflationMean},
@@ -301,6 +308,9 @@ func (p PricingParams) validate() error {
 	}
 	if err := p.Severity.validate("pricing.severity"); err != nil {
 		return err
+	}
+	if p.NilProbability < 0 || p.NilProbability >= 1 {
+		return fmt.Errorf("pricing.nil_probability: must be in [0, 1), got %v", p.NilProbability)
 	}
 	if p.ReopenProbability < 0 || p.ReopenProbability >= 1 {
 		return fmt.Errorf("pricing.reopen_probability: must be in [0, 1), got %v", p.ReopenProbability)

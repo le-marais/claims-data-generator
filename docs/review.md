@@ -14,34 +14,16 @@ effect. It also analysed the 96 embedded Schedule P companies directly.
 Figures are as measured then. Since then MR-1 and MR-2 have shipped: the
 realism gate now scores the third-party liability section alone, and the
 preset's own-damage close lag is shorter (mean 40 days, 3x above the size
-threshold). Findings whose numbers predate that say so.
+threshold). Findings whose numbers predate that say so. MR-3, MR-10 and MR-11
+have shipped too: pricing allows for nil claims and trends to the cover
+midpoint, the inflation index moves smoothly by occurrence date, and the
+exposed fraction counts cover days.
 
 IDs are **MR** (model review). Severity uses the `docs/todo.md` scale: **high**
 undermines the mission, **medium** worth addressing soon, **low** fix when
 touching the area.
 
-## 1. MR-3 (medium) - pricing leaves out nil claims and lags inflation by half a year
-
-- Where: `internal/domain/lob/expectedloss.go` (`ExpectedPolicyLoss` has no nil
-  term); `internal/domain/policy/book.go` (premium trended by
-  `InflationMean^y` at the underwriting year); `internal/domain/claim/claim.go`
-  (losses inflated by occurrence year).
-- Controlled runs (own damage only, 4 seeds pooled): with nil claims and
-  inflation off the loss ratio is 0.7199 against a 0.72 target, so the formula
-  is otherwise exact. Nil claims at 0.08 give 0.662 (0.72 x 0.92). Inflation at
-  1.04 gives 0.733, because about half of each policy's cover falls in the next
-  occurrence year.
-- For the preset the expected gross loss ratio is about 0.68, not 0.72, so
-  "priced perfectly, lands on target" is false in `lob.go`,
-  `motor-personal.yaml` and `README.md`. The `pricing` block has no nil
-  setting, so a YAML author cannot correct it. The reopen uplift also ignores
-  the cap that holds own-damage reopens within the cover left, which slightly
-  overprices claims near their limit.
-- Action: add an assumed nil probability to `PricingParams`, and trend
-  inflation over the cover term, `Mean^y x (1 - f + f x Mean)` where `f` is the
-  share of cover in the next year.
-
-## 2. MR-4 (medium) - generated incurred is compared against reference incurred that includes IBNR
+## 1. MR-4 (medium) - generated incurred is compared against reference incurred that includes IBNR
 
 - Where: `internal/infrastructure/schedulep/reader.go` (reads only
   `PaidTriangle` and `IncurredTriangle`); `internal/domain/triangle/compare.go`
@@ -68,7 +50,7 @@ touching the area.
   either add IBNR to the generated incurred for the comparison or state in the
   realism wording that the incurred check compares different quantities.
 
-## 3. MR-5 (medium) - a fixed-dollar size threshold creates a hidden trend in settlement speed
+## 2. MR-5 (medium) - a fixed-dollar size threshold creates a hidden trend in settlement speed
 
 - Where: `internal/domain/claim/claim.go`, `closeLagRegime`.
 - Measured before MR-2 recalibrated the stretch from 6x to 3x; the mechanism
@@ -84,7 +66,7 @@ touching the area.
   the threshold, and consider a smooth size relationship such as
   `mean x (size/threshold)^beta`.
 
-## 4. MR-6 (medium) - the first accident year behaves like a start-up book
+## 3. MR-6 (medium) - the first accident year behaves like a start-up book
 
 - Where: `internal/domain/policy/book.go` (no policies in force at the window
   start); the comment on `ExposureByMonth` in
@@ -101,7 +83,7 @@ touching the area.
 - Action: simulate a warm-up underwriting year before the window and keep only
   its in-window occurrences; correct the docs.
 
-## 5. MR-7 (low) - salvage is not tied to total losses
+## 4. MR-7 (low) - salvage is not tied to total losses
 
 - Where: `internal/domain/transaction/recovery.go`, `simulateClaim`.
 - 98% of salvage rows (3,723 of 3,798) land on partially damaged vehicles.
@@ -110,7 +92,7 @@ touching the area.
   cap (`Claim.Ultimate == Claim.CoverLimit` since MR-1), and size it off the
   sum insured.
 
-## 6. MR-8 (low) - third-party severity is a bare Pareto
+## 5. MR-8 (low) - third-party severity is a bare Pareto
 
 - Where: `internal/domain/claim/claim.go`, `drawGroundUpLoss`.
 - No third-party claim is below about $3,050 after excess, the mode sits at the
@@ -119,7 +101,7 @@ touching the area.
 - Action: a lognormal body with a Pareto tail, an optional liability limit, and
   a switch for applying the excess to third-party claims.
 
-## 7. MR-9 (low) - there is almost no pure IBNR, and third-party close lag ignores size
+## 6. MR-9 (low) - there is almost no pure IBNR, and third-party close lag ignores size
 
 - Where: `internal/domain/claim/claim.go` (one report lag for both claim types;
   `closeLagRegime` applies the size stretch to own damage only).
@@ -131,24 +113,7 @@ touching the area.
 - Action: a third-party report lag, and a size link in the third-party close
   lag.
 
-## 8. MR-10 (low) - inflation steps up about 4% every 1 January
-
-- Where: `internal/domain/claim/inflation.go`, `InflationIndex.For`.
-- The index is constant within a calendar year and jumps at each year end,
-  which shows as a sawtooth in the monthly-origin triangles.
-- Action: interpolate the index by occurrence date. This pairs with the
-  cover-term pricing in MR-3.
-
-## 9. MR-11 (low) - off-by-one in the exposed fraction
-
-- Where: `internal/domain/claim/claim.go`, `exposedFraction`.
-- It divides in-window days by 364 (`DaysBetween(CoverStart, CoverEnd)`)
-  rather than the 365-day term, giving +0.27% frequency on truncated
-  last-year policies. A policy ending exactly on the window end gets a fraction
-  of 1 instead of 364/365.
-- Action: divide by the number of cover days.
-
-## 10. MR-12 (low) - one setting drives two kinds of variation
+## 7. MR-12 (low) - one setting drives two kinds of variation
 
 - Where: `internal/domain/policy/book.go`, `simulatePolicy`.
 - `spread` sets both the sum-insured lognormal sigma and the risk-factor

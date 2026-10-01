@@ -59,8 +59,7 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 		return Dataset{}, err
 	}
 	// Occurrences are constrained to the window (MF-2), so the inflation index
-	// only needs to span the window years; the For clamp stays as a defensive
-	// fallback.
+	// only needs to span the window years.
 	inflation := claim.NewInflationIndex(src.Split("inflation"), req.LOB.Claims.Inflation, req.StartYear, req.Years)
 	claims := claim.NewClaimSimulator(req.LOB.Claims).
 		WithInflation(inflation).

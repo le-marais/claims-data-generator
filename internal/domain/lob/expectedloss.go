@@ -55,11 +55,19 @@ func (p PricingParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflat
 // and third-party liability sections. Own damage is expressed in base-year
 // sum-insured terms (baseSI = sumInsured / siDrift) trended by the claims index
 // only, and capped at the drifted sumInsured (a total loss). Third party keeps
-// the claims index and is uncapped. Both carry the reopen uplift.
+// the claims index and is uncapped. inflationFactor is the assumed index at
+// the midpoint of the policy's cover.
+//
+// Each claim pays its cost unless it is nil, and pays a further
+// ReopenEstimateFactor of that cost if it reopens, nil or not, so the expected
+// payout per claim is the cost times 1 - NilProbability + ReopenProbability *
+// ReopenEstimateFactor. The reopen term ignores the cap that holds an
+// own-damage reopen within the cover left, so claims near their limit are
+// slightly overpriced.
 func (p PricingParams) ExpectedSectionLoss(sumInsured, excess, riskFactor, inflationFactor, siDrift float64) (ownDamage, thirdParty float64) {
 	s := p.Severity
-	reopenUplift := 1 + p.ReopenProbability*p.ReopenEstimateFactor
-	perClaim := p.BaseFrequency * riskFactor * reopenUplift
+	payout := 1 - p.NilProbability + p.ReopenProbability*p.ReopenEstimateFactor
+	perClaim := p.BaseFrequency * riskFactor * payout
 	// A zero-weight component is skipped rather than multiplied by zero: its
 	// parameters need not be valid (see SeverityParams.validate), and zero
 	// times an infinite or NaN layer cost is NaN.

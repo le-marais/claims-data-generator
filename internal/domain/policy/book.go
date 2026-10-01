@@ -59,10 +59,9 @@ func (s *BookSimulator) Simulate(src shared.RandomSource, startYear, years, init
 		}
 		year := startYear + y
 		medianSI := s.book.SumInsuredMedian * math.Pow(s.book.SumInsuredInflation, float64(y))
-		inflation := math.Pow(s.pricing.InflationMean, float64(y))
 		siDrift := math.Pow(s.book.SumInsuredInflation, float64(y))
 		for i := 0; i < size; i++ {
-			book = append(book, s.simulatePolicy(src.Split(fmt.Sprintf("policy-%d", id)), id, year, medianSI, inflation, siDrift))
+			book = append(book, s.simulatePolicy(src.Split(fmt.Sprintf("policy-%d", id)), id, startYear, year, medianSI, siDrift))
 			id++
 		}
 	}
@@ -86,10 +85,16 @@ func ProjectedSize(book lob.BookParams, years, initialSize int) float64 {
 	return total
 }
 
-func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, year int, medianSI, inflation, siDrift float64) Policy {
+func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id, startYear, year int, medianSI, siDrift float64) Policy {
 	yearStart := shared.NewDate(year, time.January, 1)
 	daysInYear := shared.DaysBetween(yearStart, shared.NewDate(year+1, time.January, 1))
 	start := yearStart.AddDays(int(src.Uniform() * float64(daysInYear)))
+
+	// Trend the assumed loss cost to the middle of the cover, where the
+	// average claim occurs, on the same time axis as the claims inflation
+	// index (MR-3).
+	midCover := start.AddDays(182)
+	inflation := math.Pow(s.pricing.InflationMean, shared.TrendYears(midCover, startYear))
 
 	sumInsured := src.LogNormal(math.Log(medianSI), s.book.Spread)
 

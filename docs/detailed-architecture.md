@@ -120,6 +120,7 @@ The one intentional exception is `ReopenSimulator.Apply`, which short-circuits e
 - `(d Date) IsZero() bool` - true only for the zero instant (used to signal "unset" dates like `windowEnd` and `ReopenDate`).
 - `(d Date) Equal(other Date) bool` - same instant.
 - `DaysBetween(a, b Date) int` - whole days from `a` to `b`, negative if `b` is earlier, via `int(b.t.Sub(a.t) / 24h)`. Exact because every date is UTC midnight.
+- `TrendYears(d Date, startYear int) float64` - the date's position on the continuous axis claims inflation trends along: years since the middle of the start year, each day measured at its midpoint (leap-year aware). The inflation index and pricing both read time on it, so the trend the pricing assumes and the one the claims carry line up.
 - `(d Date) String() string` - ISO-8601 (`2006-01-02`), implementing `fmt.Stringer`; this is what lands in the CSVs.
 
 ### 5.2 `money.go` - integer-cent money
@@ -150,7 +151,7 @@ The `RandomSource` interface, covered in section 4.1.
 
 - **`BookParams`** (step 1): `GrowthFactor` (year-on-year policy-count trend), `SizeVolatility` (sigma of mean-1 size noise), `Spread` (heterogeneity knob reused for both the sum-insured lognormal sigma and the risk-factor coefficient of variation), `SumInsuredMedian`, `SumInsuredInflation` (annual median drift), `ExcessChoices []ExcessChoice`.
 - **`ExcessChoice`**: `Value` (deductible dollars), `Weight` (unnormalised selection weight).
-- **`PricingParams`** (premium): the insurer's assumed loss cost, independent of the claims model. `TargetLossRatio` (premium = assumed expected loss / this), `BaseFrequency`, `Severity SeverityParams`, `ReopenProbability`, `ReopenEstimateFactor`, `InflationMean` (all assumed values). Carries the `ExpectedPolicyLoss` and `ExpectedSectionLoss` methods (in `expectedloss.go`). Defaulting these to the true claims values prices the book perfectly; deviating them models underpricing or adverse experience.
+- **`PricingParams`** (premium): the insurer's assumed loss cost, independent of the claims model. `TargetLossRatio` (premium = assumed expected loss / this), `BaseFrequency`, `Severity SeverityParams`, `NilProbability`, `ReopenProbability`, `ReopenEstimateFactor`, `InflationMean` (all assumed values). Carries the `ExpectedPolicyLoss` and `ExpectedSectionLoss` methods (in `expectedloss.go`). The target sets premium only; the realized loss ratio emerges from the claims model. The preset starts these assumptions from the true claims values, so its loss ratio lands around the target; deviating them models underpricing or adverse experience.
 - **`ClaimParams`** (step 2): `BaseFrequency`, `ReportLagMedian`, `ReportLagSigma`, `Severity SeverityParams`, `CloseLag CloseLagParams`, `Inflation InflationParams`, `NilProbability`, `Recoveries RecoveryParams`, `Reopening ReopeningParams`.
 - **`SeverityParams`**: `ThirdPartyWeight` (probability a claim is third party), `OwnDamageMedianFraction` (own-damage median as a fraction of sum insured), `OwnDamageSigma`, `ThirdPartyScale` (Pareto minimum), `ThirdPartyAlpha` (Pareto tail index, must exceed 1 for a finite mean).
 - **`CloseLagParams`**: `Shape`, `MeanDays` (own-damage gamma base), `SizeThreshold`/`SizeMultiplier` (stretch the mean lag for large own-damage claims), `RiskLoading` (exponent applied to the risk factor), `ThirdPartyShape`/`ThirdPartyMeanDays` (the slower bodily-injury regime, not size-stretched).
@@ -169,7 +170,7 @@ A helper `checkFinite(fields ...namedFloat) error` screens NaN and infinity firs
 Notable per-struct rules. A sub-block that is switched off is never read, so only its switch is validated: a YAML author does not have to invent parameters for a feature they turned off. Every field still passes the finite check.
 
 - `BookParams`: growth/spread/median/inflation all `> 0`; volatility `>= 0`; `ExcessChoices` non-empty with each weight `>= 0` and a positive total weight; each value `>= 0`.
-- `PricingParams`: `TargetLossRatio`, `BaseFrequency`, `InflationMean` all `> 0`; `ReopenProbability` in `[0, 1)`, and `ReopenEstimateFactor > 0` unless the reopen probability is 0; delegates to `Severity.validate("pricing.severity")`.
+- `PricingParams`: `TargetLossRatio`, `BaseFrequency`, `InflationMean` all `> 0`; `NilProbability` and `ReopenProbability` in `[0, 1)`, and `ReopenEstimateFactor > 0` unless the reopen probability is 0; delegates to `Severity.validate("pricing.severity")`.
 - `ClaimParams`: base frequency, report-lag median/sigma `> 0`; `NilProbability` in `[0, 1)`; delegates to `Severity.validate("claims.severity")`, inflation, both recovery types (with the prefix passed in), reopening, and close lag.
 - `SeverityParams.validate(prefix string)`: `ThirdPartyWeight` in `[0, 1]` (inclusive, unlike the other probabilities); own-damage fraction/sigma `> 0` unless the weight is 1; third-party scale `> 0` and `ThirdPartyAlpha > 1` unless the weight is 0. The prefix names the offending field for either the pricing or claims severity block.
 - `CloseLagParams.validate(thirdParty bool)`: shapes and mean days `> 0`; `SizeMultiplier >= 1`; loadings/threshold `>= 0`. The third-party shape and mean are skipped when the claims severity gives third-party claims no weight.
@@ -179,13 +180,13 @@ Notable per-struct rules. A sub-block that is switched off is never read, so onl
 
 ### 6.3 Expected-loss pricing (`expectedloss.go`)
 
-This file prices premium deterministically (no randomness) from the assumed loss cost in `PricingParams`. When the pricing assumptions equal the true claims values, premium tracks expected loss and accident-year loss ratios stay flat as severities inflate; when they differ, the realized loss ratio moves on its own (underpricing / adverse experience). The formula is a deliberate, separate copy of the severity model - it is the insurer's assumption, not the true process.
+This file prices premium deterministically (no randomness) from the assumed loss cost in `PricingParams`. The formula is the exact expectation of its own assumptions, apart from the reopen cap noted below, so a gap between the pricing and claims assumptions moves the loss ratio by what it says. With the two equal, premium tracks expected loss and accident-year loss ratios do not drift as severities inflate, though the realized ratio still moves with claim sampling and the simulated inflation path. The formula is a deliberate, separate copy of the severity model - it is the insurer's assumption, not the true process.
 
 - `normCDF(x)` - the standard normal CDF via `0.5*math.Erfc(-x/sqrt2)`, stable in the tails.
 - `stopLossLognormal(median, sigma, excess)` - `E[(X-excess)+]` for a lognormal. Mean is `median*exp(sigma^2/2)`. For `excess <= 0` it is `mean - excess`; otherwise the Black-Scholes-style `mean*Phi(d1) - excess*Phi(d2)`.
 - `limitedStopLossLognormal(median, sigma, excess, cap)` - `E[(min(X,cap)-excess)+]`, i.e. the layer between `excess` and `cap`. Returns 0 when `cap <= excess`, else the difference of two stop-loss layers. This is the own-damage cover between the deductible and a total-loss cap.
 - `stopLossPareto(scale, alpha, excess)` - `E[(X-excess)+]` for a Pareto. Mean is `scale*alpha/(alpha-1)`. For `excess <= scale` it is `mean - excess`; otherwise the closed form `(scale/(alpha-1))*(scale/excess)^(alpha-1)`.
-- `(p PricingParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflationFactor, siDrift float64) float64` - the deterministic expected ultimate gross incurred loss for one policy under the pricing assumptions. It backs out the base-year sum insured (`baseSI = sumInsured/siDrift`), trends the assumed own-damage median by the claims index (`odMedian = inflationFactor*baseSI*OwnDamageMedianFraction`), prices own damage as a limited stop-loss capped at the drifted `sumInsured`, prices third party as an uncapped Pareto stop-loss on a claims-trended scale, mixes them by the assumed `ThirdPartyWeight`, applies a reopen uplift `1 + ReopenProbability*ReopenEstimateFactor`, and multiplies by the assumed `BaseFrequency*riskFactor`. Recoveries are excluded (gross basis). It draws no randomness, so pricing never perturbs a sub-stream.
+- `(p PricingParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflationFactor, siDrift float64) float64` - the deterministic expected ultimate gross incurred loss for one policy under the pricing assumptions. It backs out the base-year sum insured (`baseSI = sumInsured/siDrift`), trends the assumed own-damage median by the claims index (`odMedian = inflationFactor*baseSI*OwnDamageMedianFraction`), prices own damage as a limited stop-loss capped at the drifted `sumInsured`, prices third party as an uncapped Pareto stop-loss on a claims-trended scale, mixes them by the assumed `ThirdPartyWeight`, applies the expected payout per claim `1 - NilProbability + ReopenProbability*ReopenEstimateFactor` (a nil claim pays nothing in its first episode but pays a reopen like any other claim), and multiplies by the assumed `BaseFrequency*riskFactor`. Recoveries are excluded (gross basis). It draws no randomness, so pricing never perturbs a sub-stream.
 - `(p PricingParams) ExpectedSectionLoss(...) (ownDamage, thirdParty float64)` - the same expected loss split into the policy's own-damage and third-party liability sections; `ExpectedPolicyLoss` is their sum. A section whose severity weight is zero is skipped rather than multiplied by zero, because its parameters are not validated and zero times an infinite layer cost is NaN.
 
 ## 7. Domain: `policy` - the book (step 1)
@@ -198,9 +199,9 @@ This file prices premium deterministically (no randomness) from the assumed loss
 
 - `Simulate(src, startYear, years, initialSize int) []Policy` - produces the whole book. It splits a dedicated `book-size` stream for year-size noise, starts `size = initialSize` and a global `id = 1`, then for each year `y`:
   - For `y > 0`, applies growth with noise: `size = round(size * GrowthFactor * MeanOneLogNormal(sizeSrc, SizeVolatility))`, clamped to a minimum of 1. So the book trends upward but individual years can shrink.
-  - Computes the drifted median sum insured `SumInsuredMedian*SumInsuredInflation^y`, the assumed pricing inflation factor `pricing.InflationMean^y`, and the sum-insured drift `SumInsuredInflation^y`.
+  - Computes the drifted median sum insured `SumInsuredMedian*SumInsuredInflation^y`, and the sum-insured drift `SumInsuredInflation^y`.
   - Emits `size` policies, each from its own `policy-<id>` sub-stream, incrementing the global `id`.
-- `simulatePolicy(src, id, year int, medianSI, inflation, siDrift float64) Policy` - one policy: cover start uniform within the calendar year (leap-year aware via `DaysBetween`), sum insured lognormal `(log(medianSI), Spread)`, risk factor a mean-1 gamma with variance `Spread^2` (`Gamma(1/spread2, spread2)`), excess via `drawExcess`, and premium from `pricing.ExpectedSectionLoss(...)`: the sum of both sections over `pricing.TargetLossRatio`, with the third-party section alone giving `ThirdPartyPremium`.
+- `simulatePolicy(src, id, startYear, year int, medianSI, siDrift float64) Policy` - one policy: cover start uniform within the calendar year (leap-year aware via `DaysBetween`), the assumed pricing inflation factor `pricing.InflationMean^TrendYears(coverStart+182 days, startYear)` - the loss cost trended to the middle of the cover on the same time axis as the claims inflation index - sum insured lognormal `(log(medianSI), Spread)`, risk factor a mean-1 gamma with variance `Spread^2` (`Gamma(1/spread2, spread2)`), excess via `drawExcess`, and premium from `pricing.ExpectedSectionLoss(...)`: the sum of both sections over `pricing.TargetLossRatio`, with the third-party section alone giving `ThirdPartyPremium`.
 - `drawExcess(src) float64` - weighted categorical draw over `ExcessChoices`: draw `u = Uniform()*totalWeight`, walk the choices subtracting weights, return the first whose running total crosses `u`; fall back to the last choice on floating-point edges.
 
 ## 8. Domain: `claim` - claim events (step 2)
@@ -214,14 +215,14 @@ This file prices premium deterministically (no randomness) from the assumed loss
 `ClaimSimulator` holds `params`, an `InflationIndex`, `sumInsuredInflation`, `startYear`, and an exclusive `windowEnd`. It is built fluently:
 
 - `NewClaimSimulator(p lob.ClaimParams) *ClaimSimulator` - sets only params (no inflation, nominal sum insured, no window).
-- `WithInflation(x InflationIndex)` - sets the occurrence-year inflation index (the zero value is the identity).
+- `WithInflation(x InflationIndex)` - sets the occurrence-date inflation index (the zero value is the identity).
 - `WithBaseYear(sumInsuredInflation float64, startYear int)` - lets own-damage severity be expressed in base-year sum-insured terms.
 - `WithWindow(startYear, years int)` - sets `windowEnd = Jan 1 of startYear+years` (exclusive), constraining occurrences to `[startYear, startYear+years)` so the trailing underwriting year does not spill a partial accident year into claims.csv.
 
 Helpers:
 
 - `baseSumInsured(pol) float64` - deflates the drifted sum insured to base-year dollars: `SumInsured / sumInsuredInflation^(coverYear-startYear)`, or the nominal value when the base-year knob is unset (`<= 0`).
-- `exposedFraction(pol) float64` - the share of a policy's cover term lying inside the window, used to pro-rate frequency. Returns 1 when windowing is off or cover ends before `windowEnd`; otherwise the in-window days over the full term (guarding a zero-length term).
+- `exposedFraction(pol) float64` - the share of a policy's cover days lying inside the window, used to pro-rate frequency. Returns 1 when windowing is off or cover ends before `windowEnd`; otherwise the days from `CoverStart` up to the exclusive `windowEnd` over the 365 cover days (`CoverStart` to `CoverEnd` inclusive), the same span `simulateClaim` draws occurrences from.
 
 Core generation:
 
@@ -230,7 +231,7 @@ Core generation:
   1. Occurrence date: uniform over the cover span. When windowing caps the span at the exclusive `windowEnd`, the usual `span++` (to include the final cover day) is dropped so the exclusive boundary is honoured.
   2. Report lag: lognormal `(log(ReportLagMedian), ReportLagSigma)`, rounded to days.
   3. Ground-up loss: `drawGroundUpLoss`.
-  4. Claims inflation: multiply the loss by `inflation.For(occurrenceYear)` (applies to both severity components).
+  4. Claims inflation: multiply the loss by `inflation.For(occurrenceDate)` (applies to both severity components).
   5. Own-damage cap: if own damage and the loss exceeds the drifted `SumInsured`, cap it (a total loss).
   6. Cost = loss - excess; if `<= 0` the claim did not pierce the excess and is unreportable (`ok = false`, but the draws above were still consumed). Otherwise it becomes the claim's `Ultimate` (floored at one cent) and, for now, its `InitialEstimate`; own damage records `CoverLimit = SumInsured - Excess`.
   7. Close date: `report + round(drawCloseLag(...))`, sized on the cost.
@@ -244,10 +245,10 @@ Shared close-lag logic, reused by the reopen pass:
 
 ### 8.2 `inflation.go` - the claims-inflation path
 
-`InflationIndex{startYear int, factors []float64}` maps an occurrence year to a cumulative inflation factor; the zero value is the identity (`For` returns 1.0 for every year).
+`InflationIndex{startYear int, factors []float64, mean float64}` maps an occurrence date to a cumulative inflation factor; the zero value is the identity (`For` returns 1.0 for every date). Time is read on the `shared.TrendYears` axis: years since the middle of the start year, each day measured at its midpoint.
 
 - `NewInflationIndex(src, p lob.InflationParams, startYear, years int) InflationIndex` - `factors[0] = 1.0`, then each subsequent year multiplies by `Mean * MeanOneLogNormal(src, Volatility)`, so the expected annual factor is `Mean`. Returns the identity when `years < 1`.
-- `(x InflationIndex) For(year int) float64` - looks up `factors[year-startYear]`, clamping out-of-range years to the first or last simulated index (no extrapolation) and returning 1.0 for the zero-value index.
+- `(x InflationIndex) For(d shared.Date) float64` - anchors `factors[i]` at the middle of year `startYear+i` and interpolates geometrically between neighbouring anchors, so the index rises smoothly through the year instead of stepping each 1 January, and each calendar year averages close to its anchor. Before the first anchor and after the last it trends at `mean` from the nearest anchor. Returns 1.0 for the zero-value index.
 
 ### 8.3 `reopen.go` - the optional reopen episode
 
@@ -452,4 +453,4 @@ Invariants worth remembering:
 - **All claims close.** There is no valuation date; every claim runs to closure, gross paid equals the ultimate (zero for a never-reopened nil claim).
 - **Paid never exceeds the cover.** Gross paid is exactly `Ultimate + ReopenUltimate` (just `ReopenUltimate` for a nil claim), and for own damage that never exceeds sum insured minus excess.
 
-Deliberate simplifications (from the README's assumptions): own-damage severity trends only at the claims index and is capped at the sum insured; case estimates re-centre on the true ultimate at the first revision, so incurred carries little IBNER; nil claims draw severity and probability independently of claim size; there is no seasonality, catastrophe, or event clustering; and each year's book is an independent cohort with no renewals. The insurer prices risk perfectly *by default* - the preset's `pricing` assumptions equal the true claims values, so premium tracks expected loss and loss ratios are more stable than a real book's - but this is configurable: deviating the `pricing` block from the claims values models underpricing or adverse experience, and the realized loss ratio then moves off target.
+Deliberate simplifications (from the README's assumptions): own-damage severity trends only at the claims index and is capped at the sum insured; case estimates re-centre on the true ultimate at the first revision, so incurred carries little IBNER; nil claims draw severity and probability independently of claim size; there is no seasonality, catastrophe, or event clustering; and each year's book is an independent cohort with no renewals. The preset's `pricing` assumptions start from the true claims values, so its loss ratio lands around the target and is more stable than a real book's; deviating the `pricing` block from the claims values models underpricing or adverse experience. The loss ratio is always emergent - the target sets premium, never experience.
