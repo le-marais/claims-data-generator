@@ -1,0 +1,13 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # The fmt.Fprint family writes to a bufio.Writer whose first error
+      # resurfaces at the Flush the caller checks (the CSV writer), to stderr,
+      # or to a hash.Hash, which never fails. Checking each call would add
+      # noise without catching anything.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln

@@ -281,7 +281,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	w.Write(buf)
+	_, _ = w.Write(buf) // a failed write means the client has gone; there is no one left to tell
 }
 
 func writeError(w http.ResponseWriter, status int, msg string) {

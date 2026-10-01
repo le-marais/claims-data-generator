@@ -54,9 +54,10 @@ go build ./cmd/claimsgen        # build the binary
 
 go test ./...                   # run all tests
 go vet ./...                    # vet
+golangci-lint run ./...         # lint (config in .golangci.yml)
 ```
 
-Run both before claiming work is done.
+Run `go test` and `go vet` before claiming work is done. CI (`.github/workflows/ci.yml`) runs gofmt, `go vet`, `go test` on Go 1.26.x and stable, `govulncheck` and `golangci-lint` on every pull request and on `main`; a PR is not ready to merge until it is green.
 
 ## Conventions and things to know
 
