@@ -12,7 +12,7 @@ Guidance for AI coding agents working in this repository. Human contributors may
 - `triangles.csv` - incremental monthly development triangles by origin month (paid, paid net of recoveries, incurred, reported claim counts)
 - `exposure.csv` - exposure by origin month (premium, exposure units in policy-years, policy count)
 
-Nothing in the output is real, so there are no data governance concerns. See `docs/mission.md` for the full pitch and `docs/roadmap.md` for status and sequencing.
+Nothing in the output is real, so there are no data governance concerns. See `docs/mission.md` for the full pitch and `docs/roadmap.md` for direction.
 
 ## Preferred workflows
 
@@ -42,7 +42,7 @@ The layout is domain-driven. Respect the dependency direction: `domain` depends 
 - `internal/application/` - use cases: `GenerateDataset`, summary stats, histograms, and the realism check.
 - `internal/infrastructure/` - adapters: `config` (YAML plus the embedded motor preset), `csv` (writer), `schedulep` (reference-data reader), `random` (gonum-backed source), `web` (server, view models, static assets).
 - `data/reference/` - embedded Schedule P reference companies and the curation list.
-- `docs/` - mission, roadmap, architecture notes, `todo.md` (the consolidated open-work backlog), and `review.md` (the open findings from the model review of the simulation logic). `docs/superpowers/specs/` holds historical design records that are explicitly out of context (see "Design and process docs").
+- `docs/` - the five living docs (mission, roadmap, architecture, review, todo) plus historical records; see "Living docs".
 - `tools/` - dev-only helpers, not part of the binary: `prune-dec2025.ps1` (reference-data curation) and `screenshots/` (a Node script that regenerates the README screenshots). The Node dependency there does not contradict the no-build-step UI.
 
 ## Build, run, test
@@ -70,7 +70,7 @@ Run `go test` and `go vet` before claiming work is done. CI (`.github/workflows/
   2. The mirrored config struct and `ToDomain` in `internal/infrastructure/config/config.go`, with the same Go field name as the domain. `TestToDomainMapsEveryField` fails if a field is not carried across.
   3. The preset YAML (`motor-personal.yaml`), with a comment saying what the parameter does and why the preset uses its value.
   4. The form registry `formFields` in `internal/infrastructure/web/fields.go`: label, tip and group. `TestFormFieldsCoverEveryParameter` fails if a parameter has no form field.
-  5. Docs: the parameter lists in `docs/detailed-architecture.md` sections 6.1 and 6.2, and the README if a user would notice the behaviour.
+  5. Docs: the parameter lists in `docs/architecture.md` sections 6.1 and 6.2, and the README if a user would notice the behaviour.
   6. If the preset sets a non-default value, refresh the golden hashes and re-check the realism gate.
 - **Adding a line of business** is a YAML file for the CLI (`generate --config my-lob.yaml`, no code change); surfacing it in the UI means embedding the YAML in `internal/infrastructure/config/config.go` with a `//go:embed` line and registering it in both `presetInfos` and `presetYAML` there. See `internal/infrastructure/config/motor-personal.yaml` for the annotated preset.
 - **Testing style.** Tests live beside the code as `_test.go`. Table-driven tests and external test packages (`package foo_test`) are the norm; internal tests use the `_internal_test.go` suffix.
@@ -82,15 +82,26 @@ The maintainer prefers **domain-driven design** and **event sourcing where appro
 - **Domain-driven design.** The layering above is deliberate: keep the domain pure and free of infrastructure concerns, model the business in ubiquitous language (policy, claim, transaction, line of business), and push YAML, CSV, HTTP, and randomness adapters to the edges. New behavior belongs in `internal/domain/`; `application/` orchestrates, `infrastructure/` adapts.
 - **Event sourcing where appropriate.** The transaction ledger already fits this grain: a claim's state is derived by replaying its ordered `ESTIMATE`, `PAYMENT`, and recovery rows (outstanding case is the running sum of estimate movements; gross paid is the sum of payment rows). Prefer modelling a claim's lifetime as a stream of immutable events that state is folded from, rather than mutating snapshots in place. Apply it where it earns its keep - not every part of the model needs it.
 
-## Design and process docs
+## Living docs
 
-`docs/superpowers/specs/` is **out of context**. Every file there carries an "OUT OF CONTEXT - do not read" banner: they are historical design records, kept for provenance only. Do not read them, do not load them into context, and do not cite them as current behaviour - they describe decisions as of their own dates. Implementation plans (`docs/superpowers/plans/`) are deleted once the work they describe ships; recover them from git history if ever needed. Any file added under `docs/superpowers/` must carry the same banner.
+`docs/` keeps five living docs. They record the current state and open work only, never history: no shipped lists, resolved or dropped lists, dated re-rankings, or "has since shipped" notes. Git history is where old content lives.
 
-`docs/background-context.md` and `docs/raw user inputs/` are the original brief and the transcripts behind it. They are historical and intentionally not updated; read them for the original intent, not for current behaviour.
+| File | Holds |
+| --- | --- |
+| `docs/mission.md` | The core purpose of the app: problem, audience, what it does, what success looks like. |
+| `docs/roadmap.md` | High-level direction: what comes next and in what order. Nothing already shipped. |
+| `docs/architecture.md` | An overview of the code as it is on `main`. |
+| `docs/review.md` | Open review findings, recorded as reviews happen. |
+| `docs/todo.md` | Smaller or administrative items still to be done. |
 
-Treat the code, `README.md`, this file, and `docs/detailed-architecture.md` as the sources of truth. Keep `docs/roadmap.md` and `docs/todo.md` current when shipping or planning work: the roadmap carries direction and sequencing, `todo.md` carries the open findings from the code, security and stage-isolation reviews. **`todo.md` lists outstanding work only.** When you fix an item, delete it - do not move it to a resolved or dropped list, and do not leave a gap in the position numbers; renumber them so the list stays dense. The finding IDs themselves stay stable, so an older reference still resolves against git history, which is where the full text of a closed item lives. Say in the shipping commit message which IDs it closes, so the trail is in the history rather than in the file.
+Keep them current in the same PR as the work:
 
-**Record review findings in `docs/review.md`.** When you review the model or the code, write each finding there with a stable ID (**MR** for the model review), a severity on the `todo.md` scale, where it lives, the evidence, and the action. `review.md` follows the same rule as `todo.md`: it lists open, unresolved findings only. When a finding is fixed, delete it and renumber the positions so the list stays dense; do not keep a resolved list, because git history is where closed findings live. Name the closed IDs in the shipping commit message. A finding that supersedes a `todo.md` item replaces it: delete the `todo.md` item and say so in the finding.
+- **When work ships,** delete it from the roadmap, `review.md` and `todo.md`, and update `architecture.md` to match the code. Name the closed IDs in the commit message, so the trail is in the history rather than in the files.
+- **`review.md` and `todo.md` items** carry a position, a stable ID, a severity (**high** undermines the mission, **medium** worth addressing soon, **low** fix when touching the area), where the item lives, the evidence and the action. When an item closes, delete it and renumber the positions so the list stays dense; the IDs never change, so older references still resolve against git history. Review findings use **MR** IDs for the model review. A finding that supersedes a `todo.md` item replaces it: delete the `todo.md` item and say so in the finding.
+
+Treat the code, `README.md`, this file and `docs/architecture.md` as the sources of truth.
+
+Everything else in `docs/` is historical and intentionally not updated. `docs/background-context.md` and `docs/raw user inputs/` are the original brief and the transcripts behind it: read them for the original intent, not for current behaviour. `docs/superpowers/specs/` is **out of context**: every file there carries an "OUT OF CONTEXT - do not read" banner. Do not read them, load them into context, or cite them as current behaviour. Implementation plans (`docs/superpowers/plans/`) are deleted once their work ships. Any file added under `docs/superpowers/` must carry the same banner.
 
 ## Writing style (docs and comments)
 

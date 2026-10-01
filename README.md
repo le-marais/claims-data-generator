@@ -174,4 +174,16 @@ CI runs gofmt, `go vet`, `go test` (on the minimum Go version in `go.mod` and on
 
 Screenshots are regenerated with `tools/screenshots` (start the UI on port 8093, `npm install`, `node screenshots.js`).
 
-The layout is domain-driven: `internal/domain/` holds the simulation model (policy, claim, transaction, lob, triangle) with no outside dependencies, `internal/application/` the use cases, and `internal/infrastructure/` the adapters (config, CSV, Schedule P reader, gonum-backed randomness). Design docs live in `docs/`.
+The layout is domain-driven: `internal/domain/` holds the simulation model (policy, claim, transaction, lob, triangle) with no outside dependencies, `internal/application/` the use cases, and `internal/infrastructure/` the adapters (config, CSV, Schedule P reader, gonum-backed randomness). See `docs/architecture.md` for the full tour.
+
+## Docs
+
+`docs/` keeps five living docs, each describing the current state or open work only. Shipped and resolved items are deleted, not archived; git history keeps them.
+
+- `docs/mission.md` - the core purpose of the app
+- `docs/roadmap.md` - where the app is heading; nothing already shipped
+- `docs/architecture.md` - an overview of the code, kept in line with `main`
+- `docs/review.md` - open review findings, recorded as reviews happen
+- `docs/todo.md` - smaller or administrative items still to be done
+
+`AGENTS.md` has the rules for keeping them current.

@@ -1,4 +1,4 @@
-# Detailed architecture
+# Architecture
 
 This document is a function-level tour of `claimsgen`. It is meant to be read end to end: by the time you reach the bottom you should understand what every package contains, what each exported (and most unexported) function does, its parameters, and the algorithm behind it.
 
@@ -461,5 +461,10 @@ Invariants worth remembering:
 - **Recoveries stay below gross paid.** A claim's cumulative recovered is strictly less than its gross paid (by at least one cent), and recovery rows are the only transactions dated after the final close.
 - **All claims close.** There is no valuation date; every claim runs to closure, gross paid equals the ultimate (zero for a never-reopened nil claim).
 - **Paid never exceeds the cover.** Gross paid is exactly `Ultimate + ReopenUltimate` (just `ReopenUltimate` for a nil claim), and for own damage that never exceeds sum insured minus excess.
+- **The ledger is checked as a state machine.** `internal/application/invariants_test.go` validates the full ledger: referential integrity, date ordering, case never negative, zero at close, nil and reopen sequencing, recovery bounds.
+- **Distribution parameterizations.** Mean-one lognormal via the -sigma^2/2 adjustment, mean-one gamma via shape 1/sigma^2, the case adequacy mu adjustment, Beta mean/concentration form, and Pareto alpha > 1 for a finite mean.
+- **Loopback-only security posture.** 127.0.0.1 bind, Host and Origin checks against DNS rebinding and CSRF, `MaxBytesReader`, `DisallowUnknownFields` on JSON and `KnownFields(true)` on YAML, an embedded `fs.Sub` static tree with no path traversal, and a front end that builds DOM only via `textContent` and `createElementNS`, so there is no XSS sink. `docs/todo.md` lists what must change before the UI is served beyond 127.0.0.1.
+- **The CSV output has no free-text column.** Every field is numeric, an ISO-8601 date or a fixed enum, which is why plain `fmt.Sprintf` is safe. If a claim description or class name is ever added, switch to `encoding/csv` with formula-lead-character escaping in the same change.
+- **No secrets, no PII.** The reference data is public NAIC Schedule P aggregate triangles keyed by company code, and the generated output is fully synthetic.
 
 Deliberate simplifications (from the README's assumptions): own-damage severity trends only at the claims index and is capped at the sum insured; the case adequacy bias decays on one fixed geometric path for every claim; nil claims draw severity and probability independently of claim size; there is no seasonality, catastrophe, or event clustering; and each year's book is an independent cohort with no renewals. The preset's `pricing` assumptions start from the true claims values, so its loss ratio lands around the target and is more stable than a real book's; deviating the `pricing` block from the claims values models underpricing or adverse experience. The loss ratio is always emergent - the target sets premium, never experience.
