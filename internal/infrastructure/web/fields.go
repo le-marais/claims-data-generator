@@ -1,0 +1,109 @@
+package web
+
+// formField is one line-of-business parameter in the browser form. Path
+// addresses the parameter in the preset JSON (the config package's json
+// tags); Label and Tip are what the form shows.
+type formField struct {
+	Path  []string `json:"path"`
+	Label string   `json:"label"`
+	Tip   string   `json:"tip"`
+}
+
+// fieldGroup is one heading of the form and its fields, in display order.
+type fieldGroup struct {
+	Label  string      `json:"label"`
+	Fields []formField `json:"fields"`
+}
+
+// formFields is the parameter form's metadata, served at GET /api/fields so
+// the browser builds the form generically (RF-13). Every numeric parameter in
+// config.LOBParams has exactly one entry, which TestFormFieldsCoverEveryParameter
+// enforces; the excess choices table and the name are built separately.
+var formFields = []fieldGroup{
+	{
+		Label: "Book",
+		Fields: []formField{
+			{Path: []string{"book", "growth_factor"}, Label: "Growth factor", Tip: "Year-on-year trend in policy count."},
+			{Path: []string{"book", "size_volatility"}, Label: "Size volatility", Tip: "Sigma of the mean-1 lognormal noise on book size."},
+			{Path: []string{"book", "spread"}, Label: "Spread", Tip: "Heterogeneity: sigma of sum insured and sd of the risk factor."},
+			{Path: []string{"book", "sum_insured_median"}, Label: "Sum insured median", Tip: "Year-1 median sum insured in dollars."},
+			{Path: []string{"book", "sum_insured_inflation"}, Label: "Sum insured inflation", Tip: "Annual multiplicative drift of the median."},
+		},
+	},
+	{
+		Label: "Pricing",
+		Fields: []formField{
+			{Path: []string{"pricing", "target_loss_ratio"}, Label: "Target loss ratio", Tip: "Assumed loss ratio premium is priced to. Premium = assumed expected loss / target."},
+			{Path: []string{"pricing", "adequacy_volatility"}, Label: "Pricing adequacy volatility", Tip: "Sigma of mean-one lognormal noise on each underwriting year's target loss ratio, like an underwriting cycle; 0 switches it off."},
+			{Path: []string{"pricing", "base_frequency"}, Label: "Assumed base frequency", Tip: "Assumed ground-up frequency used for pricing (independent of the true claims frequency)."},
+			{Path: []string{"pricing", "severity", "third_party_weight"}, Label: "Assumed third party weight", Tip: "Assumed probability a claim is third party, for pricing."},
+			{Path: []string{"pricing", "severity", "own_damage_median_fraction"}, Label: "Assumed own damage median fraction", Tip: "Assumed median own-damage loss as a fraction of sum insured, for pricing."},
+			{Path: []string{"pricing", "severity", "own_damage_sigma"}, Label: "Assumed own damage sigma", Tip: "Assumed sigma of the own-damage lognormal, for pricing."},
+			{Path: []string{"pricing", "severity", "third_party_scale"}, Label: "Assumed third party scale", Tip: "Assumed Pareto scale (minimum) in dollars, for pricing."},
+			{Path: []string{"pricing", "severity", "third_party_alpha"}, Label: "Assumed third party alpha", Tip: "Assumed Pareto tail index, for pricing; must exceed 1."},
+			{Path: []string{"pricing", "nil_probability"}, Label: "Assumed nil claim probability", Tip: "Assumed share of claims that close without payment, for pricing. A nil claim still pays if it reopens."},
+			{Path: []string{"pricing", "reopen_probability"}, Label: "Assumed reopen probability", Tip: "Assumed reopen chance feeding the pricing uplift."},
+			{Path: []string{"pricing", "reopen_estimate_factor"}, Label: "Assumed reopen estimate factor", Tip: "Assumed reopen estimate factor feeding the pricing uplift."},
+			{Path: []string{"pricing", "inflation_mean"}, Label: "Assumed inflation trend", Tip: "Assumed mean annual claims-inflation trend used for pricing, applied to the middle of each policy's cover."},
+		},
+	},
+	{
+		Label: "Claims",
+		Fields: []formField{
+			{Path: []string{"claims", "base_frequency"}, Label: "Base frequency", Tip: "Expected reported claims per policy-year."},
+			{Path: []string{"claims", "report_lag_median"}, Label: "Report lag median", Tip: "Median occurrence-to-report lag in days."},
+			{Path: []string{"claims", "report_lag_sigma"}, Label: "Report lag sigma", Tip: "Sigma of the lognormal report lag."},
+			{Path: []string{"claims", "third_party_report_lag_median"}, Label: "Third-party report lag median", Tip: "Median occurrence-to-report lag in days for third-party claims; 0 uses the shared report lag."},
+			{Path: []string{"claims", "third_party_report_lag_sigma"}, Label: "Third-party report lag sigma", Tip: "Sigma of the third-party lognormal report lag."},
+			{Path: []string{"claims", "severity", "third_party_weight"}, Label: "Third party weight", Tip: "Probability a claim is third party."},
+			{Path: []string{"claims", "severity", "own_damage_median_fraction"}, Label: "Own damage median fraction", Tip: "Median loss as a fraction of sum insured."},
+			{Path: []string{"claims", "severity", "own_damage_sigma"}, Label: "Own damage sigma", Tip: "Sigma of the own damage lognormal."},
+			{Path: []string{"claims", "severity", "third_party_scale"}, Label: "Third party scale", Tip: "Pareto scale (minimum) in dollars."},
+			{Path: []string{"claims", "severity", "third_party_alpha"}, Label: "Third party alpha", Tip: "Pareto tail index; must exceed 1."},
+			{Path: []string{"claims", "close_lag", "shape"}, Label: "Close lag shape", Tip: "Gamma shape of the close lag."},
+			{Path: []string{"claims", "close_lag", "mean_days"}, Label: "Close lag mean days", Tip: "Base mean report-to-close lag."},
+			{Path: []string{"claims", "close_lag", "size_threshold"}, Label: "Close lag size threshold", Tip: "Own-damage claim cost, in start-year dollars (deflated by claims inflation), above which the lag stretches."},
+			{Path: []string{"claims", "close_lag", "size_multiplier"}, Label: "Close lag size multiplier", Tip: "Stretch factor for large claims."},
+			{Path: []string{"claims", "close_lag", "risk_loading"}, Label: "Close lag risk loading", Tip: "Exponent on the policy risk factor."},
+			{Path: []string{"claims", "close_lag", "third_party_shape"}, Label: "Third-party close lag shape", Tip: "Gamma shape of the close lag for third-party (long-tail) claims."},
+			{Path: []string{"claims", "close_lag", "third_party_mean_days"}, Label: "Third-party close lag mean days", Tip: "Mean report-to-close lag for a third-party claim costing the size reference."},
+			{Path: []string{"claims", "close_lag", "third_party_size_elasticity"}, Label: "Third-party close lag size elasticity", Tip: "Mean lag scales by (size / reference) to this power, so larger claims settle slower; 0 switches it off."},
+			{Path: []string{"claims", "close_lag", "third_party_size_reference"}, Label: "Third-party close lag size reference", Tip: "Claim cost in start-year dollars that settles in the third-party mean days."},
+			{Path: []string{"claims", "inflation", "mean"}, Label: "Claims inflation", Tip: "Average annual claims inflation factor, applied by occurrence date (1.0 = flat)."},
+			{Path: []string{"claims", "inflation", "volatility"}, Label: "Claims inflation volatility", Tip: "Sigma of the mean-one lognormal noise on each year's inflation factor; 0 gives a smooth trend."},
+			{Path: []string{"claims", "nil_probability"}, Label: "Nil claim probability", Tip: "Probability a claim closes without payment at its first close; 0 switches nil claims off."},
+			{Path: []string{"claims", "reopening", "probability"}, Label: "Reopen probability", Tip: "Chance a closed claim reopens once; 0 switches reopening off."},
+			{Path: []string{"claims", "reopening", "estimate_factor"}, Label: "Reopen estimate factor", Tip: "Mean additional reopen cost as a factor of the claim's ultimate; own damage is capped at the cover left."},
+			{Path: []string{"claims", "reopening", "estimate_sigma"}, Label: "Reopen estimate sigma", Tip: "Sigma of the mean-one lognormal noise on the reopen's additional cost."},
+			{Path: []string{"claims", "reopening", "lag_median_days"}, Label: "Reopen lag median days", Tip: "Median days from first close to reopen."},
+			{Path: []string{"claims", "reopening", "lag_sigma"}, Label: "Reopen lag sigma", Tip: "Sigma of the lognormal close-to-reopen lag."},
+		},
+	},
+	{
+		Label: "Recoveries",
+		Fields: []formField{
+			{Path: []string{"claims", "recoveries", "salvage", "probability"}, Label: "Salvage probability", Tip: "Chance a total loss (a written-off vehicle) yields salvage; 0 switches salvage off."},
+			{Path: []string{"claims", "recoveries", "salvage", "mean_share"}, Label: "Salvage mean share", Tip: "Average salvage recovery as a share of the claim's gross paid."},
+			{Path: []string{"claims", "recoveries", "salvage", "concentration"}, Label: "Salvage concentration", Tip: "Beta concentration of the salvage share; higher clusters shares tighter around the mean."},
+			{Path: []string{"claims", "recoveries", "salvage", "lag_median_days"}, Label: "Salvage lag median days", Tip: "Median days from close to receiving the salvage."},
+			{Path: []string{"claims", "recoveries", "salvage", "lag_sigma"}, Label: "Salvage lag sigma", Tip: "Sigma of the lognormal close-to-receipt lag for salvage."},
+			{Path: []string{"claims", "recoveries", "subrogation", "probability"}, Label: "Subrogation probability", Tip: "Chance an own-damage claim is subrogated; 0 switches subrogation off."},
+			{Path: []string{"claims", "recoveries", "subrogation", "mean_share"}, Label: "Subrogation mean share", Tip: "Average subrogation recovery as a share of the claim's gross paid."},
+			{Path: []string{"claims", "recoveries", "subrogation", "concentration"}, Label: "Subrogation concentration", Tip: "Beta concentration of the subrogation share; higher clusters shares tighter around the mean."},
+			{Path: []string{"claims", "recoveries", "subrogation", "lag_median_days"}, Label: "Subrogation lag median days", Tip: "Median days from close to receiving the subrogation recovery."},
+			{Path: []string{"claims", "recoveries", "subrogation", "lag_sigma"}, Label: "Subrogation lag sigma", Tip: "Sigma of the lognormal close-to-receipt lag for subrogation."},
+		},
+	},
+	{
+		Label: "Runoff",
+		Fields: []formField{
+			{Path: []string{"runoff", "case_adequacy_mean"}, Label: "Case adequacy mean", Tip: "True ultimate over the expected opening case: above 1 under-reserves. Moves case reserves, not losses."},
+			{Path: []string{"runoff", "case_adequacy_sigma"}, Label: "Case adequacy sigma", Tip: "Noise on each opening case estimate: how wrong individual estimates are."},
+			{Path: []string{"runoff", "payments_per_year"}, Label: "Payments per year", Tip: "Poisson intensity of interim payments."},
+			{Path: []string{"runoff", "settlement_share"}, Label: "Settlement share", Tip: "Fraction of ultimate paid at close."},
+			{Path: []string{"runoff", "concentration"}, Label: "Concentration", Tip: "Dirichlet concentration across interim payments."},
+			{Path: []string{"runoff", "revisions_per_year"}, Label: "Revisions per year", Tip: "Poisson intensity of pure case revisions."},
+			{Path: []string{"runoff", "revision_sigma"}, Label: "Revision sigma", Tip: "Initial sigma of revision noise."},
+		},
+	},
+}

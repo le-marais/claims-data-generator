@@ -28,38 +28,12 @@ high-severity is open.
 
 ## Order
 
-1. **RF-13** - gates the second line of business; step (1) is due before the
-   parameters that work will add.
-2. **RF-14** - gates the same work, and compounds with every feature added.
+1. **RF-14** - gates the second line of business, and compounds with every
+   feature added.
 
 The sequence across this file and `docs/review.md` lives in `docs/roadmap.md`.
 
-## 1. RF-13 (medium) - adding one line-of-business parameter touches five places
-
-- Where: the domain struct plus validation (`internal/domain/lob/lob.go`), the
-  config DTO plus `ToDomain` (`internal/infrastructure/config/config.go`), the
-  preset YAML (`internal/infrastructure/config/motor-personal.yaml`), and the UI
-  form metadata (`internal/infrastructure/web/static/app.js`, where labels and
-  tips restate the YAML comments by hand).
-- This is the main friction for the roadmap's second line of business. The
-  2026-07-27 independent-pricing-basis feature added the `pricing` block through
-  exactly this fan-out - a current instance, not a historical one.
-- Action, in increasing order of ambition: (1) document the checklist in a short
-  "adding a parameter" note; (2) serve the form metadata from the server - a
-  small registry of label, tip and group per field would let `app.js` build the
-  form generically and remove the JS-side duplication and its drift risk against
-  the YAML comments; (3) revisit whether the DTO layer pays its way - the
-  mirrored structs keep the domain tag-free, a legitimate choice, but if
-  `ToDomain` keeps growing, consider code generation or accepting yaml/json tags
-  on the `lob` package.
-- Every model finding queued in `docs/review.md` adds parameters, so at least
-  step (1) should land before or with them.
-- Principle to hold to (the old F8): give each stage a narrow, purpose-built
-  input rather than a whole parameter block, so the compiler enforces isolation.
-  `NewBookSimulator(book, pricing)` already shows it working - it takes a
-  purpose-built `PricingParams` and structurally cannot read claims knobs.
-
-## 2. RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
+## 1. RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
 
 Merges the old F3 and F6, which describe the same problem from the parameter
 side.

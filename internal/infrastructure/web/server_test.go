@@ -424,6 +424,27 @@ func TestLimitsEndpoint(t *testing.T) {
 	}
 }
 
+func TestFieldsEndpoint(t *testing.T) {
+	rec := do(t, newTestServer(t), "GET", "/api/fields", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	var groups []struct {
+		Label  string `json:"label"`
+		Fields []struct {
+			Path  []string `json:"path"`
+			Label string   `json:"label"`
+			Tip   string   `json:"tip"`
+		} `json:"fields"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &groups); err != nil {
+		t.Fatal(err)
+	}
+	if len(groups) == 0 || len(groups[0].Fields) == 0 || len(groups[0].Fields[0].Path) == 0 {
+		t.Fatalf("fields = %+v, want groups of fields with paths", groups)
+	}
+}
+
 func TestGenerateRejectsOversizedRuns(t *testing.T) {
 	cases := []struct {
 		name string

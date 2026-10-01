@@ -70,6 +70,7 @@ func NewServer(refs []triangle.ReferenceSet) *Server {
 	s.mux.HandleFunc("GET /api/lobs", s.handleLOBs)
 	s.mux.HandleFunc("GET /api/lobs/{id}/preset", s.handlePreset)
 	s.mux.HandleFunc("GET /api/limits", s.handleLimits)
+	s.mux.HandleFunc("GET /api/fields", s.handleFields)
 	s.mux.HandleFunc("POST /api/generate", s.handleGenerate)
 
 	staticRoot, err := fs.Sub(staticFS, "static")
@@ -139,6 +140,11 @@ func (s *Server) handleLimits(w http.ResponseWriter, r *http.Request) {
 		"max_initial_book_size":  maxInitialBookSize,
 		"max_projected_policies": maxProjectedPolicies,
 	})
+}
+
+// handleFields serves the parameter form's field metadata (see formFields).
+func (s *Server) handleFields(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, formFields)
 }
 
 type generateRequest struct {

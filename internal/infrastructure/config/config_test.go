@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -254,5 +255,73 @@ func TestPresetUnknown(t *testing.T) {
 	}
 	if _, err := PresetParams("marine-cargo"); err == nil {
 		t.Fatal("PresetParams(marine-cargo): want error, got nil")
+	}
+}
+
+// leaves records every float64 and string leaf of a struct tree by its Go
+// field-name path, with slice elements indexed, so two parallel trees can be
+// compared field by field.
+func leaves(v reflect.Value, path string, out map[string]any) {
+	switch v.Kind() {
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			leaves(v.Field(i), path+"."+v.Type().Field(i).Name, out)
+		}
+	case reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			leaves(v.Index(i), fmt.Sprintf("%s[%d]", path, i), out)
+		}
+	case reflect.Float64:
+		out[path] = v.Float()
+	case reflect.String:
+		out[path] = v.String()
+	default:
+		panic(fmt.Sprintf("leaves: unhandled kind %s at %s", v.Kind(), path))
+	}
+}
+
+// fillDistinct sets every float64 leaf to a distinct value (1, 2, 3, ...),
+// every string to its path, and gives every slice two elements.
+func fillDistinct(v reflect.Value, path string, next *float64) {
+	switch v.Kind() {
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			fillDistinct(v.Field(i), path+"."+v.Type().Field(i).Name, next)
+		}
+	case reflect.Slice:
+		v.Set(reflect.MakeSlice(v.Type(), 2, 2))
+		for i := 0; i < v.Len(); i++ {
+			fillDistinct(v.Index(i), fmt.Sprintf("%s[%d]", path, i), next)
+		}
+	case reflect.Float64:
+		*next++
+		v.SetFloat(*next)
+	case reflect.String:
+		v.SetString(path)
+	}
+}
+
+// RF-13: ToDomain must carry every config field to the domain field of the
+// same name, and the domain must have no field the config cannot set. A
+// forgotten line in ToDomain would otherwise zero the parameter silently -
+// and since a zero often means "off" (MF-3), it could even pass validation.
+// Distinct values also catch two fields swapped or one copied twice.
+func TestToDomainMapsEveryField(t *testing.T) {
+	var params LOBParams
+	next := 0.0
+	fillDistinct(reflect.ValueOf(&params).Elem(), "", &next)
+
+	got, want := map[string]any{}, map[string]any{}
+	leaves(reflect.ValueOf(params.ToDomain()), "", got)
+	leaves(reflect.ValueOf(params), "", want)
+	for path, v := range want {
+		if got[path] != v {
+			t.Errorf("domain %s = %v, want %v from the config", path, got[path], v)
+		}
+	}
+	for path := range got {
+		if _, ok := want[path]; !ok {
+			t.Errorf("domain field %s has no config field of the same name", path)
+		}
 	}
 }
