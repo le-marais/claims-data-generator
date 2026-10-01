@@ -3,10 +3,12 @@ package csv_test
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/le-marais/claimsgen/internal/application"
+	"github.com/le-marais/claimsgen/internal/domain/claim"
 	"github.com/le-marais/claimsgen/internal/infrastructure/config"
 	csvout "github.com/le-marais/claimsgen/internal/infrastructure/csv"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
@@ -123,5 +125,15 @@ func TestWriteDatasetCreatesDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "claims.csv")); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// RF-14: claims.csv carries the claim's Record and nothing else, so a field
+// added to the record must add a column, and the development context can
+// never reach the file by accident.
+func TestClaimsCSVCarriesExactlyTheRecord(t *testing.T) {
+	const header = "claim_id,policy_id,occurrence_date,report_date,close_date,initial_estimate"
+	if got, want := len(strings.Split(header, ",")), reflect.TypeOf(claim.Record{}).NumField(); got != want {
+		t.Fatalf("claims.csv has %d columns but claim.Record has %d fields", got, want)
 	}
 }

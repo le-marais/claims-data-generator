@@ -55,3 +55,36 @@ func TestOwnDamageIsCappedAtSumInsured(t *testing.T) {
 		}
 	}
 }
+
+// RF-14: own-damage severity is sized off the policy's BaseSumInsured, so the
+// claim stage needs no book parameter; a policy without one falls back to the
+// nominal sum insured.
+func TestOwnDamageSeverityReadsBaseSumInsured(t *testing.T) {
+	params := lob.ClaimParams{
+		BaseFrequency: 1, ReportLagMedian: 2, ReportLagSigma: 1.2,
+		Severity: lob.SeverityParams{ThirdPartyWeight: 0, OwnDamageMedianFraction: 0.01, OwnDamageSigma: 0.5},
+		CloseLag: lob.CloseLagParams{Shape: 1.2, MeanDays: 40, SizeThreshold: 20000, SizeMultiplier: 3, ThirdPartyShape: 1, ThirdPartyMeanDays: 400},
+	}
+	book := func(base float64) []policy.Policy {
+		var b []policy.Policy
+		start := shared.NewDate(2000, time.January, 1)
+		for i := 1; i <= 300; i++ {
+			b = append(b, policy.Policy{
+				ID: i, CoverStart: start, CoverEnd: start.AddDays(364), RiskFactor: 1,
+				SumInsured: shared.FromDollars(1e7), BaseSumInsured: base, // far above any loss, so no cap
+			})
+		}
+		return b
+	}
+	nominal := NewClaimSimulator(params).Simulate(random.NewSource(3), book(0))
+	base := NewClaimSimulator(params).Simulate(random.NewSource(3), book(5e6))
+	if len(nominal) == 0 || len(nominal) != len(base) {
+		t.Fatalf("claim counts %d and %d, want equal and non-zero", len(nominal), len(base))
+	}
+	for i := range nominal {
+		// Half the base sum insured, half the loss, to the cent.
+		if got, want := base[i].Ultimate.Dollars(), nominal[i].Ultimate.Dollars()/2; got < want-0.01 || got > want+0.01 {
+			t.Fatalf("claim %d: ultimate %.2f at half the base sum insured, want %.2f", i, got, want)
+		}
+	}
+}

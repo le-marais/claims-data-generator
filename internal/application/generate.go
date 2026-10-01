@@ -63,7 +63,6 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 	inflation := claim.NewInflationIndex(src.Split("inflation"), req.LOB.Claims.Inflation, req.StartYear, req.Years)
 	claims := claim.NewClaimSimulator(req.LOB.Claims).
 		WithInflation(inflation).
-		WithBaseYear(req.LOB.Book.SumInsuredInflation, req.StartYear).
 		WithWindow(req.StartYear, req.Years).
 		Simulate(src.Split("claims"), book)
 	claims = claim.NewReopenSimulator(req.LOB.Claims).

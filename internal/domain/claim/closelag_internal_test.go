@@ -101,9 +101,18 @@ func TestReopenSizeStretchIgnoresClaimsInflation(t *testing.T) {
 	for i := 0; i < 4000; i++ {
 		occurred := shared.NewDate(2007, time.March, 1)
 		claims = append(claims, Claim{
-			ID: i + 1, OccurrenceDate: occurred, ReportDate: occurred, CloseDate: occurred.AddDays(30),
-			// Nominally 100k, about 10k in start-year dollars: under the threshold.
-			Ultimate: shared.FromDollars(100000), RiskFactor: 1, OwnDamage: true,
+			Record: Record{
+				ID:             i + 1,
+				OccurrenceDate: occurred,
+				ReportDate:     occurred,
+				CloseDate:      occurred.AddDays(30),
+			},
+			Development: Development{
+				// Nominally 100k, about 10k in start-year dollars: under the threshold.
+				Ultimate:   shared.FromDollars(100000),
+				RiskFactor: 1,
+				OwnDamage:  true,
+			},
 		})
 	}
 	secondLag := func(sim *ReopenSimulator) float64 {

@@ -33,14 +33,18 @@ func testClaims(n int) []claim.Claim {
 		durations := []int{0, 10, 45, 180, 700}
 		estimates := []float64{800, 3000, 12000, 40000, 250000}
 		claims[i] = claim.Claim{
-			ID:              i + 1,
-			PolicyID:        i + 1,
-			OccurrenceDate:  report.AddDays(-2),
-			ReportDate:      report,
-			CloseDate:       report.AddDays(durations[i%5]),
-			Ultimate:        shared.FromDollars(estimates[(i+2)%5]),
-			InitialEstimate: shared.FromDollars(estimates[(i+2)%5]),
-			RiskFactor:      1.0,
+			Record: claim.Record{
+				ID:              i + 1,
+				PolicyID:        i + 1,
+				OccurrenceDate:  report.AddDays(-2),
+				ReportDate:      report,
+				CloseDate:       report.AddDays(durations[i%5]),
+				InitialEstimate: shared.FromDollars(estimates[(i+2)%5]),
+			},
+			Development: claim.Development{
+				Ultimate:   shared.FromDollars(estimates[(i+2)%5]),
+				RiskFactor: 1.0,
+			},
 		}
 	}
 	return claims
@@ -151,13 +155,18 @@ func TestTotalPaidIsExactlyTheUltimate(t *testing.T) {
 
 func TestSameDayCloseSettlesInFull(t *testing.T) {
 	c := claim.Claim{
-		ID: 1, PolicyID: 1,
-		OccurrenceDate:  shared.NewDate(1998, time.May, 1),
-		ReportDate:      shared.NewDate(1998, time.May, 3),
-		CloseDate:       shared.NewDate(1998, time.May, 3),
-		Ultimate:        shared.FromDollars(1000),
-		InitialEstimate: shared.FromDollars(1000),
-		RiskFactor:      1.0,
+		Record: claim.Record{
+			ID:              1,
+			PolicyID:        1,
+			OccurrenceDate:  shared.NewDate(1998, time.May, 1),
+			ReportDate:      shared.NewDate(1998, time.May, 3),
+			CloseDate:       shared.NewDate(1998, time.May, 3),
+			InitialEstimate: shared.FromDollars(1000),
+		},
+		Development: claim.Development{
+			Ultimate:   shared.FromDollars(1000),
+			RiskFactor: 1.0,
+		},
 	}
 	sim := transaction.NewRunoffSimulator(params())
 	txs := sim.Simulate(random.NewSource(4), []claim.Claim{c})
@@ -228,14 +237,18 @@ func TestLongClaimsReviseMoreThanShortClaims(t *testing.T) {
 
 func TestNilClaimHasNoPaymentsAndClosesToZero(t *testing.T) {
 	c := claim.Claim{
-		ID:              1,
-		PolicyID:        1,
-		OccurrenceDate:  shared.NewDate(2000, time.January, 1),
-		ReportDate:      shared.NewDate(2000, time.January, 10),
-		CloseDate:       shared.NewDate(2001, time.June, 1),
-		InitialEstimate: shared.FromDollars(5000),
-		RiskFactor:      1.0,
-		Nil:             true,
+		Record: claim.Record{
+			ID:              1,
+			PolicyID:        1,
+			OccurrenceDate:  shared.NewDate(2000, time.January, 1),
+			ReportDate:      shared.NewDate(2000, time.January, 10),
+			CloseDate:       shared.NewDate(2001, time.June, 1),
+			InitialEstimate: shared.FromDollars(5000),
+		},
+		Development: claim.Development{
+			RiskFactor: 1.0,
+			Nil:        true,
+		},
 	}
 	sim := transaction.NewRunoffSimulator(params())
 	txs := sim.Simulate(random.NewSource(1), []claim.Claim{c})
@@ -271,19 +284,23 @@ func TestNilClaimHasNoPaymentsAndClosesToZero(t *testing.T) {
 // reopenedClaim builds one claim with a reopen episode.
 func reopenedClaim(isNil bool) claim.Claim {
 	return claim.Claim{
-		ID:              1,
-		PolicyID:        1,
-		OccurrenceDate:  shared.NewDate(2000, time.January, 1),
-		ReportDate:      shared.NewDate(2000, time.January, 5),
-		FirstCloseDate:  shared.NewDate(2000, time.June, 1),
-		ReopenDate:      shared.NewDate(2000, time.September, 1),
-		CloseDate:       shared.NewDate(2001, time.February, 1),
-		Ultimate:        shared.FromDollars(8000),
-		InitialEstimate: shared.FromDollars(8000),
-		ReopenUltimate:  shared.FromDollars(3000),
-		ReopenEstimate:  shared.FromDollars(3000),
-		RiskFactor:      1.0,
-		Nil:             isNil,
+		Record: claim.Record{
+			ID:              1,
+			PolicyID:        1,
+			OccurrenceDate:  shared.NewDate(2000, time.January, 1),
+			ReportDate:      shared.NewDate(2000, time.January, 5),
+			CloseDate:       shared.NewDate(2001, time.February, 1),
+			InitialEstimate: shared.FromDollars(8000),
+		},
+		Development: claim.Development{
+			FirstCloseDate: shared.NewDate(2000, time.June, 1),
+			ReopenDate:     shared.NewDate(2000, time.September, 1),
+			Ultimate:       shared.FromDollars(8000),
+			ReopenUltimate: shared.FromDollars(3000),
+			ReopenEstimate: shared.FromDollars(3000),
+			RiskFactor:     1.0,
+			Nil:            isNil,
+		},
 	}
 }
 
@@ -392,14 +409,18 @@ func TestNilClaimTinyEstimateStillClosesOnCloseDate(t *testing.T) {
 	// targets can round to zero; the terminal release must still land on the
 	// close date.
 	c := claim.Claim{
-		ID:              1,
-		PolicyID:        1,
-		OccurrenceDate:  shared.NewDate(2000, time.January, 1),
-		ReportDate:      shared.NewDate(2000, time.January, 2),
-		CloseDate:       shared.NewDate(2003, time.January, 2),
-		InitialEstimate: shared.FromDollars(0.02),
-		RiskFactor:      1.0,
-		Nil:             true,
+		Record: claim.Record{
+			ID:              1,
+			PolicyID:        1,
+			OccurrenceDate:  shared.NewDate(2000, time.January, 1),
+			ReportDate:      shared.NewDate(2000, time.January, 2),
+			CloseDate:       shared.NewDate(2003, time.January, 2),
+			InitialEstimate: shared.FromDollars(0.02),
+		},
+		Development: claim.Development{
+			RiskFactor: 1.0,
+			Nil:        true,
+		},
 	}
 	sim := transaction.NewRunoffSimulator(params())
 	// Try several seeds so at least one exercises revisions that round toward zero.
@@ -458,10 +479,17 @@ func TestCaseAdequacyBiasDecaysOverTheClaimLife(t *testing.T) {
 		for i := range claims {
 			report := shared.NewDate(1998, time.March, 1)
 			claims[i] = claim.Claim{
-				ID: i + 1, PolicyID: i + 1, OccurrenceDate: report, ReportDate: report,
-				CloseDate:       report.AddDays(duration),
-				Ultimate:        shared.FromDollars(10000),
-				InitialEstimate: shared.FromDollars(10000 / mean),
+				Record: claim.Record{
+					ID:              i + 1,
+					PolicyID:        i + 1,
+					OccurrenceDate:  report,
+					ReportDate:      report,
+					CloseDate:       report.AddDays(duration),
+					InitialEstimate: shared.FromDollars(10000 / mean),
+				},
+				Development: claim.Development{
+					Ultimate: shared.FromDollars(10000),
+				},
 			}
 		}
 		return claims

@@ -312,3 +312,17 @@ func TestSimulateWritesAWarmUpYear(t *testing.T) {
 		t.Fatalf("%d policies in force on the window's first day, want nearly all of the warm-up year", inForce)
 	}
 }
+
+// RF-14: each policy records its sum insured in start-year dollars, deflated
+// by the book's drift to its underwriting year, warm-up year included.
+func TestPolicyRecordsBaseSumInsured(t *testing.T) {
+	prm := params()
+	book := policy.NewBookSimulator(prm, pricingParams()).Simulate(random.NewSource(8), 1998, 3, 200)
+	for _, p := range book {
+		offset := float64(p.CoverStart.Year() - 1998)
+		want := p.SumInsured.Dollars() / math.Pow(prm.SumInsuredInflation, offset)
+		if p.BaseSumInsured != want {
+			t.Fatalf("policy %d (written %d): base sum insured %v, want %v", p.ID, p.CoverStart.Year(), p.BaseSumInsured, want)
+		}
+	}
+}

@@ -17,9 +17,12 @@ import (
 func marchToJanuary(t *testing.T) triangle.MonthlyGrid {
 	t.Helper()
 	claims := []claim.Claim{{
-		ID: 1, PolicyID: 1,
-		OccurrenceDate: shared.NewDate(1998, time.March, 1),
-		ReportDate:     shared.NewDate(1998, time.March, 1),
+		Record: claim.Record{
+			ID:             1,
+			PolicyID:       1,
+			OccurrenceDate: shared.NewDate(1998, time.March, 1),
+			ReportDate:     shared.NewDate(1998, time.March, 1),
+		},
 	}}
 	txs := []transaction.Transaction{
 		{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.April, 1), Type: transaction.Payment, Amount: shared.FromDollars(100)},
