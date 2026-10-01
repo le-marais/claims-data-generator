@@ -119,7 +119,7 @@ type InflationParams struct {
 // RecoveryParams drives salvage (selling the insured vehicle's wreck) and
 // subrogation (recovering the payout from an at-fault third party). Both
 // attach only to own-damage claims that paid something, as money-in
-// transactions dated after the close.
+// transactions dated after the close, and salvage only to total losses.
 type RecoveryParams struct {
 	Salvage     RecoveryTypeParams
 	Subrogation RecoveryTypeParams
@@ -127,7 +127,8 @@ type RecoveryParams struct {
 
 // RecoveryTypeParams parameterizes one recovery type.
 type RecoveryTypeParams struct {
-	// Probability is the chance an own-damage claim yields this recovery;
+	// Probability is the chance an eligible claim yields this recovery: a
+	// paid total loss for salvage, a paid own-damage claim for subrogation.
 	// 0 switches the type off.
 	Probability float64
 	// MeanShare is the average recovery as a share of the claim's gross paid.

@@ -63,7 +63,7 @@ const FIELD_GROUPS = [
   {
     label: "Recoveries",
     fields: [
-      { path: ["claims", "recoveries", "salvage", "probability"], label: "Salvage probability", tip: "Chance an own-damage claim yields salvage; 0 switches salvage off." },
+      { path: ["claims", "recoveries", "salvage", "probability"], label: "Salvage probability", tip: "Chance a total loss (a written-off vehicle) yields salvage; 0 switches salvage off." },
       { path: ["claims", "recoveries", "salvage", "mean_share"], label: "Salvage mean share", tip: "Average salvage recovery as a share of the claim's gross paid." },
       { path: ["claims", "recoveries", "subrogation", "probability"], label: "Subrogation probability", tip: "Chance an own-damage claim is subrogated; 0 switches subrogation off." },
       { path: ["claims", "recoveries", "subrogation", "mean_share"], label: "Subrogation mean share", tip: "Average subrogation recovery as a share of the claim's gross paid." },

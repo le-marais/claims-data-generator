@@ -12,7 +12,7 @@ A living view of where claimsgen is and what comes next. Grounded in `mission.md
 - **Third-party report lag and IBNR** - third-party injury claims report later than own damage (median 20 days, about 15% of them after their accident year ends), so reported counts and incurred carry pure IBNR to estimate; their settlement time grows smoothly with size; and the realism gate scores incurred with pure IBNR at its true value, like Schedule P total incurred.
 - **Persistent case adequacy** - the opening case's adequacy bias decays over each claim's life instead of vanishing at the first revision, so incurred develops in a consistent direction for IBNER methods to find; the preset opens cases about 11% redundant.
 - **Nil claims** - a share of reported claims close without payment, with a dedicated no-payment runoff path and a `nil_probability` off switch.
-- **Recoveries (salvage and subrogation)** - money coming back on own-damage claims after close, as SALVAGE and SUBROGATION transaction types; triangles and the realism gate go net of recoveries, and the triangle tab gains a gross/net toggle.
+- **Recoveries (salvage and subrogation)** - money coming back on own-damage claims after close, as SALVAGE and SUBROGATION transaction types, with salvage only on total losses; triangles and the realism gate go net of recoveries, and the triangle tab gains a gross/net toggle.
 - **Reopened claims** - a closed claim can reopen once and develop a second episode; claims.csv shows the final close date and the reopen appears in transactions as a case re-raised after a release to zero, with a reopen_probability off switch.
 - **Premium pricing to a target loss ratio** - premium is priced from an independent pricing basis (the insurer's assumed loss cost) divided by a `target_loss_ratio`, and trended with the assumed inflation, so the accident-year loss ratio does not drift just because severities inflate. The pricing basis lives in its own `pricing` block, decoupled from the claims model, and the loss ratio is emergent: the preset starts its assumptions from the claims values, so it lands around the target, and deviating them models underpricing or adverse experience. `adequacy_volatility` adds random per-underwriting-year mispricing around the target, like an underwriting cycle. The realism gate scores loss-ratio drift against the reference companies' spread, and a noise-free test guards against systematic drift.
 - **Monthly triangles and exposure** - `triangles.csv` carries incremental monthly development triangles by origin month (paid, paid net of recoveries, incurred, reported claim counts) and `exposure.csv` carries premium, exposure units and policy counts on the same axis, with an `--origin-basis` knob for accident or underwriting month. The monthly grid is the single aggregation store: the annual triangles the realism gate and the UI read are a coarsened view of it, and quarterly comes free from the same function.
@@ -23,8 +23,7 @@ Only motor personal exists as a line of business today.
 
 The real-claims-data backlog from the mission is complete (claims inflation, nil claims, recoveries, reopened claims). Before the second line of business, a model-realism pass on the findings that most limit a reserving demo, in this order (re-ranked 2026-10-01):
 
-1. **MR-7** (`docs/review.md`) - salvage only on total losses.
-2. **CI-1** (`docs/todo.md`) - an automatic test run on every pull request; small enough to slot in at any point.
+1. **CI-1** (`docs/todo.md`) - an automatic test run on every pull request; small enough to slot in at any point.
 
 The second line of business then folds in MR-12 (separate sum-insured and risk spreads), the per-class switches from MR-8 (liability limit, excess on liability claims) and RF-13.
 

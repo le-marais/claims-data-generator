@@ -24,6 +24,9 @@ func recoveryFixture(t *testing.T, p lob.RecoveryParams, seed uint64) ([]claim.C
 	claims := testClaims(300)
 	for i := range claims {
 		claims[i].OwnDamage = i%3 != 0 // two thirds own damage
+		if claims[i].OwnDamage && i%4 == 1 {
+			claims[i].CoverLimit = claims[i].Ultimate // a total loss: paid up to the cover limit
+		}
 		if i%10 == 0 {
 			claims[i].Nil = true
 		}
@@ -32,28 +35,40 @@ func recoveryFixture(t *testing.T, p lob.RecoveryParams, seed uint64) ([]claim.C
 	return claims, transaction.NewRecoverySimulator(p).Apply(random.NewSource(seed), claims, txs)
 }
 
-func TestRecoveriesOnlyOnOwnDamageNonNilClaims(t *testing.T) {
+// Subrogation attaches to paid own-damage claims, salvage only to paid total
+// losses (MR-7).
+func TestRecoveriesOnlyOnEligibleClaims(t *testing.T) {
 	certain := recoveryParams()
 	certain.Salvage.Probability = 1
 	certain.Subrogation.Probability = 1
 	claims, txs := recoveryFixture(t, certain, 1)
 
-	eligible := map[int]bool{}
+	eligible := map[transaction.Type]map[int]bool{transaction.Salvage: {}, transaction.Subrogation: {}}
 	for _, c := range claims {
-		eligible[c.ID] = c.OwnDamage && !c.Nil
+		eligible[transaction.Subrogation][c.ID] = c.OwnDamage && !c.Nil
+		eligible[transaction.Salvage][c.ID] = c.TotalLoss() && !c.Nil
 	}
-	got := map[int]bool{}
+	got := map[transaction.Type]map[int]bool{transaction.Salvage: {}, transaction.Subrogation: {}}
 	for _, tx := range txs {
 		if tx.Type.IsRecovery() {
-			if !eligible[tx.ClaimID] {
-				t.Fatalf("recovery on ineligible claim %d", tx.ClaimID)
+			if !eligible[tx.Type][tx.ClaimID] {
+				t.Fatalf("%s on ineligible claim %d", tx.Type, tx.ClaimID)
 			}
-			got[tx.ClaimID] = true
+			got[tx.Type][tx.ClaimID] = true
 		}
 	}
-	for _, c := range claims {
-		if eligible[c.ID] && !got[c.ID] {
-			t.Fatalf("eligible claim %d has no recovery with probability 1", c.ID)
+	for typ, ids := range eligible {
+		n := 0
+		for id, ok := range ids {
+			if ok {
+				n++
+				if !got[typ][id] {
+					t.Fatalf("eligible claim %d has no %s with probability 1", id, typ)
+				}
+			}
+		}
+		if n == 0 {
+			t.Fatalf("fixture has no claim eligible for %s", typ)
 		}
 	}
 }

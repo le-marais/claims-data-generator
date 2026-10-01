@@ -78,11 +78,14 @@ func (s *RecoverySimulator) Apply(src shared.RandomSource, claims []claim.Claim,
 }
 
 // simulateClaim draws at most one salvage and one subrogation row. Only
-// own-damage claims that paid something are eligible; the total recovered
-// stays strictly below the claim's gross paid. A nil claim that never
-// reopens has paid 0 and stays ineligible through the paid check alone; a
-// reopened nil claim that paid in its second episode is recovery-eligible
-// like any other paying own-damage claim.
+// own-damage claims that paid something are eligible, and salvage, the sale
+// of the written-off vehicle, only on a total loss whose first episode paid
+// the write-off (MR-7); for a total loss
+// gross paid is the sum insured less excess, so salvage is sized off the
+// vehicle's value. The total recovered stays strictly below the claim's gross
+// paid. A nil claim that never reopens has paid 0 and stays ineligible through
+// the paid check alone; a reopened nil claim that paid in its second episode
+// is subrogation-eligible like any other paying own-damage claim.
 func (s *RecoverySimulator) simulateClaim(src shared.RandomSource, c claim.Claim, paid shared.Money) []Transaction {
 	if !c.OwnDamage || paid <= 0 {
 		return nil
@@ -97,6 +100,9 @@ func (s *RecoverySimulator) simulateClaim(src shared.RandomSource, c claim.Claim
 	var rows []Transaction
 	recovered := shared.Money(0)
 	for _, k := range kinds {
+		if k.t == Salvage && (!c.TotalLoss() || c.Nil) {
+			continue // only a written-off vehicle the claim paid for is sold for salvage
+		}
 		ksrc := src.Split(string(k.t)) // recovery-claim-{id}/SALVAGE, .../SUBROGATION
 		if k.p.Probability <= 0 || !ksrc.Bernoulli(k.p.Probability) {
 			continue

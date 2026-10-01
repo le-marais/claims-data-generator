@@ -12,8 +12,8 @@ controlled experiments: the shipped preset over 1998-2007 with a 40k initial
 book, seed 1 unless stated, toggling one feature at a time to isolate each
 effect. It also analysed the 96 embedded Schedule P companies directly.
 Figures are as measured then, except where a finding says otherwise. MR-1 to
-MR-4, MR-6, MR-9, MR-10, MR-11 and MR-13 have since shipped; their text is
-in git history.
+MR-4, MR-6, MR-7, MR-9, MR-10, MR-11 and MR-13 have since shipped; their
+text is in git history.
 
 On 2026-10-01 the remaining findings were re-ranked against `docs/mission.md`
 (synthetic data a reserving team can use without manual fixes, one engine for
@@ -26,18 +26,7 @@ IDs are **MR** (model review). Severity uses the `docs/todo.md` scale: **high**
 undermines the mission, **medium** worth addressing soon, **low** fix when
 touching the area.
 
-## 1. MR-7 (low) - salvage is not tied to total losses
-
-- Where: `internal/domain/transaction/recovery.go`, `simulateClaim`.
-- 98% of salvage rows (3,723 of 3,798) land on partially damaged vehicles.
-  Salvage comes from selling a written-off vehicle.
-- Cheap, and it protects trust in the transaction-level detail, the mission's
-  first differentiator.
-- Action: make salvage eligibility depend on the claim reaching the sum-insured
-  cap (`Claim.Ultimate == Claim.CoverLimit` since MR-1), and size it off the
-  sum insured.
-
-## 2. MR-12 (low) - one setting drives two kinds of variation
+## 1. MR-12 (low) - one setting drives two kinds of variation
 
 - Where: `internal/domain/policy/book.go`, `simulatePolicy`.
 - `spread` sets both the sum-insured lognormal sigma and the risk-factor
@@ -47,7 +36,7 @@ touching the area.
   class's other schema changes.
 - Action: split it into two parameters.
 
-## 3. MR-8 (low) - third-party severity is a bare Pareto
+## 2. MR-8 (low) - third-party severity is a bare Pareto
 
 - Where: `internal/domain/claim/claim.go`, `drawGroundUpLoss`.
 - No third-party claim is below about $3,050 after excess, the mode sits at the
