@@ -109,6 +109,14 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"claims.base_frequency", func(l *LineOfBusiness) { l.Claims.BaseFrequency = 0 }},
 		{"claims.report_lag_median", func(l *LineOfBusiness) { l.Claims.ReportLagMedian = 0 }},
 		{"claims.report_lag_sigma", func(l *LineOfBusiness) { l.Claims.ReportLagSigma = 0 }},
+		{"claims.third_party_report_lag_median", func(l *LineOfBusiness) { l.Claims.ThirdPartyReportLagMedian = -1 }},
+		{"claims.third_party_report_lag_sigma", func(l *LineOfBusiness) {
+			l.Claims.ThirdPartyReportLagMedian, l.Claims.ThirdPartyReportLagSigma = 20, 0
+		}},
+		{"claims.close_lag.third_party_size_elasticity", func(l *LineOfBusiness) { l.Claims.CloseLag.ThirdPartySizeElasticity = -0.1 }},
+		{"claims.close_lag.third_party_size_reference", func(l *LineOfBusiness) {
+			l.Claims.CloseLag.ThirdPartySizeElasticity, l.Claims.CloseLag.ThirdPartySizeReference = 0.3, 0
+		}},
 		{"claims.severity.third_party_weight", func(l *LineOfBusiness) { l.Claims.Severity.ThirdPartyWeight = 1.5 }},
 		{"claims.severity.own_damage_median_fraction", func(l *LineOfBusiness) { l.Claims.Severity.OwnDamageMedianFraction = 0 }},
 		{"claims.severity.own_damage_sigma", func(l *LineOfBusiness) { l.Claims.Severity.OwnDamageSigma = 0 }},

@@ -10,11 +10,11 @@ import (
 // ReferenceSet is one reference company's observed triangles.
 //
 // Incurred is Schedule P total incurred: paid, case, bulk and IBNR reserves.
-// The generated incurred it is compared with is case incurred (paid plus case
-// reserves) with no IBNR, so the incurred age-to-age check compares different
-// quantities: a reference company's IBNR held early and released later pulls
-// its factors below 1, while generated factors sit below 1 for other reasons
-// (nil claims releasing their case at close).
+// The generated incurred it is compared with is paid plus case plus pure IBNR
+// held at its true value (AnnualSet.TotalIncurred), so unreported claims count
+// on both sides. The generated side still has no bulk reserve: a reference
+// company's IBNR held early and released later pulls its factors below 1,
+// which a perfect IBNR does not, so the incurred check stays a loose bound.
 type ReferenceSet struct {
 	Name          string
 	Paid          Triangle

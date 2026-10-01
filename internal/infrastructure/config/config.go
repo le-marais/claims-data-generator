@@ -60,15 +60,18 @@ type PricingParams struct {
 
 // ClaimsParams mirrors lob.ClaimParams for YAML/JSON.
 type ClaimsParams struct {
-	BaseFrequency   float64          `yaml:"base_frequency" json:"base_frequency"`
-	ReportLagMedian float64          `yaml:"report_lag_median" json:"report_lag_median"`
-	ReportLagSigma  float64          `yaml:"report_lag_sigma" json:"report_lag_sigma"`
-	Severity        SeverityParams   `yaml:"severity" json:"severity"`
-	CloseLag        CloseLagParams   `yaml:"close_lag" json:"close_lag"`
-	Inflation       InflationParams  `yaml:"inflation" json:"inflation"`
-	NilProbability  float64          `yaml:"nil_probability" json:"nil_probability"`
-	Recoveries      RecoveriesParams `yaml:"recoveries" json:"recoveries"`
-	Reopening       ReopeningParams  `yaml:"reopening" json:"reopening"`
+	BaseFrequency   float64 `yaml:"base_frequency" json:"base_frequency"`
+	ReportLagMedian float64 `yaml:"report_lag_median" json:"report_lag_median"`
+	ReportLagSigma  float64 `yaml:"report_lag_sigma" json:"report_lag_sigma"`
+
+	ThirdPartyReportLagMedian float64          `yaml:"third_party_report_lag_median" json:"third_party_report_lag_median"`
+	ThirdPartyReportLagSigma  float64          `yaml:"third_party_report_lag_sigma" json:"third_party_report_lag_sigma"`
+	Severity                  SeverityParams   `yaml:"severity" json:"severity"`
+	CloseLag                  CloseLagParams   `yaml:"close_lag" json:"close_lag"`
+	Inflation                 InflationParams  `yaml:"inflation" json:"inflation"`
+	NilProbability            float64          `yaml:"nil_probability" json:"nil_probability"`
+	Recoveries                RecoveriesParams `yaml:"recoveries" json:"recoveries"`
+	Reopening                 ReopeningParams  `yaml:"reopening" json:"reopening"`
 }
 
 // InflationParams mirrors lob.InflationParams for YAML/JSON.
@@ -119,6 +122,9 @@ type CloseLagParams struct {
 	RiskLoading        float64 `yaml:"risk_loading" json:"risk_loading"`
 	ThirdPartyShape    float64 `yaml:"third_party_shape" json:"third_party_shape"`
 	ThirdPartyMeanDays float64 `yaml:"third_party_mean_days" json:"third_party_mean_days"`
+
+	ThirdPartySizeElasticity float64 `yaml:"third_party_size_elasticity" json:"third_party_size_elasticity"`
+	ThirdPartySizeReference  float64 `yaml:"third_party_size_reference" json:"third_party_size_reference"`
 }
 
 // RunoffParams mirrors lob.RunoffParams for YAML/JSON.
@@ -244,6 +250,9 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			BaseFrequency:   d.Claims.BaseFrequency,
 			ReportLagMedian: d.Claims.ReportLagMedian,
 			ReportLagSigma:  d.Claims.ReportLagSigma,
+
+			ThirdPartyReportLagMedian: d.Claims.ThirdPartyReportLagMedian,
+			ThirdPartyReportLagSigma:  d.Claims.ThirdPartyReportLagSigma,
 			Severity: lob.SeverityParams{
 				ThirdPartyWeight:        d.Claims.Severity.ThirdPartyWeight,
 				OwnDamageMedianFraction: d.Claims.Severity.OwnDamageMedianFraction,
@@ -259,6 +268,9 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 				RiskLoading:        d.Claims.CloseLag.RiskLoading,
 				ThirdPartyShape:    d.Claims.CloseLag.ThirdPartyShape,
 				ThirdPartyMeanDays: d.Claims.CloseLag.ThirdPartyMeanDays,
+
+				ThirdPartySizeElasticity: d.Claims.CloseLag.ThirdPartySizeElasticity,
+				ThirdPartySizeReference:  d.Claims.CloseLag.ThirdPartySizeReference,
 			},
 			Inflation: lob.InflationParams{
 				Mean:       d.Claims.Inflation.Mean,

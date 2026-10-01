@@ -58,6 +58,17 @@ type Claim struct {
 	ReopenEstimate shared.Money
 }
 
+// Cost is the claim's true total cost over its life: the first episode's
+// Ultimate unless the claim is nil, plus the reopen episode's ReopenUltimate.
+// It is what the claim eventually pays, before recoveries.
+func (c Claim) Cost() shared.Money {
+	cost := c.ReopenUltimate
+	if !c.Nil {
+		cost += c.Ultimate
+	}
+	return cost
+}
+
 // Reopened reports whether the claim has a reopen episode.
 func (c Claim) Reopened() bool {
 	return c.ReopenDate != (shared.Date{})
@@ -183,10 +194,15 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	first, span := s.occurrenceSpan(pol)
 	occurrence := first.AddDays(int(src.Uniform() * float64(span)))
 
-	lag := src.LogNormal(math.Log(s.params.ReportLagMedian), s.params.ReportLagSigma)
-	report := occurrence.AddDays(int(math.Round(lag)))
+	// The report lag's normal deviate is drawn here, before the claim type is
+	// known, and scaled by the type's lag parameters below, so the draw order
+	// is the same for both types and a third-party lag never moves another
+	// draw.
+	lagDeviate := math.Log(src.LogNormal(0, 1))
 
 	loss, ownDamage := s.drawGroundUpLoss(src, pol)
+	lag := math.Exp(math.Log(s.reportLagMedian(ownDamage)) + s.reportLagSigma(ownDamage)*lagDeviate)
+	report := occurrence.AddDays(int(math.Round(lag)))
 	// Own damage is expressed in base-year sum-insured terms (baseSumInsured)
 	// and trended by the claims index only, applied here; third-party (Pareto)
 	// losses carry the same claims index but no sum-insured term at all. Own
@@ -237,6 +253,23 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	}, true
 }
 
+// reportLagMedian and reportLagSigma are the lognormal report-lag parameters
+// for a claim type: third-party claims use their own when a third-party
+// median is set, and the shared ones otherwise.
+func (s *ClaimSimulator) reportLagMedian(ownDamage bool) float64 {
+	if !ownDamage && s.params.ThirdPartyReportLagMedian > 0 {
+		return s.params.ThirdPartyReportLagMedian
+	}
+	return s.params.ReportLagMedian
+}
+
+func (s *ClaimSimulator) reportLagSigma(ownDamage bool) float64 {
+	if !ownDamage && s.params.ThirdPartyReportLagMedian > 0 {
+		return s.params.ThirdPartyReportLagSigma
+	}
+	return s.params.ReportLagSigma
+}
+
 // drawGroundUpLoss mixes own-damage losses (lognormal, scaled by sum
 // insured) with third party liability losses (Pareto, uncapped), reporting
 // which component fired.
@@ -251,9 +284,10 @@ func (s *ClaimSimulator) drawGroundUpLoss(src shared.RandomSource, pol policy.Po
 
 // closeLagRegime selects the (shape, mean) close-lag gamma parameters for a
 // claim: own-damage claims use the base parameters with the size stretch for
-// large claims; third-party claims use the long-tail parameters. Risk loading
-// applies to both. baseSize is the claim's cost in start-year dollars,
-// deflated by the claims inflation index.
+// claims above the threshold; third-party claims use the long-tail parameters,
+// with the mean scaled smoothly by size when ThirdPartySizeElasticity is set.
+// Risk loading applies to both. baseSize is the claim's cost in start-year
+// dollars, deflated by the claims inflation index.
 func closeLagRegime(cl lob.CloseLagParams, baseSize, riskFactor float64, ownDamage bool) (shape, mean float64) {
 	if ownDamage {
 		shape, mean = cl.Shape, cl.MeanDays
@@ -262,6 +296,9 @@ func closeLagRegime(cl lob.CloseLagParams, baseSize, riskFactor float64, ownDama
 		}
 	} else {
 		shape, mean = cl.ThirdPartyShape, cl.ThirdPartyMeanDays
+		if cl.ThirdPartySizeElasticity > 0 {
+			mean *= math.Pow(baseSize/cl.ThirdPartySizeReference, cl.ThirdPartySizeElasticity)
+		}
 	}
 	mean *= math.Pow(riskFactor, cl.RiskLoading)
 	return shape, mean

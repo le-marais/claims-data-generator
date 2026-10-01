@@ -123,3 +123,21 @@ func TestReopenSizeStretchIgnoresClaimsInflation(t *testing.T) {
 		t.Fatalf("second close lag %.1f days deflated, %.1f nominal; want about 40 and 120", deflated, nominal)
 	}
 }
+
+// MR-9: third-party settlement time grows smoothly with size.
+func TestThirdPartyCloseLagScalesWithSize(t *testing.T) {
+	cl := lob.CloseLagParams{
+		Shape: 1.2, MeanDays: 40, SizeThreshold: 20000, SizeMultiplier: 3,
+		ThirdPartyShape: 1, ThirdPartyMeanDays: 300,
+		ThirdPartySizeElasticity: 0.5, ThirdPartySizeReference: 5000,
+	}
+	for _, c := range []struct{ size, want float64 }{{5000, 300}, {20000, 600}, {1250, 150}} {
+		if _, m := closeLagRegime(cl, c.size, 1, false); !approxf(m, c.want) {
+			t.Errorf("size %v: mean %v, want %v", c.size, m, c.want)
+		}
+	}
+	cl.ThirdPartySizeElasticity = 0
+	if _, m := closeLagRegime(cl, 20000, 1, false); !approxf(m, 300) {
+		t.Errorf("elasticity 0: mean %v, want the flat 300", m)
+	}
+}

@@ -45,7 +45,7 @@ func LiabilityComparison(ds Dataset, startYear, years int) (triangle.Comparison,
 	annual := grid.AnnualTriangles(developmentYears)
 	return triangle.Comparison{
 		Paid:          annual.NetPaid,
-		Incurred:      annual.Incurred,
+		Incurred:      annual.TotalIncurred,
 		EarnedPremium: triangle.EarnedPremiumByYear(policies, startYear, years),
 	}, nil
 }

@@ -83,8 +83,14 @@ type ClaimParams struct {
 	ReportLagMedian float64
 	// ReportLagSigma is the sigma of the lognormal report lag.
 	ReportLagSigma float64
-	Severity       SeverityParams
-	CloseLag       CloseLagParams
+	// ThirdPartyReportLagMedian and ThirdPartyReportLagSigma give third-party
+	// claims their own lognormal report lag: injury claims are often reported
+	// weeks or months after the accident, which is where pure IBNR comes
+	// from. A median of 0 keeps the shared report lag for third-party claims.
+	ThirdPartyReportLagMedian float64
+	ThirdPartyReportLagSigma  float64
+	Severity                  SeverityParams
+	CloseLag                  CloseLagParams
 	// Inflation is the stochastic claims-inflation path applied by
 	// occurrence date to every claim's ground-up loss.
 	Inflation InflationParams
@@ -185,9 +191,16 @@ type CloseLagParams struct {
 	RiskLoading float64
 	// ThirdPartyShape and ThirdPartyMeanDays are the gamma parameters for
 	// third-party (bodily-injury) claims, which settle far slower than own
-	// damage; the size stretch does not apply to them.
+	// damage. ThirdPartyMeanDays is the mean lag of a claim costing
+	// ThirdPartySizeReference in start-year dollars.
 	ThirdPartyShape    float64
 	ThirdPartyMeanDays float64
+	// ThirdPartySizeElasticity links third-party settlement time to size: a
+	// claim costing s in start-year dollars has mean lag ThirdPartyMeanDays x
+	// (s / ThirdPartySizeReference)^ThirdPartySizeElasticity, so larger
+	// claims take longer, smoothly. 0 switches the link off.
+	ThirdPartySizeElasticity float64
+	ThirdPartySizeReference  float64
 }
 
 // RunoffParams drives steps 3-4, the case estimate path and payments.
@@ -342,6 +355,8 @@ func (c ClaimParams) validate() error {
 		namedFloat{"claims.base_frequency", c.BaseFrequency},
 		namedFloat{"claims.report_lag_median", c.ReportLagMedian},
 		namedFloat{"claims.report_lag_sigma", c.ReportLagSigma},
+		namedFloat{"claims.third_party_report_lag_median", c.ThirdPartyReportLagMedian},
+		namedFloat{"claims.third_party_report_lag_sigma", c.ThirdPartyReportLagSigma},
 		namedFloat{"claims.nil_probability", c.NilProbability},
 	); err != nil {
 		return err
@@ -354,6 +369,12 @@ func (c ClaimParams) validate() error {
 	}
 	if c.ReportLagSigma <= 0 {
 		return fmt.Errorf("claims.report_lag_sigma: must be positive, got %v", c.ReportLagSigma)
+	}
+	if c.ThirdPartyReportLagMedian < 0 {
+		return fmt.Errorf("claims.third_party_report_lag_median: must not be negative, got %v", c.ThirdPartyReportLagMedian)
+	}
+	if c.ThirdPartyReportLagMedian > 0 && c.ThirdPartyReportLagSigma <= 0 {
+		return fmt.Errorf("claims.third_party_report_lag_sigma: must be positive, got %v", c.ThirdPartyReportLagSigma)
 	}
 	if err := c.Severity.validate("claims.severity"); err != nil {
 		return err
@@ -500,6 +521,8 @@ func (c CloseLagParams) validate(thirdParty bool) error {
 		namedFloat{"claims.close_lag.risk_loading", c.RiskLoading},
 		namedFloat{"claims.close_lag.third_party_shape", c.ThirdPartyShape},
 		namedFloat{"claims.close_lag.third_party_mean_days", c.ThirdPartyMeanDays},
+		namedFloat{"claims.close_lag.third_party_size_elasticity", c.ThirdPartySizeElasticity},
+		namedFloat{"claims.close_lag.third_party_size_reference", c.ThirdPartySizeReference},
 	); err != nil {
 		return err
 	}
@@ -526,6 +549,12 @@ func (c CloseLagParams) validate(thirdParty bool) error {
 	}
 	if c.ThirdPartyMeanDays <= 0 {
 		return fmt.Errorf("claims.close_lag.third_party_mean_days: must be positive, got %v", c.ThirdPartyMeanDays)
+	}
+	if c.ThirdPartySizeElasticity < 0 {
+		return fmt.Errorf("claims.close_lag.third_party_size_elasticity: must not be negative, got %v", c.ThirdPartySizeElasticity)
+	}
+	if c.ThirdPartySizeElasticity > 0 && c.ThirdPartySizeReference <= 0 {
+		return fmt.Errorf("claims.close_lag.third_party_size_reference: must be positive, got %v", c.ThirdPartySizeReference)
 	}
 	return nil
 }

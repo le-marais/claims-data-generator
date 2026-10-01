@@ -12,8 +12,8 @@ controlled experiments: the shipped preset over 1998-2007 with a 40k initial
 book, seed 1 unless stated, toggling one feature at a time to isolate each
 effect. It also analysed the 96 embedded Schedule P companies directly.
 Figures are as measured then, except where a finding says otherwise. MR-1 to
-MR-4, MR-6, MR-10, MR-11 and MR-13 have since shipped; their text is in git
-history.
+MR-4, MR-6, MR-9, MR-10, MR-11 and MR-13 have since shipped; their text is
+in git history.
 
 On 2026-10-01 the remaining findings were re-ranked against `docs/mission.md`
 (synthetic data a reserving team can use without manual fixes, one engine for
@@ -26,30 +26,7 @@ IDs are **MR** (model review). Severity uses the `docs/todo.md` scale: **high**
 undermines the mission, **medium** worth addressing soon, **low** fix when
 touching the area.
 
-## 1. MR-9 (medium) - there is almost no pure IBNR, and third-party close lag ignores size
-
-- Where: `internal/domain/claim/claim.go` (one report lag for both claim types;
-  `closeLagRegime` applies the size stretch to own damage only).
-- 87% of claims are reported in the occurrence month and 99.5% by development
-  month 2. That matches the brief for own damage, but third-party claims report
-  later in practice, and reported-count methods have nothing to estimate.
-- The mission says larger claims take longer to close; for third-party claims,
-  which drive late development, size and duration are independent.
-- The realism gate's incurred check compares generated case incurred with
-  Schedule P total incurred, which includes IBNR (carried over from MR-4).
-  Today it passes because both sit below 1 at early ages for different
-  reasons: reference IBNR released over time, generated nil claims releasing
-  their case. A real third-party report lag pushes case-incurred factors above
-  1 as late claims are reported, against bands centred below 1.
-- Raised to medium on 2026-10-01: it is the largest gap between the data and
-  what a reserving demo needs, and the mission names both report lags and
-  larger claims taking longer to close.
-- Action: a third-party report lag, and a size link in the third-party close
-  lag. With the report lag, add the unreported claims' cost (pure IBNR) to the
-  generated incurred the gate scores, so the incurred check stays like for
-  like.
-
-## 2. MR-7 (low) - salvage is not tied to total losses
+## 1. MR-7 (low) - salvage is not tied to total losses
 
 - Where: `internal/domain/transaction/recovery.go`, `simulateClaim`.
 - 98% of salvage rows (3,723 of 3,798) land on partially damaged vehicles.
@@ -60,7 +37,7 @@ touching the area.
   cap (`Claim.Ultimate == Claim.CoverLimit` since MR-1), and size it off the
   sum insured.
 
-## 3. MR-12 (low) - one setting drives two kinds of variation
+## 2. MR-12 (low) - one setting drives two kinds of variation
 
 - Where: `internal/domain/policy/book.go`, `simulatePolicy`.
 - `spread` sets both the sum-insured lognormal sigma and the risk-factor
@@ -70,7 +47,7 @@ touching the area.
   class's other schema changes.
 - Action: split it into two parameters.
 
-## 4. MR-8 (low) - third-party severity is a bare Pareto
+## 3. MR-8 (low) - third-party severity is a bare Pareto
 
 - Where: `internal/domain/claim/claim.go`, `drawGroundUpLoss`.
 - No third-party claim is below about $3,050 after excess, the mode sits at the
