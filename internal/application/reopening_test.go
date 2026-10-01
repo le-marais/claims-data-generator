@@ -1,6 +1,7 @@
 package application_test
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/le-marais/claimsgen/internal/application"
@@ -24,7 +25,7 @@ func TestReopeningOffLeavesNoPostCloseActivity(t *testing.T) {
 	}
 	closeDate := map[int]shared.Date{}
 	for _, c := range ds.Claims {
-		closeDate[c.ID] = c.CloseDate
+		closeDate[c.ID] = c.CloseDate()
 		if c.Reopened() {
 			t.Fatalf("claim %d reopened with probability 0", c.ID)
 		}
@@ -53,7 +54,7 @@ func TestDefaultPresetGeneratesReopenedClaims(t *testing.T) {
 	for _, c := range ds.Claims {
 		if c.Reopened() {
 			reopened++
-			if c.Nil {
+			if c.Nil() {
 				nilReopened++
 			}
 		}
@@ -90,7 +91,7 @@ func TestReopeningDoesNotShiftOtherStages(t *testing.T) {
 			reopened[dsOn.Claims[i].ID] = true
 			continue
 		}
-		if dsOn.Claims[i] != dsOff.Claims[i] {
+		if !reflect.DeepEqual(dsOn.Claims[i], dsOff.Claims[i]) {
 			t.Fatalf("non-reopened claim %d differs with reopening on", dsOn.Claims[i].ID)
 		}
 	}

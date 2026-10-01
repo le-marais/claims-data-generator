@@ -92,8 +92,8 @@ func ComputeDistributions(ds Dataset) Distributions {
 	closeLags := make([]float64, 0, len(ds.Claims))
 	for _, c := range ds.Claims {
 		severities = append(severities, paid[c.ID])
-		reportLags = append(reportLags, float64(shared.DaysBetween(c.OccurrenceDate, c.ReportDate)))
-		closeLags = append(closeLags, float64(shared.DaysBetween(c.ReportDate, c.CloseDate)))
+		reportLags = append(reportLags, float64(shared.DaysBetween(c.OccurrenceDate, c.ReportDate())))
+		closeLags = append(closeLags, float64(shared.DaysBetween(c.ReportDate(), c.CloseDate())))
 	}
 	return Distributions{
 		Severity:      LogHistogram(severities, histogramBins),

@@ -2,6 +2,7 @@ package claim_test
 
 import (
 	"math"
+	"reflect"
 	"sort"
 	"testing"
 	"time"
@@ -81,8 +82,8 @@ func TestClaimsBelowExcessAreDiscarded(t *testing.T) {
 		t.Errorf("excess 1000 produced %d claims, want fewer than %d at excess 0", len(withExcess), len(noExcess))
 	}
 	for _, c := range withExcess {
-		if c.InitialEstimate <= 0 {
-			t.Fatalf("claim %d has non-positive initial estimate %v", c.ID, c.InitialEstimate)
+		if c.Episodes[0].Ultimate <= 0 {
+			t.Fatalf("claim %d has non-positive ultimate %v", c.ID, c.Episodes[0].Ultimate)
 		}
 	}
 }
@@ -103,11 +104,11 @@ func TestClaimDateOrdering(t *testing.T) {
 		if c.OccurrenceDate.Before(pol.CoverStart) || c.OccurrenceDate.After(pol.CoverEnd) {
 			t.Fatalf("occurrence %s outside cover %s..%s", c.OccurrenceDate, pol.CoverStart, pol.CoverEnd)
 		}
-		if c.ReportDate.Before(c.OccurrenceDate) {
-			t.Fatalf("report %s before occurrence %s", c.ReportDate, c.OccurrenceDate)
+		if c.ReportDate().Before(c.OccurrenceDate) {
+			t.Fatalf("report %s before occurrence %s", c.ReportDate(), c.OccurrenceDate)
 		}
-		if c.CloseDate.Before(c.ReportDate) {
-			t.Fatalf("close %s before report %s", c.CloseDate, c.ReportDate)
+		if c.CloseDate().Before(c.ReportDate()) {
+			t.Fatalf("close %s before report %s", c.CloseDate(), c.ReportDate())
 		}
 	}
 }
@@ -119,7 +120,7 @@ func TestReportLagIsShortWithOutliers(t *testing.T) {
 	within5 := 0
 	over10 := 0
 	for i, c := range claims {
-		lags[i] = shared.DaysBetween(c.OccurrenceDate, c.ReportDate)
+		lags[i] = shared.DaysBetween(c.OccurrenceDate, c.ReportDate())
 		if lags[i] <= 5 {
 			within5++
 		}
@@ -149,8 +150,8 @@ func TestLargerClaimsCloseSlower(t *testing.T) {
 		if !c.OwnDamage {
 			continue
 		}
-		lag := float64(shared.DaysBetween(c.ReportDate, c.CloseDate))
-		if c.InitialEstimate.Dollars() > 20000 {
+		lag := float64(shared.DaysBetween(c.ReportDate(), c.CloseDate()))
+		if c.Episodes[0].Ultimate.Dollars() > 20000 {
 			bigSum += lag
 			bigN++
 		} else {
@@ -173,7 +174,7 @@ func TestThirdPartyClaimsExceedSumInsured(t *testing.T) {
 	claims := sim.Simulate(random.NewSource(7), fixedBook(20000, 10000, 0, 1.0))
 	exceeded := false
 	for _, c := range claims {
-		if c.InitialEstimate.Dollars() > 10000 {
+		if c.Episodes[0].Ultimate.Dollars() > 10000 {
 			exceeded = true
 			break
 		}
@@ -190,7 +191,7 @@ func TestClaimIDsSequentialAndSortedByReportDate(t *testing.T) {
 		if c.ID != i+1 {
 			t.Fatalf("claim %d has ID %d, want %d", i, c.ID, i+1)
 		}
-		if i > 0 && c.ReportDate.Before(claims[i-1].ReportDate) {
+		if i > 0 && c.ReportDate().Before(claims[i-1].ReportDate()) {
 			t.Fatalf("claims not sorted by report date at index %d", i)
 		}
 	}
@@ -205,7 +206,7 @@ func TestSimulateClaimsIsDeterministic(t *testing.T) {
 		t.Fatalf("lengths differ: %d vs %d", len(a), len(b))
 	}
 	for i := range a {
-		if a[i] != b[i] {
+		if !reflect.DeepEqual(a[i], b[i]) {
 			t.Fatalf("claim %d differs between identical runs", i)
 		}
 	}
@@ -229,13 +230,13 @@ func TestInflationScalesGroundUpLoss(t *testing.T) {
 	}
 	var baseTotal, inflatedTotal int64
 	for _, c := range base {
-		baseTotal += int64(c.InitialEstimate)
+		baseTotal += int64(c.Episodes[0].Ultimate)
 	}
 	for _, c := range inflated {
-		inflatedTotal += int64(c.InitialEstimate)
+		inflatedTotal += int64(c.Episodes[0].Ultimate)
 	}
 	if inflatedTotal <= baseTotal {
-		t.Fatalf("inflated total estimate %d not greater than base %d", inflatedTotal, baseTotal)
+		t.Fatalf("inflated total ultimate %d not greater than base %d", inflatedTotal, baseTotal)
 	}
 }
 
@@ -249,7 +250,7 @@ func TestNoInflationMatchesIdentity(t *testing.T) {
 		t.Fatalf("identity inflation changed claim count: %d vs %d", len(withoutCall), len(withIdentity))
 	}
 	for i := range withoutCall {
-		if withoutCall[i] != withIdentity[i] {
+		if !reflect.DeepEqual(withoutCall[i], withIdentity[i]) {
 			t.Fatalf("identity inflation changed claim %d", i)
 		}
 	}
@@ -263,7 +264,7 @@ func TestNilProbabilityZeroFlagsNoClaims(t *testing.T) {
 		t.Fatal("expected claims")
 	}
 	for _, c := range claims {
-		if c.Nil {
+		if c.Nil() {
 			t.Fatalf("claim %d flagged nil with probability 0", c.ID)
 		}
 	}
@@ -278,7 +279,7 @@ func TestNilProbabilityHighFlagsMostClaims(t *testing.T) {
 	}
 	nils := 0
 	for _, c := range claims {
-		if c.Nil {
+		if c.Nil() {
 			nils++
 		}
 	}
@@ -332,21 +333,21 @@ func TestThirdPartyReportLag(t *testing.T) {
 	}
 	before := map[key]claim.Claim{}
 	for _, c := range common {
-		before[key{c.PolicyID, c.OccurrenceDate.String(), int64(c.Ultimate)}] = c
+		before[key{c.PolicyID, c.OccurrenceDate.String(), int64(c.Episodes[0].Ultimate)}] = c
 	}
 	var tpLags []int
 	for _, c := range own {
-		b, ok := before[key{c.PolicyID, c.OccurrenceDate.String(), int64(c.Ultimate)}]
+		b, ok := before[key{c.PolicyID, c.OccurrenceDate.String(), int64(c.Episodes[0].Ultimate)}]
 		if !ok {
 			t.Fatalf("claim on policy %d occurring %s has no counterpart without the third-party lag", c.PolicyID, c.OccurrenceDate)
 		}
 		if c.OwnDamage {
-			if c.ReportDate != b.ReportDate || c.CloseDate != b.CloseDate {
-				t.Fatalf("own-damage claim on policy %d moved: reported %s, want %s", c.PolicyID, c.ReportDate, b.ReportDate)
+			if c.ReportDate() != b.ReportDate() || c.CloseDate() != b.CloseDate() {
+				t.Fatalf("own-damage claim on policy %d moved: reported %s, want %s", c.PolicyID, c.ReportDate(), b.ReportDate())
 			}
 			continue
 		}
-		tpLags = append(tpLags, shared.DaysBetween(c.OccurrenceDate, c.ReportDate))
+		tpLags = append(tpLags, shared.DaysBetween(c.OccurrenceDate, c.ReportDate()))
 	}
 	sort.Ints(tpLags)
 	if median := tpLags[len(tpLags)/2]; median < 16 || median > 24 {

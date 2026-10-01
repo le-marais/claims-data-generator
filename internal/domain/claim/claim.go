@@ -1,6 +1,6 @@
-// Package claim simulates claim events arising from the policy book
-// (step 2 of the simulation): occurrence, report and close dates plus the
-// initial case estimate.
+// Package claim simulates claim events arising from the policy book:
+// occurrence, report and close dates, true cost, and the optional reopen
+// episode.
 package claim
 
 import (
@@ -17,40 +17,17 @@ import (
 // Claim is one reported claim event. All claims close: there is no
 // valuation date and every claim develops fully.
 //
-// A claim has two parts. Record is what a claims system would hold and
-// claims.csv carries. Development is what the simulation knows about how the
-// claim develops - its true cost, its type, its reopen episode - which later
-// stages need and no CSV writes (RF-14). Both are embedded, so their fields
-// read as c.ID or c.Nil; the split makes the CSV surface explicit in the type
-// rather than in a comment on each field.
+// A claim's life is a sequence of episodes, each open from a start date to a
+// close date: the first runs from the report date to the first close, and a
+// reopened claim has a second. The claim stage writes the first episode and
+// the reopen stage appends the second; no stage rewrites an episode's dates or
+// cost. The other fields are what the simulation knows about the claim from
+// its policy, which later stages need. Record is the claims.csv view of it.
 type Claim struct {
-	Record
-	Development
-}
-
-// Record is the persisted claim: exactly the claims.csv columns.
-type Record struct {
 	ID             int
 	PolicyID       int
 	OccurrenceDate shared.Date
-	ReportDate     shared.Date
-	CloseDate      shared.Date
-	// InitialEstimate is the opening case estimate on the report date. The
-	// claim stage sets it to Ultimate; the case-estimate stage replaces it
-	// with the claims handler's view (see transaction.CaseEstimator).
-	InitialEstimate shared.Money
-}
-
-// Development is the simulation's knowledge of how a claim develops, passed
-// from the claim stage to the reopen, case-estimate, runoff and recovery
-// stages. None of it is written to CSV.
-type Development struct {
-	// Ultimate is the claim's true cost: the ground-up loss net of excess,
-	// capped at the cover for own damage. It is what the first episode pays
-	// in full (nothing, for a nil claim). The severity model sizes this, not
-	// the case estimate, so the case adequacy knobs move reserves, never the
-	// loss cost.
-	Ultimate shared.Money
+	Episodes       []Episode
 	// CoverLimit is the most the policy pays on the claim over its whole
 	// life, reopen included: sum insured minus excess for own damage, zero
 	// (unlimited) for third party.
@@ -59,31 +36,82 @@ type Development struct {
 	// close-lag draw, which runs after the claim stage has let go of the
 	// policy.
 	RiskFactor float64
-	// Nil is true when the claim's first episode closes without payment.
-	Nil bool
 	// OwnDamage is true when the severity mixture picked the own-damage
 	// component. Recovery eligibility depends on it: only own-damage claims
 	// yield salvage or subrogation.
 	OwnDamage bool
-	// FirstCloseDate, ReopenDate, ReopenUltimate and ReopenEstimate describe
-	// the single optional reopen episode: the claim closed once, the case was
-	// re-raised after a lag, and CloseDate is the final close.
-	// ReopenUltimate is the episode's true additional cost and ReopenEstimate
-	// the case it re-opens at, which the case-estimate stage sets. Zero values
-	// mean the claim never reopens.
-	FirstCloseDate shared.Date
-	ReopenDate     shared.Date
-	ReopenUltimate shared.Money
-	ReopenEstimate shared.Money
 }
 
-// Cost is the claim's true total cost over its life: the first episode's
-// Ultimate unless the claim is nil, plus the reopen episode's ReopenUltimate.
-// It is what the claim eventually pays, before recoveries.
+// Episode is one open-to-close stretch of a claim's development.
+type Episode struct {
+	Open  shared.Date
+	Close shared.Date
+	// Ultimate is the episode's true cost. For the first episode it is the
+	// ground-up loss net of excess, capped at the cover for own damage; for a
+	// reopen it is the additional cost. The severity model sizes it, not the
+	// case estimate, so the case adequacy knobs move reserves, never the loss
+	// cost.
+	Ultimate shared.Money
+	// Nil is true when the episode closes without paying its Ultimate.
+	Nil bool
+	// OpeningCase is the case estimate the episode opens at, the claims
+	// handler's first view of Ultimate, which the case-estimate stage sets
+	// (see transaction.CaseEstimator).
+	OpeningCase shared.Money
+}
+
+// Paid is what the episode pays: its Ultimate, or nothing when it is nil.
+func (e Episode) Paid() shared.Money {
+	if e.Nil {
+		return 0
+	}
+	return e.Ultimate
+}
+
+// Record is the persisted claim: exactly the claims.csv columns, as a claims
+// system would hold them. CloseDate is the final close after any reopen.
+type Record struct {
+	ID              int
+	PolicyID        int
+	OccurrenceDate  shared.Date
+	ReportDate      shared.Date
+	CloseDate       shared.Date
+	InitialEstimate shared.Money
+}
+
+// Record is the claim's claims.csv row.
+func (c Claim) Record() Record {
+	return Record{
+		ID:              c.ID,
+		PolicyID:        c.PolicyID,
+		OccurrenceDate:  c.OccurrenceDate,
+		ReportDate:      c.ReportDate(),
+		CloseDate:       c.CloseDate(),
+		InitialEstimate: c.InitialEstimate(),
+	}
+}
+
+// ReportDate is the day the claim was reported, when its first episode opens.
+func (c Claim) ReportDate() shared.Date { return c.Episodes[0].Open }
+
+// CloseDate is the claim's final close, after any reopen.
+func (c Claim) CloseDate() shared.Date { return c.Episodes[len(c.Episodes)-1].Close }
+
+// InitialEstimate is the case estimate the claim opens at on its report date.
+func (c Claim) InitialEstimate() shared.Money { return c.Episodes[0].OpeningCase }
+
+// Nil reports whether the claim's first episode closes without payment.
+func (c Claim) Nil() bool { return c.Episodes[0].Nil }
+
+// Reopened reports whether the claim has a reopen episode.
+func (c Claim) Reopened() bool { return len(c.Episodes) > 1 }
+
+// Cost is the claim's true total cost over its life: what its episodes pay,
+// before recoveries.
 func (c Claim) Cost() shared.Money {
-	cost := c.ReopenUltimate
-	if !c.Nil {
-		cost += c.Ultimate
+	cost := shared.Money(0)
+	for _, e := range c.Episodes {
+		cost += e.Paid()
 	}
 	return cost
 }
@@ -91,12 +119,7 @@ func (c Claim) Cost() shared.Money {
 // TotalLoss reports whether the claim wrote the vehicle off: an own-damage
 // claim whose true cost reached its cover limit, the sum insured less excess.
 func (c Claim) TotalLoss() bool {
-	return c.OwnDamage && c.CoverLimit > 0 && c.Ultimate >= c.CoverLimit
-}
-
-// Reopened reports whether the claim has a reopen episode.
-func (c Claim) Reopened() bool {
-	return c.ReopenDate != (shared.Date{})
+	return c.OwnDamage && c.CoverLimit > 0 && c.Episodes[0].Ultimate >= c.CoverLimit
 }
 
 // ClaimSimulator generates claim events for a policy book.
@@ -184,8 +207,8 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 		}
 	}
 	sort.SliceStable(claims, func(i, j int) bool {
-		if claims[i].ReportDate != claims[j].ReportDate {
-			return claims[i].ReportDate.Before(claims[j].ReportDate)
+		if ri, rj := claims[i].ReportDate(), claims[j].ReportDate(); ri != rj {
+			return ri.Before(rj)
 		}
 		if claims[i].PolicyID != claims[j].PolicyID {
 			return claims[i].PolicyID < claims[j].PolicyID
@@ -200,8 +223,8 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 
 // simulateClaim draws one claim; ok is false when the ground-up loss does
 // not exceed the excess, making the claim unreportable. The severity draw is
-// the claim's true cost (Ultimate); the case estimate is a separate, later
-// view of it.
+// the first episode's true cost (Ultimate); the case estimate is a separate,
+// later view of it.
 func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Policy) (Claim, bool) {
 	first, span := s.occurrenceSpan(pol)
 	occurrence := first.AddDays(int(src.Uniform() * float64(span)))
@@ -252,20 +275,12 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	isNil := src.Bernoulli(s.params.NilProbability)
 
 	return Claim{
-		Record: Record{
-			PolicyID:        pol.ID,
-			OccurrenceDate:  occurrence,
-			ReportDate:      report,
-			CloseDate:       closeDate,
-			InitialEstimate: ultimate,
-		},
-		Development: Development{
-			Ultimate:   ultimate,
-			CoverLimit: coverLimit,
-			RiskFactor: pol.RiskFactor,
-			Nil:        isNil,
-			OwnDamage:  ownDamage,
-		},
+		PolicyID:       pol.ID,
+		OccurrenceDate: occurrence,
+		Episodes:       []Episode{{Open: report, Close: closeDate, Ultimate: ultimate, Nil: isNil}},
+		CoverLimit:     coverLimit,
+		RiskFactor:     pol.RiskFactor,
+		OwnDamage:      ownDamage,
 	}, true
 }
 

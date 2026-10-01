@@ -17,10 +17,10 @@ func meanOwnDamageByYear(ds application.Dataset, firstYear, lastYear int) (first
 		}
 		switch c.OccurrenceDate.Year() {
 		case firstYear:
-			fs += c.InitialEstimate.Dollars()
+			fs += c.InitialEstimate().Dollars()
 			fn++
 		case lastYear:
-			ls += c.InitialEstimate.Dollars()
+			ls += c.InitialEstimate().Dollars()
 			ln++
 		}
 	}

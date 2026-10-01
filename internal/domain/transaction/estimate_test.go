@@ -23,8 +23,8 @@ func TestCaseAdequacyMeanIsTheUltimateOverTheOpeningCase(t *testing.T) {
 		p.CaseAdequacyMean = mean
 		ultimate, opening := 0.0, 0.0
 		for _, c := range estimated(p, claims, 2) {
-			ultimate += c.Ultimate.Dollars()
-			opening += c.InitialEstimate.Dollars()
+			ultimate += c.Episodes[0].Ultimate.Dollars()
+			opening += c.InitialEstimate().Dollars()
 		}
 		if got := ultimate / opening; math.Abs(got-mean) > 0.05*mean {
 			t.Errorf("adequacy mean %v: total ultimate / total opening case = %v", mean, got)
@@ -37,29 +37,26 @@ func TestCaseEstimatorLeavesTheTrueCostAlone(t *testing.T) {
 	p := params()
 	p.CaseAdequacyMean = 1.25
 	for i, c := range estimated(p, claims, 3) {
-		if c.Ultimate != claims[i].Ultimate || c.ReopenUltimate != claims[i].ReopenUltimate {
+		if c.Cost() != claims[i].Cost() {
 			t.Fatalf("claim %d true cost changed by case estimation", c.ID)
 		}
-		if c.InitialEstimate < shared.OneCent {
-			t.Fatalf("claim %d opens at %v, want at least one cent", c.ID, c.InitialEstimate)
+		if c.InitialEstimate() < shared.OneCent {
+			t.Fatalf("claim %d opens at %v, want at least one cent", c.ID, c.InitialEstimate())
 		}
 	}
 }
 
 func TestExactCaseEstimatesWithNoNoiseAndNoBias(t *testing.T) {
 	claims := testClaims(50)
-	claims[0].FirstCloseDate = claims[0].CloseDate
-	claims[0].ReopenDate = claims[0].CloseDate.AddDays(30)
-	claims[0].CloseDate = claims[0].ReopenDate.AddDays(30)
-	claims[0].ReopenUltimate = shared.FromDollars(700)
+	reopen := claims[0].CloseDate().AddDays(30)
+	claims[0].Episodes = append(claims[0].Episodes, claim.Episode{Open: reopen, Close: reopen.AddDays(30), Ultimate: shared.FromDollars(700)})
 	p := params()
 	p.CaseAdequacySigma = 0
 	for _, c := range estimated(p, claims, 4) {
-		if c.InitialEstimate != c.Ultimate {
-			t.Fatalf("claim %d opens at %v, want exactly its ultimate %v", c.ID, c.InitialEstimate, c.Ultimate)
-		}
-		if c.ReopenEstimate != c.ReopenUltimate {
-			t.Fatalf("claim %d re-opens at %v, want exactly %v", c.ID, c.ReopenEstimate, c.ReopenUltimate)
+		for j, e := range c.Episodes {
+			if e.OpeningCase != e.Ultimate {
+				t.Fatalf("claim %d episode %d opens at %v, want exactly its ultimate %v", c.ID, j+1, e.OpeningCase, e.Ultimate)
+			}
 		}
 	}
 }

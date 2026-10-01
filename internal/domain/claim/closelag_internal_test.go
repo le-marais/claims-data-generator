@@ -84,7 +84,7 @@ func TestSizeStretchIgnoresClaimsInflation(t *testing.T) {
 	count := map[int]float64{}
 	for _, c := range claims {
 		if y := c.OccurrenceDate.Year(); y == 1998 || y == 2007 {
-			meanLag[y] += float64(shared.DaysBetween(c.ReportDate, c.CloseDate))
+			meanLag[y] += float64(shared.DaysBetween(c.ReportDate(), c.CloseDate()))
 			count[y]++
 		}
 	}
@@ -101,18 +101,16 @@ func TestReopenSizeStretchIgnoresClaimsInflation(t *testing.T) {
 	for i := 0; i < 4000; i++ {
 		occurred := shared.NewDate(2007, time.March, 1)
 		claims = append(claims, Claim{
-			Record: Record{
-				ID:             i + 1,
-				OccurrenceDate: occurred,
-				ReportDate:     occurred,
-				CloseDate:      occurred.AddDays(30),
-			},
-			Development: Development{
-				// Nominally 100k, about 10k in start-year dollars: under the threshold.
-				Ultimate:   shared.FromDollars(100000),
-				RiskFactor: 1,
-				OwnDamage:  true,
-			},
+			ID:             i + 1,
+			OccurrenceDate: occurred,
+			// Nominally 100k, about 10k in start-year dollars: under the threshold.
+			Episodes: []Episode{{
+				Open:     occurred,
+				Close:    occurred.AddDays(30),
+				Ultimate: shared.FromDollars(100000),
+			}},
+			RiskFactor: 1,
+			OwnDamage:  true,
 		})
 	}
 	secondLag := func(sim *ReopenSimulator) float64 {
@@ -120,7 +118,7 @@ func TestReopenSizeStretchIgnoresClaimsInflation(t *testing.T) {
 		total, n := 0.0, 0.0
 		for _, c := range sim.Apply(random.NewSource(3), in) {
 			if c.Reopened() {
-				total += float64(shared.DaysBetween(c.ReopenDate, c.CloseDate))
+				total += float64(shared.DaysBetween(c.Episodes[1].Open, c.CloseDate()))
 				n++
 			}
 		}

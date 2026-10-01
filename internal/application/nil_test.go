@@ -1,9 +1,12 @@
 package application_test
 
 import (
+	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/le-marais/claimsgen/internal/application"
+	"github.com/le-marais/claimsgen/internal/domain/claim"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 )
 
@@ -24,14 +27,20 @@ func TestNilClaimsDoNotShiftOtherStages(t *testing.T) {
 	if len(dsOn.Claims) != len(dsOff.Claims) {
 		t.Fatalf("claim count changed: %d vs %d", len(dsOn.Claims), len(dsOff.Claims))
 	}
+	// withoutNil copies a claim with every episode's nil flag cleared.
+	withoutNil := func(c claim.Claim) claim.Claim {
+		c.Episodes = slices.Clone(c.Episodes)
+		for j := range c.Episodes {
+			c.Episodes[j].Nil = false
+		}
+		return c
+	}
 	sawNil := false
 	for i := range dsOn.Claims {
-		a, b := dsOn.Claims[i], dsOff.Claims[i]
-		if a.Nil {
+		if dsOn.Claims[i].Nil() {
 			sawNil = true
 		}
-		a.Nil, b.Nil = false, false
-		if a != b {
+		if a, b := withoutNil(dsOn.Claims[i]), withoutNil(dsOff.Claims[i]); !reflect.DeepEqual(a, b) {
 			t.Fatalf("claim %d shifted when nil toggled:\n on:  %+v\n off: %+v",
 				dsOn.Claims[i].ID, dsOn.Claims[i], dsOff.Claims[i])
 		}

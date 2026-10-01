@@ -30,12 +30,10 @@ func aggregateFixture(t *testing.T) application.Aggregates {
 			Premium:    shared.FromDollars(365),
 		}},
 		Claims: []claim.Claim{{
-			Record: claim.Record{
-				ID:             1,
-				PolicyID:       1,
-				OccurrenceDate: shared.NewDate(1998, time.March, 1),
-				ReportDate:     shared.NewDate(1998, time.March, 5),
-			},
+			ID:             1,
+			PolicyID:       1,
+			OccurrenceDate: shared.NewDate(1998, time.March, 1),
+			Episodes:       []claim.Episode{{Open: shared.NewDate(1998, time.March, 5)}},
 		}},
 		Transactions: []transaction.Transaction{
 			{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.March, 5), Type: transaction.Estimate, Amount: shared.FromDollars(1000)},

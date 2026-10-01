@@ -49,7 +49,7 @@ func TestOwnDamageIsCappedAtSumInsured(t *testing.T) {
 		if !c.OwnDamage {
 			continue
 		}
-		groundUp := c.InitialEstimate.Dollars() + 300 // + excess
+		groundUp := c.Episodes[0].Ultimate.Dollars() + 300 // + excess
 		if groundUp > 20000+1e-6 {
 			t.Fatalf("claim %d own-damage ground-up %.2f exceeds sum insured 20000", c.ID, groundUp)
 		}
@@ -83,7 +83,7 @@ func TestOwnDamageSeverityReadsBaseSumInsured(t *testing.T) {
 	}
 	for i := range nominal {
 		// Half the base sum insured, half the loss, to the cent.
-		if got, want := base[i].Ultimate.Dollars(), nominal[i].Ultimate.Dollars()/2; got < want-0.01 || got > want+0.01 {
+		if got, want := base[i].Episodes[0].Ultimate.Dollars(), nominal[i].Episodes[0].Ultimate.Dollars()/2; got < want-0.01 || got > want+0.01 {
 			t.Fatalf("claim %d: ultimate %.2f at half the base sum insured, want %.2f", i, got, want)
 		}
 	}

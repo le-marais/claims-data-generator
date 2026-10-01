@@ -100,7 +100,7 @@ func (s *RecoverySimulator) simulateClaim(src shared.RandomSource, c claim.Claim
 	var rows []Transaction
 	recovered := shared.Money(0)
 	for _, k := range kinds {
-		if k.t == Salvage && (!c.TotalLoss() || c.Nil) {
+		if k.t == Salvage && (!c.TotalLoss() || c.Nil()) {
 			continue // only a written-off vehicle the claim paid for is sold for salvage
 		}
 		ksrc := src.Split(string(k.t)) // recovery-claim-{id}/SALVAGE, .../SUBROGATION
@@ -121,7 +121,7 @@ func (s *RecoverySimulator) simulateClaim(src shared.RandomSource, c claim.Claim
 		}
 		rows = append(rows, Transaction{
 			ClaimID: c.ID,
-			Date:    c.CloseDate.AddDays(lag),
+			Date:    c.CloseDate().AddDays(lag),
 			Type:    k.t,
 			Amount:  amount,
 		})

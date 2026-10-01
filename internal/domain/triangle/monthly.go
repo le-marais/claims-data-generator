@@ -115,7 +115,7 @@ func BuildMonthlyGrid(
 		}
 	}
 	for _, c := range claims {
-		widen(c.ID, c.ReportDate.Month())
+		widen(c.ID, c.ReportDate().Month())
 	}
 	for _, tx := range txs {
 		widen(tx.ClaimID, tx.Date.Month())
@@ -141,7 +141,7 @@ func BuildMonthlyGrid(
 		if !ok {
 			continue
 		}
-		reported := devPeriod(startMonth, row, c.ReportDate.Month()) - 1
+		reported := devPeriod(startMonth, row, c.ReportDate().Month()) - 1
 		g.Reported[row][reported]++
 		// A claim reported in the month it occurred is never IBNR at a month
 		// end; skipping it keeps the cell free of a +cost-cost rounding residue.

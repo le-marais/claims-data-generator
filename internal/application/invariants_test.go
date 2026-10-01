@@ -49,34 +49,34 @@ func TestDatasetInvariants(t *testing.T) {
 		if c.OccurrenceDate.Before(pol.start) || c.OccurrenceDate.After(pol.end) {
 			t.Fatalf("claim %d occurrence %s outside cover %s..%s", c.ID, c.OccurrenceDate, pol.start, pol.end)
 		}
-		if c.ReportDate.Before(c.OccurrenceDate) {
-			t.Fatalf("claim %d reported %s before occurrence %s", c.ID, c.ReportDate, c.OccurrenceDate)
+		if c.ReportDate().Before(c.OccurrenceDate) {
+			t.Fatalf("claim %d reported %s before occurrence %s", c.ID, c.ReportDate(), c.OccurrenceDate)
 		}
-		if c.CloseDate.Before(c.ReportDate) {
-			t.Fatalf("claim %d closed %s before report %s", c.ID, c.CloseDate, c.ReportDate)
+		if c.CloseDate().Before(c.ReportDate()) {
+			t.Fatalf("claim %d closed %s before report %s", c.ID, c.CloseDate(), c.ReportDate())
 		}
-		if c.InitialEstimate <= 0 {
-			t.Fatalf("claim %d initial estimate %v not positive", c.ID, c.InitialEstimate)
+		if c.InitialEstimate() <= 0 {
+			t.Fatalf("claim %d initial estimate %v not positive", c.ID, c.InitialEstimate())
 		}
+		if len(c.Episodes) > 2 {
+			t.Fatalf("claim %d has %d episodes, want at most 2", c.ID, len(c.Episodes))
+		}
+		for j, e := range c.Episodes {
+			if e.OpeningCase <= 0 {
+				t.Fatalf("claim %d episode %d opening case %v not positive", c.ID, j+1, e.OpeningCase)
+			}
+			if j > 0 && !e.Open.After(c.Episodes[j-1].Close) {
+				t.Fatalf("claim %d episode %d opens %s, not strictly after the previous close %s", c.ID, j+1, e.Open, c.Episodes[j-1].Close)
+			}
+			if e.Close.Before(e.Open) || (j > 0 && !e.Close.After(e.Open)) {
+				t.Fatalf("claim %d episode %d closes %s before it opens %s", c.ID, j+1, e.Close, e.Open)
+			}
+		}
+		firstClose, reopen := c.Episodes[0].Close, shared.Date{}
 		if c.Reopened() {
-			if !c.ReopenDate.After(c.FirstCloseDate) {
-				t.Fatalf("claim %d reopen %s not strictly after first close %s", c.ID, c.ReopenDate, c.FirstCloseDate)
-			}
-			if !c.CloseDate.After(c.ReopenDate) {
-				t.Fatalf("claim %d final close %s not strictly after reopen %s", c.ID, c.CloseDate, c.ReopenDate)
-			}
-			if c.ReopenEstimate <= 0 {
-				t.Fatalf("claim %d reopen estimate %v not positive", c.ID, c.ReopenEstimate)
-			}
-			if c.FirstCloseDate.Before(c.ReportDate) {
-				t.Fatalf("claim %d first close %s before report %s", c.ID, c.FirstCloseDate, c.ReportDate)
-			}
+			reopen = c.Episodes[1].Open
 		}
-		firstClose := c.CloseDate
-		if c.Reopened() {
-			firstClose = c.FirstCloseDate
-		}
-		claims[c.ID] = claimInfo{c.ReportDate, c.CloseDate, firstClose, c.ReopenDate, c.Reopened(), c.Nil, c.OwnDamage}
+		claims[c.ID] = claimInfo{c.ReportDate(), c.CloseDate(), firstClose, reopen, c.Reopened(), c.Nil(), c.OwnDamage}
 	}
 
 	type state struct {
@@ -157,13 +157,13 @@ func TestDatasetInvariants(t *testing.T) {
 		if s == nil {
 			t.Fatalf("claim %d has no transactions", c.ID)
 		}
-		if s.first.Type != transaction.Estimate || s.first.Amount != c.InitialEstimate || s.first.Date != c.ReportDate {
+		if s.first.Type != transaction.Estimate || s.first.Amount != c.InitialEstimate() || s.first.Date != c.ReportDate() {
 			t.Fatalf("claim %d first transaction %+v is not the initial estimate on the report date", c.ID, s.first)
 		}
 		if s.outstanding != 0 {
 			t.Fatalf("claim %d outstanding at close = %v, want 0", c.ID, s.outstanding)
 		}
-		if c.Nil && !c.Reopened() {
+		if c.Nil() && !c.Reopened() {
 			if s.paid != 0 {
 				t.Fatalf("nil claim %d total paid %v, want 0", c.ID, s.paid)
 			}
@@ -172,9 +172,11 @@ func TestDatasetInvariants(t *testing.T) {
 		}
 		// Every payment adds up to exactly the true cost, and own damage never
 		// pays beyond the cover, reopen included.
-		want := c.Ultimate + c.ReopenUltimate
-		if c.Nil {
-			want = c.ReopenUltimate
+		want := shared.Money(0)
+		for _, e := range c.Episodes {
+			if !e.Nil {
+				want += e.Ultimate
+			}
 		}
 		if s.paid != want {
 			t.Fatalf("claim %d total paid %v, want its true cost %v", c.ID, s.paid, want)
@@ -191,8 +193,8 @@ func TestDatasetInvariants(t *testing.T) {
 		if s.recovered > 0 && s.recovered >= s.paid {
 			t.Fatalf("claim %d recovered %v >= gross paid %v", c.ID, s.recovered, s.paid)
 		}
-		if s.lastCase.Date != c.CloseDate {
-			t.Fatalf("claim %d last case activity on %s, want close date %s", c.ID, s.lastCase.Date, c.CloseDate)
+		if s.lastCase.Date != c.CloseDate() {
+			t.Fatalf("claim %d last case activity on %s, want close date %s", c.ID, s.lastCase.Date, c.CloseDate())
 		}
 	}
 }

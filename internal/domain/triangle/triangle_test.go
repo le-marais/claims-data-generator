@@ -31,24 +31,24 @@ func annualFrom(t *testing.T, claims []claim.Claim, txs []transaction.Transactio
 func fixtures() ([]claim.Claim, []transaction.Transaction) {
 	claims := []claim.Claim{
 		{
-			Record: claim.Record{
-				ID:              1,
-				PolicyID:        1,
-				OccurrenceDate:  shared.NewDate(1998, time.March, 1),
-				ReportDate:      shared.NewDate(1998, time.March, 3),
-				CloseDate:       shared.NewDate(1999, time.February, 1),
-				InitialEstimate: shared.FromDollars(1000),
-			},
+			ID:             1,
+			PolicyID:       1,
+			OccurrenceDate: shared.NewDate(1998, time.March, 1),
+			Episodes: []claim.Episode{{
+				Open:        shared.NewDate(1998, time.March, 3),
+				Close:       shared.NewDate(1999, time.February, 1),
+				OpeningCase: shared.FromDollars(1000),
+			}},
 		},
 		{
-			Record: claim.Record{
-				ID:              2,
-				PolicyID:        2,
-				OccurrenceDate:  shared.NewDate(1999, time.June, 1),
-				ReportDate:      shared.NewDate(1999, time.June, 2),
-				CloseDate:       shared.NewDate(1999, time.July, 1),
-				InitialEstimate: shared.FromDollars(500),
-			},
+			ID:             2,
+			PolicyID:       2,
+			OccurrenceDate: shared.NewDate(1999, time.June, 1),
+			Episodes: []claim.Episode{{
+				Open:        shared.NewDate(1999, time.June, 2),
+				Close:       shared.NewDate(1999, time.July, 1),
+				OpeningCase: shared.FromDollars(500),
+			}},
 		},
 	}
 	txs := []transaction.Transaction{
@@ -138,7 +138,7 @@ func TestATAFactorsAreVolumeWeighted(t *testing.T) {
 }
 
 func TestAnnualTrianglesNetPaidSubtractsRecoveries(t *testing.T) {
-	claims := []claim.Claim{{Record: claim.Record{ID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1)}}}
+	claims := []claim.Claim{{ID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1), Episodes: []claim.Episode{{}}}}
 	txs := []transaction.Transaction{
 		{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.April, 1), Type: transaction.Payment, Amount: shared.FromDollars(1000)},
 		{ID: 2, ClaimID: 1, Date: shared.NewDate(1999, time.June, 1), Type: transaction.Salvage, Amount: shared.FromDollars(150)},
@@ -155,7 +155,7 @@ func TestAnnualTrianglesNetPaidSubtractsRecoveries(t *testing.T) {
 }
 
 func TestAnnualTrianglesIncurredSubtractsRecoveries(t *testing.T) {
-	claims := []claim.Claim{{Record: claim.Record{ID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1)}}}
+	claims := []claim.Claim{{ID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1), Episodes: []claim.Episode{{}}}}
 	txs := []transaction.Transaction{
 		{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.March, 10), Type: transaction.Estimate, Amount: shared.FromDollars(1000)},
 		{ID: 2, ClaimID: 1, Date: shared.NewDate(1998, time.April, 1), Type: transaction.Payment, Amount: shared.FromDollars(1000)},

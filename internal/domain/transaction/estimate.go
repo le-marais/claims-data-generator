@@ -23,20 +23,23 @@ func NewCaseEstimator(p lob.RunoffParams) *CaseEstimator {
 	return &CaseEstimator{mean: p.CaseAdequacyMean, sigma: p.CaseAdequacySigma}
 }
 
-// Apply sets InitialEstimate from Ultimate and, for a reopened claim,
-// ReopenEstimate from ReopenUltimate, mutating claims in place. Each estimate
-// is the true cost times mean-one lognormal noise, divided by the adequacy
-// mean, so across claims the true cost over the opening case averages the
-// adequacy mean: above 1 the case starts deficient, below 1 redundant. A zero
-// sigma draws nothing.
+// Apply sets every episode's opening case from its true cost, updating claims
+// in place. Each estimate is the true cost times mean-one lognormal noise,
+// divided by the adequacy mean, so across claims the true cost over the
+// opening case averages the adequacy mean: above 1 the case starts deficient,
+// below 1 redundant. A zero sigma draws nothing.
 func (s *CaseEstimator) Apply(src shared.RandomSource, claims []claim.Claim) []claim.Claim {
 	for i := range claims {
 		c := &claims[i]
 		stream := src.Split(fmt.Sprintf("case-estimate-claim-%d", c.ID))
-		c.InitialEstimate = s.estimate(stream, c.Ultimate)
-		if c.Reopened() {
-			c.ReopenEstimate = s.estimate(stream, c.ReopenUltimate)
+		// A fresh slice, so a copy of the claim taken before this stage keeps
+		// its own episodes.
+		episodes := make([]claim.Episode, len(c.Episodes))
+		for j, e := range c.Episodes {
+			e.OpeningCase = s.estimate(stream, e.Ultimate)
+			episodes[j] = e
 		}
+		c.Episodes = episodes
 	}
 	return claims
 }

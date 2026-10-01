@@ -26,14 +26,14 @@ func gridFixture() ([]policy.Policy, []claim.Claim, []transaction.Transaction) {
 		Premium:    shared.FromDollars(365),
 	}}
 	claims := []claim.Claim{{
-		Record: claim.Record{
-			ID:              1,
-			PolicyID:        1,
-			OccurrenceDate:  shared.NewDate(1998, time.March, 1),
-			ReportDate:      shared.NewDate(1998, time.March, 3),
-			CloseDate:       shared.NewDate(1999, time.February, 1),
-			InitialEstimate: shared.FromDollars(1000),
-		},
+		ID:             1,
+		PolicyID:       1,
+		OccurrenceDate: shared.NewDate(1998, time.March, 1),
+		Episodes: []claim.Episode{{
+			Open:        shared.NewDate(1998, time.March, 3),
+			Close:       shared.NewDate(1999, time.February, 1),
+			OpeningCase: shared.FromDollars(1000),
+		}},
 	}}
 	txs := []transaction.Transaction{
 		{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.March, 3), Type: transaction.Estimate, Amount: shared.FromDollars(1000)},
@@ -101,12 +101,10 @@ func TestMonthlyGridCountsClaimsByReportMonth(t *testing.T) {
 	// A claim occurring in December 1998 but reported in January 1999 counts
 	// in origin December at development period 2.
 	claims := []claim.Claim{{
-		Record: claim.Record{
-			ID:             1,
-			PolicyID:       1,
-			OccurrenceDate: shared.NewDate(1998, time.December, 20),
-			ReportDate:     shared.NewDate(1999, time.January, 15),
-		},
+		ID:             1,
+		PolicyID:       1,
+		OccurrenceDate: shared.NewDate(1998, time.December, 20),
+		Episodes:       []claim.Episode{{Open: shared.NewDate(1999, time.January, 15)}},
 	}}
 	g, err := triangle.BuildMonthlyGrid(nil, claims, nil, jan1998, 24, triangle.AccidentMonth)
 	if err != nil {
@@ -122,12 +120,10 @@ func TestMonthlyGridCountsClaimsByReportMonth(t *testing.T) {
 
 func TestMonthlyGridNetsRecoveriesOffPaidAndIncurred(t *testing.T) {
 	claims := []claim.Claim{{
-		Record: claim.Record{
-			ID:             1,
-			PolicyID:       1,
-			OccurrenceDate: shared.NewDate(1998, time.March, 1),
-			ReportDate:     shared.NewDate(1998, time.March, 1),
-		},
+		ID:             1,
+		PolicyID:       1,
+		OccurrenceDate: shared.NewDate(1998, time.March, 1),
+		Episodes:       []claim.Episode{{Open: shared.NewDate(1998, time.March, 1)}},
 	}}
 	txs := []transaction.Transaction{
 		{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.April, 1), Type: transaction.Payment, Amount: shared.FromDollars(1000)},
@@ -202,8 +198,8 @@ func TestMonthlyGridUnderwritingBasisRejectsAMissingPolicy(t *testing.T) {
 
 func TestMonthlyGridSkipsOriginsOutsideTheSpan(t *testing.T) {
 	claims := []claim.Claim{
-		{Record: claim.Record{ID: 1, PolicyID: 1, OccurrenceDate: shared.NewDate(1997, time.June, 1), ReportDate: shared.NewDate(1997, time.June, 1)}},
-		{Record: claim.Record{ID: 2, PolicyID: 1, OccurrenceDate: shared.NewDate(2001, time.June, 1), ReportDate: shared.NewDate(2001, time.June, 1)}},
+		{ID: 1, PolicyID: 1, OccurrenceDate: shared.NewDate(1997, time.June, 1), Episodes: []claim.Episode{{Open: shared.NewDate(1997, time.June, 1)}}},
+		{ID: 2, PolicyID: 1, OccurrenceDate: shared.NewDate(2001, time.June, 1), Episodes: []claim.Episode{{Open: shared.NewDate(2001, time.June, 1)}}},
 	}
 	txs := []transaction.Transaction{
 		{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.June, 1), Type: transaction.Payment, Amount: shared.FromDollars(900)},
@@ -233,12 +229,10 @@ func TestMonthlyGridClampsDevelopmentBelowOne(t *testing.T) {
 	// Hand-built input only: a payment before the claim's origin month cannot
 	// arise in generated data, but must not index out of range.
 	claims := []claim.Claim{{
-		Record: claim.Record{
-			ID:             1,
-			PolicyID:       1,
-			OccurrenceDate: shared.NewDate(1998, time.June, 1),
-			ReportDate:     shared.NewDate(1998, time.June, 1),
-		},
+		ID:             1,
+		PolicyID:       1,
+		OccurrenceDate: shared.NewDate(1998, time.June, 1),
+		Episodes:       []claim.Episode{{Open: shared.NewDate(1998, time.June, 1)}},
 	}}
 	txs := []transaction.Transaction{
 		{ID: 1, ClaimID: 1, Date: shared.NewDate(1998, time.February, 1), Type: transaction.Payment, Amount: shared.FromDollars(100)},
@@ -293,44 +287,42 @@ func TestIBNRCarriesUnreportedClaimsAtTrueCost(t *testing.T) {
 	claims := []claim.Claim{
 		// Occurs December 1998, reported February 1999: IBNR at the 1998 year end.
 		{
-			Record: claim.Record{
-				ID:             1,
-				PolicyID:       1,
-				OccurrenceDate: shared.NewDate(1998, time.December, 20),
-				ReportDate:     shared.NewDate(1999, time.February, 10),
-				CloseDate:      shared.NewDate(1999, time.June, 1),
-			},
-			Development: claim.Development{
+			ID:             1,
+			PolicyID:       1,
+			OccurrenceDate: shared.NewDate(1998, time.December, 20),
+			Episodes: []claim.Episode{{
+				Open:     shared.NewDate(1999, time.February, 10),
+				Close:    shared.NewDate(1999, time.June, 1),
 				Ultimate: shared.FromDollars(4000),
-			},
+			}},
 		},
 		// Reported the month it occurs: never IBNR at a month end.
 		{
-			Record: claim.Record{
-				ID:             2,
-				PolicyID:       1,
-				OccurrenceDate: shared.NewDate(1998, time.March, 1),
-				ReportDate:     shared.NewDate(1998, time.March, 5),
-				CloseDate:      shared.NewDate(1998, time.May, 1),
-			},
-			Development: claim.Development{
+			ID:             2,
+			PolicyID:       1,
+			OccurrenceDate: shared.NewDate(1998, time.March, 1),
+			Episodes: []claim.Episode{{
+				Open:     shared.NewDate(1998, time.March, 5),
+				Close:    shared.NewDate(1998, time.May, 1),
 				Ultimate: shared.FromDollars(900),
-			},
+			}},
 		},
 		// A nil claim that reopens costs only its reopen episode.
 		{
-			Record: claim.Record{
-				ID:             3,
-				PolicyID:       1,
-				OccurrenceDate: shared.NewDate(1998, time.April, 1),
-				ReportDate:     shared.NewDate(1998, time.June, 1),
-				CloseDate:      shared.NewDate(1999, time.March, 1),
-			},
-			Development: claim.Development{
-				Ultimate:       shared.FromDollars(700),
-				Nil:            true,
-				ReopenDate:     shared.NewDate(1998, time.October, 1),
-				ReopenUltimate: shared.FromDollars(250),
+			ID:             3,
+			PolicyID:       1,
+			OccurrenceDate: shared.NewDate(1998, time.April, 1),
+			Episodes: []claim.Episode{
+				{
+					Open:     shared.NewDate(1998, time.June, 1),
+					Ultimate: shared.FromDollars(700),
+					Nil:      true,
+				},
+				{
+					Open:     shared.NewDate(1998, time.October, 1),
+					Close:    shared.NewDate(1999, time.March, 1),
+					Ultimate: shared.FromDollars(250),
+				},
 			},
 		},
 	}

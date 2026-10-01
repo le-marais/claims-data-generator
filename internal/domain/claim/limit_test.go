@@ -23,14 +23,11 @@ func TestOwnDamageCostStaysWithinTheCover(t *testing.T) {
 		if c.CoverLimit != limit {
 			t.Fatalf("own-damage claim %d cover limit %v, want sum insured minus excess %v", c.ID, c.CoverLimit, limit)
 		}
-		if c.Ultimate > c.CoverLimit {
-			t.Fatalf("own-damage claim %d costs %v, above its cover %v", c.ID, c.Ultimate, c.CoverLimit)
+		if c.Episodes[0].Ultimate > c.CoverLimit {
+			t.Fatalf("own-damage claim %d costs %v, above its cover %v", c.ID, c.Episodes[0].Ultimate, c.CoverLimit)
 		}
-		if c.Ultimate == c.CoverLimit {
+		if c.Episodes[0].Ultimate == c.CoverLimit {
 			capped++
-		}
-		if c.InitialEstimate != c.Ultimate {
-			t.Fatalf("claim %d opens at %v before case estimation, want its ultimate %v", c.ID, c.InitialEstimate, c.Ultimate)
 		}
 	}
 	if capped == 0 {
@@ -50,11 +47,8 @@ func TestReopenNeverPaysBeyondTheCover(t *testing.T) {
 		if !c.OwnDamage {
 			continue
 		}
-		firstPaid := c.Ultimate
-		if c.Nil {
-			firstPaid = 0
-		}
-		if !c.Nil && c.Ultimate == c.CoverLimit {
+		firstPaid := c.Episodes[0].Paid()
+		if !c.Nil() && c.Episodes[0].Ultimate == c.CoverLimit {
 			totalLosses++
 			if c.Reopened() {
 				totalLossesReopened++
@@ -63,13 +57,14 @@ func TestReopenNeverPaysBeyondTheCover(t *testing.T) {
 		if !c.Reopened() {
 			continue
 		}
-		if c.ReopenUltimate <= 0 {
-			t.Fatalf("reopened claim %d has reopen cost %v, want positive", c.ID, c.ReopenUltimate)
+		reopenCost := c.Episodes[1].Ultimate
+		if reopenCost <= 0 {
+			t.Fatalf("reopened claim %d has reopen cost %v, want positive", c.ID, reopenCost)
 		}
-		if firstPaid+c.ReopenUltimate > c.CoverLimit {
-			t.Fatalf("claim %d pays %v + %v, above its cover %v", c.ID, firstPaid, c.ReopenUltimate, c.CoverLimit)
+		if firstPaid+reopenCost > c.CoverLimit {
+			t.Fatalf("claim %d pays %v + %v, above its cover %v", c.ID, firstPaid, reopenCost, c.CoverLimit)
 		}
-		if firstPaid+c.ReopenUltimate == c.CoverLimit {
+		if firstPaid+reopenCost == c.CoverLimit {
 			cappedReopens++
 		}
 	}
