@@ -63,3 +63,34 @@ func TestLossRatioDriftClimbingExceedsTolerance(t *testing.T) {
 		t.Fatalf("climbing drift = %v, want > %v", d, driftTolerance)
 	}
 }
+
+// The loss ratio band comes from each company's developed incurred when it is
+// available, not its immature latest diagonal (MR-4).
+func TestLossRatioBandUsesDevelopedIncurred(t *testing.T) {
+	ref := func(name string, latest, developed float64) ReferenceSet {
+		return ReferenceSet{
+			Name:              name,
+			Paid:              Triangle{Cells: [][]float64{{100, 150}}},
+			Incurred:          Triangle{Cells: [][]float64{{140, latest}}},
+			DevelopedIncurred: Triangle{Cells: [][]float64{{140, latest, developed}}},
+			EarnedPremium:     []float64{200},
+		}
+	}
+	refs := []ReferenceSet{ref("a", 160, 100), ref("b", 170, 120)}
+	report := CompareToReference(Comparison{
+		Incurred:      Triangle{Cells: [][]float64{{110, 110}}},
+		EarnedPremium: []float64{200},
+	}, refs)
+	if b := report.LossRatio.Band; b.Min != 0.5 || b.Max != 0.6 {
+		t.Fatalf("loss ratio band [%v, %v], want the developed [0.5, 0.6]", b.Min, b.Max)
+	}
+
+	// Without later development the latest diagonal is used.
+	for i := range refs {
+		refs[i].DevelopedIncurred = Triangle{}
+	}
+	report = CompareToReference(Comparison{Incurred: Triangle{Cells: [][]float64{{110, 110}}}, EarnedPremium: []float64{200}}, refs)
+	if b := report.LossRatio.Band; b.Min != 0.8 || b.Max != 0.85 {
+		t.Fatalf("loss ratio band [%v, %v], want the latest-diagonal [0.8, 0.85]", b.Min, b.Max)
+	}
+}

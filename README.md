@@ -144,9 +144,15 @@ book. The companies were curated from the full Schedule P
 extract via `data/reference/gr-code-list.md` and `tools/prune-dec2025.ps1` to
 remove low-volume and degenerate companies. Paid and incurred age-to-age
 development factors and the ultimate loss ratio must fall inside the P5-P95
-bands observed across those companies, with a backstop filter that drops any
-company carrying no scorable signal; the full min/max range is shown for
-context. The paid comparison is net of recoveries, matching how Schedule P
+bands observed across those companies. The generated triangles run to full
+development, so the loss ratio is scored against each company's loss ratio
+developed to age 10 with its later reported development, not its latest
+diagonal. The incurred factors compare different quantities: Schedule P
+incurred includes bulk and IBNR reserves, while generated incurred is paid
+plus case reserves with no IBNR. Both sit below 1 at early ages, for
+different reasons, so treat the incurred check as a loose sanity bound. A
+backstop filter drops any company carrying no scorable signal, and the full
+min/max range is shown for context. The paid comparison is net of recoveries, matching how Schedule P
 reports paid losses. This runs as a test gate (`TestDefaultPresetIsRealistic`,
 across several seeds).
 

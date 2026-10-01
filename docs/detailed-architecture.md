@@ -327,7 +327,7 @@ Cells are **incremental**: a cell is the movement in that development month. Inc
 
 ### 10.5 `compare.go` - scoring against reference bands
 
-- `ReferenceSet{Name, Paid, Incurred, EarnedPremium}` - one reference company's observed triangles and premium. `Comparison{Paid, Incurred, EarnedPremium}` - the generated data's equivalent.
+- `ReferenceSet{Name, Paid, Incurred, EarnedPremium, DevelopedIncurred}` - one reference company's observed triangles and premium. `DevelopedIncurred` is `Incurred` completed with the company's later reported development to the full ten ages; its zero value means none is available. `Incurred` is Schedule P total incurred (paid, case, bulk and IBNR), while the generated incurred is case incurred with no IBNR, so the incurred age-factor check compares different quantities: reference factors fall below 1 as early IBNR is released, generated ones mostly as nil claims release their case. `Comparison{Paid, Incurred, EarnedPremium}` - the generated data's equivalent.
 - `Band{Lo, Hi, Min, Max}` - `Lo`/`Hi` are the scored P5-P95 pass interval; `Min`/`Max` are the full observed extremes kept for display. `(b Band) contains(v)` is inclusive membership.
 - Constants: `bandLoPercentile = 5`, `bandHiPercentile = 95` (the scored band), and `driftTolerance = 1.10` (the allowed loss-ratio drift between the first and second halves of the accident-year span).
 - `Percentile(xs, p)` - linearly interpolated percentile (type-7), non-mutating; `NaN` for empty input.
@@ -336,8 +336,8 @@ Cells are **incremental**: a cell is the movement in that development month. Inc
 - `AgeCheck{Age, Value, Band, Within}` and `Check{Value, Band, Within}` - scored results for an age and for a scalar. `Age` is the 1-based development period the factor develops from, so age 1 is the factor from development period 1 to 2.
 - `Report{PaidATA, IncurredATA []AgeCheck, LossRatio, LossRatioDrift Check}` - the comparison outcome. `(r Report) Pass()` requires every age check plus both scalar checks to be within. `(r Report) String()` renders a human-readable, 1-indexed report.
 - `usableRefs(refs)` (unexported) - a backstop that drops reference companies with no scorable signal (non-positive total earned premium or non-positive summed incurred latest diagonal).
-- `CompareToReference(c Comparison, refs) Report` - the main entry point. It filters to usable refs, checks paid and incurred age factors against the reference bands (only ages present in both), scores the ultimate loss ratio against the reference band, and scores loss-ratio drift against a fixed `[1/driftTolerance, driftTolerance]` band (passing vacuously when drift cannot be computed).
-- Helpers `checkAges`, `lossRatio` (total latest incurred over total earned premium), and `lossRatioDrift` (second-half over first-half aggregate loss ratio, computed from generated data only, so it is immune to reference immaturity; the middle year is excluded for odd counts).
+- `CompareToReference(c Comparison, refs) Report` - the main entry point. It filters to usable refs, checks paid and incurred age factors against the reference bands (only ages present in both), scores the ultimate loss ratio against the band of reference loss ratios on developed incurred (the generated triangles run to full development, so the reference's immature latest diagonal would not be like for like), and scores loss-ratio drift against a fixed `[1/driftTolerance, driftTolerance]` band (passing vacuously when drift cannot be computed).
+- Helpers `checkAges`, `(r ReferenceSet) developedIncurred()` (`DevelopedIncurred`, falling back to `Incurred`), `lossRatio` (total latest incurred over total earned premium), and `lossRatioDrift` (second-half over first-half aggregate loss ratio, computed from generated data only, so it is immune to reference immaturity; the middle year is excluded for odd counts).
 
 ## 11. Application layer
 
@@ -409,12 +409,13 @@ exposure.csv:     origin_month,premium,exposure_units,policies
 
 ### 12.4 `schedulep` - the reference reader
 
-`internal/infrastructure/schedulep/reader.go` reads the Schedule P reference companies into `triangle.ReferenceSet`s. Each company JSON carries a `ClassId`, a `PaidTriangle` and `IncurredTriangle` (each a list of `[year, [values...]]` rows), and an `EarnedPremium` list of `[year, amount]` pairs. Custom `UnmarshalJSON` methods on `triangleRow` and `premiumJSON` decode the positional pair encodings.
+`internal/infrastructure/schedulep/reader.go` reads the Schedule P reference companies into `triangle.ReferenceSet`s. Each company JSON carries a `ClassId`, a `PaidTriangle` and `IncurredTriangle` (each a list of `[year, [values...]]` rows), an `EarnedPremium` list of `[year, amount]` pairs, and `FutureIncurred`: the incurred development reported after the triangle's valuation date, as incremental `[year, [values...]]` rows that complete each origin year to ten ages. The file also carries `FuturePaid`, which nothing reads. Custom `UnmarshalJSON` methods on `triangleRow` and `premiumJSON` decode the positional pair encodings.
 
 - `LoadFile(path)` - one company from disk; company name is the file stem.
 - `LoadFS(fsys, dir)` - every `*.json` in a directory of a filesystem, sorted by name for determinism. This is what `runUI` uses with the embedded `refdata.Files`.
 - `LoadDir(dir)` - the on-disk variant over `os.DirFS`, rewriting the "no reference files" sentinel to include the directory.
 - `loadDirFS`, `parse`, `toTriangle` (unexported) - glob and sort names, parse each file (sorting premium and triangle rows by year), and require contiguous origin years in each triangle.
+- `develop(tri, future)` (unexported) - copies the cumulative triangle and appends the running sum of each origin year's later increments, giving `DevelopedIncurred`. No later development yields the zero triangle; an origin year outside the triangle is an error.
 
 ### 12.5 `web` - the server and view models
 

@@ -17,40 +17,14 @@ preset's own-damage close lag is shorter (mean 40 days, 3x above the size
 threshold). Findings whose numbers predate that say so. MR-3, MR-10 and MR-11
 have shipped too: pricing allows for nil claims and trends to the cover
 midpoint, the inflation index moves smoothly by occurrence date, and the
-exposed fraction counts cover days.
+exposed fraction counts cover days. So has MR-4: the loss ratio is scored
+against reference loss ratios developed to age 10.
 
 IDs are **MR** (model review). Severity uses the `docs/todo.md` scale: **high**
 undermines the mission, **medium** worth addressing soon, **low** fix when
 touching the area.
 
-## 1. MR-4 (medium) - generated incurred is compared against reference incurred that includes IBNR
-
-- Where: `internal/infrastructure/schedulep/reader.go` (reads only
-  `PaidTriangle` and `IncurredTriangle`); `internal/domain/triangle/compare.go`
-  (`lossRatio`).
-- The reference incurred behaves like Schedule P total incurred (paid, case,
-  bulk and IBNR): the median 12-24 factor is 0.974 and incurred converges on
-  paid by age 10. Generated incurred is case plus paid, with no IBNR.
-- Generated incurred also lands below 1, for an unrelated reason: nil-claim
-  case releases and post-close recoveries. On the whole book the 12-24 factor
-  was 0.928 with the preset, 0.954 with nil claims off, and 1.019 with
-  recoveries also off. The liability section the gate now scores has no
-  recoveries, so nil releases alone put its 12-24 factor at 0.982. The
-  gate would penalise realistic reporting delays, whose IBNR emergence pushes
-  case-incurred factors above a band centred below 1.
-- The "ultimate loss ratio" metric (formerly SL-2) scores a fully developed
-  generated diagonal against the reference's mixed-maturity latest diagonal.
-  The reference bias runs high, not low: loss ratios developed to age 10 are
-  0.981 x the latest-diagonal value at the median (P5 0.91, P95 1.01).
-- The reference files already carry the actual later development
-  (`FuturePaid`, `FutureIncurred`), which the reader ignores, so no chain-ladder
-  completion is needed. The developed band would be [0.256, 0.799] against the
-  current [0.265, 0.843].
-- Action: read the full squares and score the loss ratio on developed values;
-  either add IBNR to the generated incurred for the comparison or state in the
-  realism wording that the incurred check compares different quantities.
-
-## 2. MR-5 (medium) - a fixed-dollar size threshold creates a hidden trend in settlement speed
+## 1. MR-5 (medium) - a fixed-dollar size threshold creates a hidden trend in settlement speed
 
 - Where: `internal/domain/claim/claim.go`, `closeLagRegime`.
 - Measured before MR-2 recalibrated the stretch from 6x to 3x; the mechanism
@@ -66,7 +40,7 @@ touching the area.
   the threshold, and consider a smooth size relationship such as
   `mean x (size/threshold)^beta`.
 
-## 3. MR-6 (medium) - the first accident year behaves like a start-up book
+## 2. MR-6 (medium) - the first accident year behaves like a start-up book
 
 - Where: `internal/domain/policy/book.go` (no policies in force at the window
   start); the comment on `ExposureByMonth` in
@@ -83,7 +57,7 @@ touching the area.
 - Action: simulate a warm-up underwriting year before the window and keep only
   its in-window occurrences; correct the docs.
 
-## 4. MR-7 (low) - salvage is not tied to total losses
+## 3. MR-7 (low) - salvage is not tied to total losses
 
 - Where: `internal/domain/transaction/recovery.go`, `simulateClaim`.
 - 98% of salvage rows (3,723 of 3,798) land on partially damaged vehicles.
@@ -92,7 +66,7 @@ touching the area.
   cap (`Claim.Ultimate == Claim.CoverLimit` since MR-1), and size it off the
   sum insured.
 
-## 5. MR-8 (low) - third-party severity is a bare Pareto
+## 4. MR-8 (low) - third-party severity is a bare Pareto
 
 - Where: `internal/domain/claim/claim.go`, `drawGroundUpLoss`.
 - No third-party claim is below about $3,050 after excess, the mode sits at the
@@ -101,7 +75,7 @@ touching the area.
 - Action: a lognormal body with a Pareto tail, an optional liability limit, and
   a switch for applying the excess to third-party claims.
 
-## 6. MR-9 (low) - there is almost no pure IBNR, and third-party close lag ignores size
+## 5. MR-9 (low) - there is almost no pure IBNR, and third-party close lag ignores size
 
 - Where: `internal/domain/claim/claim.go` (one report lag for both claim types;
   `closeLagRegime` applies the size stretch to own damage only).
@@ -110,10 +84,18 @@ touching the area.
   later in practice, and reported-count methods have nothing to estimate.
 - The mission says larger claims take longer to close; for third-party claims,
   which drive late development, size and duration are independent.
+- The realism gate's incurred check compares generated case incurred with
+  Schedule P total incurred, which includes IBNR (carried over from MR-4).
+  Today it passes because both sit below 1 at early ages for different
+  reasons: reference IBNR released over time, generated nil claims releasing
+  their case. A real third-party report lag pushes case-incurred factors above
+  1 as late claims are reported, against bands centred below 1.
 - Action: a third-party report lag, and a size link in the third-party close
-  lag.
+  lag. With the report lag, add the unreported claims' cost (pure IBNR) to the
+  generated incurred the gate scores, so the incurred check stays like for
+  like.
 
-## 7. MR-12 (low) - one setting drives two kinds of variation
+## 6. MR-12 (low) - one setting drives two kinds of variation
 
 - Where: `internal/domain/policy/book.go`, `simulatePolicy`.
 - `spread` sets both the sum-insured lognormal sigma and the risk-factor
