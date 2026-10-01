@@ -436,7 +436,7 @@ CI runs gofmt, `go vet`, `go test` (on the minimum Go version in `go.mod` and on
 
 Screenshots are regenerated with `tools/screenshots` (start the UI on port 8093, `npm install`, `node screenshots.js`).
 
-The layout is domain-driven: `internal/domain/` holds the simulation model (policy, claim, transaction, lob, triangle) with no outside dependencies, `internal/application/` the use cases, and `internal/infrastructure/` the adapters (config, CSV, Schedule P reader, gonum-backed randomness). See `docs/architecture.md` for the full tour.
+The layout is domain-driven: `internal/domain/` holds the simulation model (policy, claim, transaction, lob, triangle) with no outside dependencies, `internal/application/` the use cases, and `internal/infrastructure/` the adapters (config, CSV, Schedule P reader, gonum-backed randomness). See `docs/architecture.md` for an overview.
 
 ## For contributors: project docs
 

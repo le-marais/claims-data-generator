@@ -70,7 +70,7 @@ Run `go test` and `go vet` before claiming work is done. CI (`.github/workflows/
   2. The mirrored config struct and `ToDomain` in `internal/infrastructure/config/config.go`, with the same Go field name as the domain. `TestToDomainMapsEveryField` fails if a field is not carried across.
   3. The preset YAML (`motor-personal.yaml`), with a comment saying what the parameter does and why the preset uses its value.
   4. The form registry `formFields` in `internal/infrastructure/web/fields.go`: label, tip and group. `TestFormFieldsCoverEveryParameter` fails if a parameter has no form field.
-  5. Docs: the parameter lists in `docs/architecture.md` sections 6.1 and 6.2, and the README if a user would notice the behaviour.
+  5. Docs: the README if a user would notice the behaviour, including its model diagrams, which name parameters by their YAML key.
   6. If the preset sets a non-default value, refresh the golden hashes and re-check the realism gate.
 - **Adding a line of business** is a YAML file for the CLI (`generate --config my-lob.yaml`, no code change); surfacing it in the UI means embedding the YAML in `internal/infrastructure/config/config.go` with a `//go:embed` line and registering it in both `presetInfos` and `presetYAML` there. See `internal/infrastructure/config/motor-personal.yaml` for the annotated preset.
 - **Testing style.** Tests live beside the code as `_test.go`. Table-driven tests and external test packages (`package foo_test`) are the norm; internal tests use the `_internal_test.go` suffix.
