@@ -201,7 +201,11 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 		ultimate = shared.OneCent // a reportable claim always costs something
 	}
 
-	closeDate := report.AddDays(int(math.Round(drawCloseLag(src, s.params.CloseLag, cost, pol.RiskFactor, ownDamage))))
+	// The size stretch compares the cost in start-year dollars with the
+	// threshold, so claims inflation does not push a growing share of claims
+	// over it and slow settlement year on year (MR-5).
+	baseCost := cost / s.inflation.For(occurrence)
+	closeDate := report.AddDays(int(math.Round(drawCloseLag(src, s.params.CloseLag, baseCost, pol.RiskFactor, ownDamage))))
 
 	// Nil claims draw their severity and probability independently of claim
 	// size; real withdrawn claims skew small, so this is a known simplification.
@@ -240,11 +244,12 @@ func (s *ClaimSimulator) drawGroundUpLoss(src shared.RandomSource, pol policy.Po
 // closeLagRegime selects the (shape, mean) close-lag gamma parameters for a
 // claim: own-damage claims use the base parameters with the size stretch for
 // large claims; third-party claims use the long-tail parameters. Risk loading
-// applies to both.
-func closeLagRegime(cl lob.CloseLagParams, estimate, riskFactor float64, ownDamage bool) (shape, mean float64) {
+// applies to both. baseSize is the claim's cost in start-year dollars,
+// deflated by the claims inflation index.
+func closeLagRegime(cl lob.CloseLagParams, baseSize, riskFactor float64, ownDamage bool) (shape, mean float64) {
 	if ownDamage {
 		shape, mean = cl.Shape, cl.MeanDays
-		if estimate > cl.SizeThreshold {
+		if baseSize > cl.SizeThreshold {
 			mean *= cl.SizeMultiplier
 		}
 	} else {
@@ -257,7 +262,7 @@ func closeLagRegime(cl lob.CloseLagParams, estimate, riskFactor float64, ownDama
 // drawCloseLag draws a report-to-close (or reopen-to-second-close) delay in
 // days: gamma distributed, with own-damage and third-party claims drawing from
 // separate regimes (see closeLagRegime).
-func drawCloseLag(src shared.RandomSource, cl lob.CloseLagParams, estimate, riskFactor float64, ownDamage bool) float64 {
-	shape, mean := closeLagRegime(cl, estimate, riskFactor, ownDamage)
+func drawCloseLag(src shared.RandomSource, cl lob.CloseLagParams, baseSize, riskFactor float64, ownDamage bool) float64 {
+	shape, mean := closeLagRegime(cl, baseSize, riskFactor, ownDamage)
 	return src.Gamma(shape, mean/shape)
 }

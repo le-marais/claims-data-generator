@@ -69,6 +69,9 @@ claims:
   close_lag:
     shape: 1.2
     mean_days: 40
+    # Own-damage claims costing more than size_threshold in start-year
+    # dollars (deflated by the claims inflation index) settle
+    # size_multiplier times slower on average.
     size_threshold: 20000
     size_multiplier: 3
     risk_loading: 0.3

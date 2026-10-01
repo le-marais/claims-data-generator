@@ -67,6 +67,7 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 		WithWindow(req.StartYear, req.Years).
 		Simulate(src.Split("claims"), book)
 	claims = claim.NewReopenSimulator(req.LOB.Claims).
+		WithInflation(inflation).
 		Apply(src.Split("reopening"), claims)
 	claims = transaction.NewCaseEstimator(req.LOB.Runoff).
 		Apply(src.Split("case-estimate"), claims)

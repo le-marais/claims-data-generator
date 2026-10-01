@@ -45,7 +45,7 @@ const FIELD_GROUPS = [
       { path: ["claims", "severity", "third_party_alpha"], label: "Third party alpha", tip: "Pareto tail index; must exceed 1." },
       { path: ["claims", "close_lag", "shape"], label: "Close lag shape", tip: "Gamma shape of the close lag." },
       { path: ["claims", "close_lag", "mean_days"], label: "Close lag mean days", tip: "Base mean report-to-close lag." },
-      { path: ["claims", "close_lag", "size_threshold"], label: "Close lag size threshold", tip: "Claim cost above which the own-damage lag stretches." },
+      { path: ["claims", "close_lag", "size_threshold"], label: "Close lag size threshold", tip: "Own-damage claim cost, in start-year dollars (deflated by claims inflation), above which the lag stretches." },
       { path: ["claims", "close_lag", "size_multiplier"], label: "Close lag size multiplier", tip: "Stretch factor for large claims." },
       { path: ["claims", "close_lag", "risk_loading"], label: "Close lag risk loading", tip: "Exponent on the policy risk factor." },
       { path: ["claims", "close_lag", "third_party_shape"], label: "Third-party close lag shape", tip: "Gamma shape of the close lag for third-party (long-tail) claims." },

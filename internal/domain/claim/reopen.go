@@ -13,12 +13,21 @@ import (
 // sub-stream per claim so that enabling reopening never reshuffles the
 // draws of any other stage.
 type ReopenSimulator struct {
-	params lob.ClaimParams
+	params    lob.ClaimParams
+	inflation InflationIndex
 }
 
 // NewReopenSimulator builds a reopen simulator from the claim parameters.
 func NewReopenSimulator(p lob.ClaimParams) *ReopenSimulator {
 	return &ReopenSimulator{params: p}
+}
+
+// WithInflation sets the claims inflation index, used to express a reopen's
+// additional cost in start-year dollars for the close-lag size stretch. The
+// zero-value index (the default) leaves the cost nominal.
+func (s *ReopenSimulator) WithInflation(x InflationIndex) *ReopenSimulator {
+	s.inflation = x
+	return s
 }
 
 // Apply mutates reopened claims in place: CloseDate becomes the final
@@ -55,7 +64,8 @@ func (s *ReopenSimulator) Apply(src shared.RandomSource, claims []Claim) []Claim
 				additional = left
 			}
 		}
-		closeLag := int(math.Round(drawCloseLag(stream, s.params.CloseLag, additional.Dollars(), c.RiskFactor, c.OwnDamage)))
+		baseSize := additional.Dollars() / s.inflation.For(c.OccurrenceDate)
+		closeLag := int(math.Round(drawCloseLag(stream, s.params.CloseLag, baseSize, c.RiskFactor, c.OwnDamage)))
 		if closeLag < 1 {
 			closeLag = 1 // the second close is strictly after the reopen
 		}

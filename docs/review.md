@@ -18,29 +18,14 @@ threshold). Findings whose numbers predate that say so. MR-3, MR-10 and MR-11
 have shipped too: pricing allows for nil claims and trends to the cover
 midpoint, the inflation index moves smoothly by occurrence date, and the
 exposed fraction counts cover days. So has MR-4: the loss ratio is scored
-against reference loss ratios developed to age 10.
+against reference loss ratios developed to age 10. MR-5 is narrowed to the
+step that remains at the size threshold.
 
 IDs are **MR** (model review). Severity uses the `docs/todo.md` scale: **high**
 undermines the mission, **medium** worth addressing soon, **low** fix when
 touching the area.
 
-## 1. MR-5 (medium) - a fixed-dollar size threshold creates a hidden trend in settlement speed
-
-- Where: `internal/domain/claim/claim.go`, `closeLagRegime`.
-- Measured before MR-2 recalibrated the stretch from 6x to 3x; the mechanism
-  is unchanged, only its size.
-- The own-damage close-lag stretch applies above a nominal $20k, while claims
-  inflate at 4% a year. The share of own-damage claims above it grows from
-  2.4% (AY1998) to 5.8% (AY2007).
-- Own-damage paid in development year 1 falls from 0.656 to 0.607 of ultimate
-  across AY1999-2007; with the stretch off it is flat at 0.70-0.73. Chain
-  ladder assumes a stable pattern, so this is an unintended calendar trend. The
-  step at the threshold is also a cliff: a claim just above it has a 6x mean.
-- Action: compare the base-year value (deflated by the inflation index) with
-  the threshold, and consider a smooth size relationship such as
-  `mean x (size/threshold)^beta`.
-
-## 2. MR-6 (medium) - the first accident year behaves like a start-up book
+## 1. MR-6 (medium) - the first accident year behaves like a start-up book
 
 - Where: `internal/domain/policy/book.go` (no policies in force at the window
   start); the comment on `ExposureByMonth` in
@@ -56,6 +41,23 @@ touching the area.
   not: December 2007 carries a normal month (2,295 units).
 - Action: simulate a warm-up underwriting year before the window and keep only
   its in-window occurrences; correct the docs.
+
+## 2. MR-5 (low) - the own-damage size stretch is a cliff at the threshold
+
+- Where: `internal/domain/claim/claim.go`, `closeLagRegime`.
+- The hidden calendar trend this finding first described is fixed: the
+  threshold now compares the cost in start-year dollars, deflated by the claims
+  inflation index. Own-damage paid in development year 1 is flat at 0.852-0.868
+  of ultimate across AY1999-2007 (it fell from 0.849 to 0.835 before). The
+  share above the deflated threshold still falls slightly, 2.2% to 1.6%,
+  because sum insured inflates at 3% against 4% for claims, so more large
+  claims hit the sum-insured cap. That is a model effect, not an artefact.
+- What remains is the step: a claim just above the threshold has 3x the mean
+  lag of one just below it.
+- Action: consider a smooth size relationship such as
+  `mean x (size/threshold)^beta` above the threshold. It replaces
+  `size_multiplier`, so it breaks existing YAMLs; deferred on 2026-10-01 in
+  favour of keeping the schema.
 
 ## 3. MR-7 (low) - salvage is not tied to total losses
 
