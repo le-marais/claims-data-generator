@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"sync"
 	"testing"
 
 	refdata "github.com/le-marais/claimsgen/data/reference"
@@ -146,5 +147,74 @@ func TestLiabilitySectionPremiumAndClaims(t *testing.T) {
 	}
 	if row(liability.Paid) >= row(ag.Annual.Paid) {
 		t.Fatal("liability triangle should exclude own-damage payments")
+	}
+}
+
+// pooledLiabilityDrift is the liability section's loss-ratio drift - the
+// second-half accident years' loss ratio over the first half's - pooled over
+// seeds, so claim-sampling noise averages out. The seeds generate in
+// parallel; the pooling order is fixed, so the result is deterministic.
+func pooledLiabilityDrift(t *testing.T, req application.GenerateRequest, seeds []uint64) float64 {
+	t.Helper()
+	comps := make([]triangle.Comparison, len(seeds))
+	errs := make([]error, len(seeds))
+	var wg sync.WaitGroup
+	for i, seed := range seeds {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ds, err := application.GenerateDataset(t.Context(), random.NewSource(seed), req)
+			if err == nil {
+				comps[i], err = application.LiabilityComparison(ds, req.StartYear, req.Years)
+			}
+			errs[i] = err
+		}()
+	}
+	wg.Wait()
+	half := req.Years / 2
+	var inc1, ep1, inc2, ep2 float64
+	for i, c := range comps {
+		if errs[i] != nil {
+			t.Fatal(errs[i])
+		}
+		for j, row := range c.Incurred.Cells {
+			switch {
+			case j < half:
+				inc1, ep1 = inc1+row[len(row)-1], ep1+c.EarnedPremium[j]
+			case j >= req.Years-half:
+				inc2, ep2 = inc2+row[len(row)-1], ep2+c.EarnedPremium[j]
+			}
+		}
+	}
+	return (inc2 / ep2) / (inc1 / ep1)
+}
+
+// systematicDriftTolerance bounds the preset's loss-ratio drift once the
+// randomness pricing cannot know about is switched off. What remains is claim
+// sampling: at a 40k book one seed's drift has a standard deviation of about
+// 0.025 (mean 1.005 over 30 seeds), about 0.008 pooled over ten seeds, so
+// +/-3.5% is over four standard deviations. Pricing that trends 1% a year apart from claims drifts by about
+// 5% over the window.
+const systematicDriftTolerance = 0.035
+
+// MR-13: the realism report scores drift against the reference companies'
+// wide spread, so this test is the guard against systematic drift: with the
+// inflation path and pricing adequacy noise off, the model's loss ratio must
+// not trend across the window. The second half checks that the guard can
+// fail: pricing that trends 2% a year below claims must trip it.
+func TestPresetHasNoSystematicLossRatioDrift(t *testing.T) {
+	req := request(t)
+	req.StartYear, req.Years, req.InitialBookSize = 1998, 10, 40000
+	req.LOB.Claims.Inflation.Volatility = 0
+	req.LOB.Pricing.AdequacyVolatility = 0
+
+	if d := pooledLiabilityDrift(t, req, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}); math.Abs(d-1) > systematicDriftTolerance {
+		t.Errorf("noise-free loss-ratio drift %.4f, want within %.3f of 1", d, systematicDriftTolerance)
+	}
+
+	lagging := req
+	lagging.LOB.Pricing.InflationMean = req.LOB.Claims.Inflation.Mean - 0.02
+	if d := pooledLiabilityDrift(t, lagging, []uint64{1, 2, 3}); math.Abs(d-1) <= systematicDriftTolerance {
+		t.Errorf("pricing trending 2%% a year below claims gave drift %.4f, want outside %.3f of 1", d, systematicDriftTolerance)
 	}
 }

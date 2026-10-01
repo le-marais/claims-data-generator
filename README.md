@@ -129,7 +129,7 @@ The model deliberately trades some realism for a clean, reproducible engine. The
 - **Large own-damage claims settle slower in one step.** An own-damage claim above `size_threshold` (in start-year dollars) has `size_multiplier` times the mean close lag, so settlement time jumps at the threshold rather than rising smoothly with size.
 - **No seasonality, catastrophe, or event clustering.** Occurrences are uniform within each cover period and claims are independent across policies (the only cross-policy link is the shared inflation path).
 - **Each year's book is an independent cohort** - no policy renews, so per-policy claim histories never correlate across years.
-- **The preset's pricing assumptions start from the claims parameters.** The shipped `pricing` block uses the same values as the `claims` block, so the book carries no systematic mispricing and its loss ratio lands around `target_loss_ratio`: across seeds 1-40 it fell between 0.94 and 1.08 times the target, mostly from the simulated inflation path. A small `adequacy_volatility` (0.03) scatters each underwriting year's pricing around the target; much more pushes the loss ratio between the two halves of the window past the realism gate's drift band, which the inflation path already uses much of. Real cycles are larger and persist across years, which this independent per-year noise does not model. Set the `pricing` block away from the claims values to model underpricing, overpricing, or adverse experience. One small built-in gap: the reopen uplift ignores the cap that holds an own-damage reopen within the cover left, so claims near their limit are slightly overpriced.
+- **The preset's pricing assumptions start from the claims parameters.** The shipped `pricing` block uses the same values as the `claims` block, so the book carries no systematic mispricing and its loss ratio lands around `target_loss_ratio`: across seeds 1-40 it fell between 0.94 and 1.08 times the target, mostly from the simulated inflation path. A small `adequacy_volatility` (0.03) scatters each underwriting year's pricing around the target. Real cycles are larger and persist across years, which this independent per-year noise does not model. Set the `pricing` block away from the claims values to model underpricing, overpricing, or adverse experience. One small built-in gap: the reopen uplift ignores the cap that holds an own-damage reopen within the cover left, so claims near their limit are slightly overpriced.
 
 ## Realism
 
@@ -144,8 +144,9 @@ settlement as a short-tail class. The UI's triangle tab still shows the whole
 book. The companies were curated from the full Schedule P
 extract via `data/reference/gr-code-list.md` and `tools/prune-dec2025.ps1` to
 remove low-volume and degenerate companies. Paid and incurred age-to-age
-development factors and the ultimate loss ratio must fall inside the P5-P95
-bands observed across those companies. The generated triangles run to full
+development factors, the ultimate loss ratio, and the loss-ratio drift between
+the two halves of the accident years must fall inside the P5-P95 bands
+observed across those companies. The generated triangles run to full
 development, so the loss ratio is scored against each company's loss ratio
 developed to age 10 with its later reported development, not its latest
 diagonal. The incurred factors compare different quantities: Schedule P
@@ -155,7 +156,10 @@ different reasons, so treat the incurred check as a loose sanity bound. A
 backstop filter drops any company carrying no scorable signal, and the full
 min/max range is shown for context. The paid comparison is net of recoveries, matching how Schedule P
 reports paid losses. This runs as a test gate (`TestDefaultPresetIsRealistic`,
-across several seeds).
+across several seeds). Real books drift widely, so the drift band is loose; a
+separate test (`TestPresetHasNoSystematicLossRatioDrift`) switches the model's
+inflation and pricing noise off and requires the loss ratio to stay flat, which
+catches systematic drift such as pricing and claims inflation trending apart.
 
 ## Development
 

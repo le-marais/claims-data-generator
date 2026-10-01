@@ -12,7 +12,8 @@ controlled experiments: the shipped preset over 1998-2007 with a 40k initial
 book, seed 1 unless stated, toggling one feature at a time to isolate each
 effect. It also analysed the 96 embedded Schedule P companies directly.
 Figures are as measured then, except where a finding says otherwise. MR-1 to
-MR-4, MR-6, MR-10 and MR-11 have since shipped; their text is in git history.
+MR-4, MR-6, MR-10, MR-11 and MR-13 have since shipped; their text is in git
+history.
 
 On 2026-10-01 the remaining findings were re-ranked against `docs/mission.md`
 (synthetic data a reserving team can use without manual fixes, one engine for
@@ -25,30 +26,7 @@ IDs are **MR** (model review). Severity uses the `docs/todo.md` scale: **high**
 undermines the mission, **medium** worth addressing soon, **low** fix when
 touching the area.
 
-## 1. MR-13 (medium) - the loss-ratio drift band is far tighter than the reference
-
-- Where: `internal/domain/triangle/compare.go`, `driftTolerance`.
-- The gate fails a run whose second-half accident-year loss ratio is outside
-  [1/1.10, 1.10] of its first-half one. Across the 96 reference companies,
-  developed to age 10, that ratio runs from 0.54 (P5) to 1.47 (P95), median
-  0.91, and only 31% of them sit inside the band.
-- The generated drift comes mostly from the simulated inflation path, which
-  pricing knows only by its mean. Over 120 seeds of the preset at a 40k book
-  it has mean 1.007 and standard deviation 0.050, and 9 of 120 seeds fall
-  outside the band (3 of 120 before MR-6 gave AY1998 its full weight). The
-  gate passes because it runs three fixed seeds.
-- The band is a guard against systematic drift, such as pricing and claims
-  inflation trending apart, not a realism band. As a guard it also caps
-  realistic randomness: it is what holds the preset's `adequacy_volatility`
-  at 0.03.
-- Ranked first because every later model change has to pass this gate: a
-  change can fail it by luck rather than for a real reason.
-- Action: decide what the check is for. To keep it as a drift guard, score
-  the expected drift over several seeds, or remove the inflation path's
-  noise before scoring. To make it a realism check, use the reference P5-P95
-  band like the other metrics.
-
-## 2. MR-9 (medium) - there is almost no pure IBNR, and third-party close lag ignores size
+## 1. MR-9 (medium) - there is almost no pure IBNR, and third-party close lag ignores size
 
 - Where: `internal/domain/claim/claim.go` (one report lag for both claim types;
   `closeLagRegime` applies the size stretch to own damage only).
@@ -71,7 +49,7 @@ touching the area.
   generated incurred the gate scores, so the incurred check stays like for
   like.
 
-## 3. MR-7 (low) - salvage is not tied to total losses
+## 2. MR-7 (low) - salvage is not tied to total losses
 
 - Where: `internal/domain/transaction/recovery.go`, `simulateClaim`.
 - 98% of salvage rows (3,723 of 3,798) land on partially damaged vehicles.
@@ -82,7 +60,7 @@ touching the area.
   cap (`Claim.Ultimate == Claim.CoverLimit` since MR-1), and size it off the
   sum insured.
 
-## 4. MR-12 (low) - one setting drives two kinds of variation
+## 3. MR-12 (low) - one setting drives two kinds of variation
 
 - Where: `internal/domain/policy/book.go`, `simulatePolicy`.
 - `spread` sets both the sum-insured lognormal sigma and the risk-factor
@@ -92,7 +70,7 @@ touching the area.
   class's other schema changes.
 - Action: split it into two parameters.
 
-## 5. MR-8 (low) - third-party severity is a bare Pareto
+## 4. MR-8 (low) - third-party severity is a bare Pareto
 
 - Where: `internal/domain/claim/claim.go`, `drawGroundUpLoss`.
 - No third-party claim is below about $3,050 after excess, the mode sits at the
