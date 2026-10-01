@@ -39,11 +39,10 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			ag, err := application.Aggregate(ds, req.StartYear, req.Years, triangle.AccidentMonth)
+			report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, refs)
 			if err != nil {
 				t.Fatal(err)
 			}
-			report := application.EvaluateRealism(ag, refs)
 			if !report.Pass() {
 				t.Errorf("generated data outside Schedule P bands:\n%s", report)
 			}
@@ -63,11 +62,10 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ag, err := application.Aggregate(ds, req.StartYear, req.Years, triangle.AccidentMonth)
+	report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, refs)
 	if err != nil {
 		t.Fatal(err)
 	}
-	report := application.EvaluateRealism(ag, refs)
 	if len(report.PaidATA) != 9 {
 		t.Errorf("paid ATA checks = %d, want 9 (10 development years)", len(report.PaidATA))
 	}
@@ -95,11 +93,11 @@ func TestRealismScoresOnlyTheLiabilitySection(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		ag, err := application.Aggregate(ds, req.StartYear, req.Years, triangle.AccidentMonth)
+		report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, refs)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return application.EvaluateRealism(ag, refs)
+		return report
 	}
 	if fast, slow := report(20), report(2000); !reflect.DeepEqual(fast, slow) {
 		t.Fatalf("own-damage close lag moved the realism report:\nfast:\n%s\nslow:\n%s", fast, slow)
@@ -116,7 +114,11 @@ func TestLiabilitySectionPremiumAndClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for i, ep := range ag.LiabilityEarnedPremium {
+	liability, err := application.LiabilityComparison(ds, req.StartYear, req.Years)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, ep := range liability.EarnedPremium {
 		if ep <= 0 || ep >= ag.EarnedPremium[i] {
 			t.Fatalf("year %d liability earned premium %v not a proper share of %v", i, ep, ag.EarnedPremium[i])
 		}
@@ -138,10 +140,11 @@ func TestLiabilitySectionPremiumAndClaims(t *testing.T) {
 		}
 		return sum
 	}
-	if got := row(ag.Liability.Paid); math.Abs(got-tpPaid) > 0.01 {
+	// Third-party claims carry no recoveries, so their net paid is gross paid.
+	if got := row(liability.Paid); math.Abs(got-tpPaid) > 0.01 {
 		t.Fatalf("liability paid triangle holds %v, want the third-party claims' total paid %v", got, tpPaid)
 	}
-	if row(ag.Liability.Paid) >= row(ag.Annual.Paid) {
+	if row(liability.Paid) >= row(ag.Annual.Paid) {
 		t.Fatal("liability triangle should exclude own-damage payments")
 	}
 }

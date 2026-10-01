@@ -105,7 +105,7 @@ type checkJSON struct {
 	Within bool    `json:"within"`
 }
 
-func buildResponse(req generateRequest, ds application.Dataset, ag application.Aggregates, refs []triangle.ReferenceSet) generateResponseJSON {
+func buildResponse(req generateRequest, ds application.Dataset, ag application.Aggregates, realism triangle.Report) generateResponseJSON {
 	return generateResponseJSON{
 		Run: runInfoJSON{
 			LOB:             req.Params.Name,
@@ -126,7 +126,7 @@ func buildResponse(req generateRequest, ds application.Dataset, ag application.A
 			Incurred: triangleView(ag.Annual.Incurred),
 		},
 		Distributions: distributionsView(application.ComputeDistributions(ds)),
-		Realism:       realismView(application.EvaluateRealism(ag, refs)),
+		Realism:       realismView(realism),
 	}
 }
 
