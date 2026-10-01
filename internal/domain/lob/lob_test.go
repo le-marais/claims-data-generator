@@ -98,6 +98,7 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"book.excess_choices", func(l *LineOfBusiness) { l.Book.ExcessChoices[0].Weight = -1 }},
 		{"book.excess_choices", func(l *LineOfBusiness) { l.Book.ExcessChoices[0].Value = -100 }},
 		{"pricing.target_loss_ratio", func(l *LineOfBusiness) { l.Pricing.TargetLossRatio = 0 }},
+		{"pricing.adequacy_volatility", func(l *LineOfBusiness) { l.Pricing.AdequacyVolatility = -0.1 }},
 		{"pricing.base_frequency", func(l *LineOfBusiness) { l.Pricing.BaseFrequency = 0 }},
 		{"pricing.severity.third_party_alpha", func(l *LineOfBusiness) { l.Pricing.Severity.ThirdPartyAlpha = 1.0 }},
 		{"pricing.nil_probability", func(l *LineOfBusiness) { l.Pricing.NilProbability = 1.0 }},

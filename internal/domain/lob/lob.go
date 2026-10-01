@@ -50,6 +50,13 @@ type ExcessChoice struct {
 type PricingParams struct {
 	// TargetLossRatio is the assumed loss ratio premium is priced to.
 	TargetLossRatio float64
+	// AdequacyVolatility is the sigma of mean-one lognormal noise on each
+	// underwriting year's target loss ratio: how far a year's rates miss the
+	// target, as in an underwriting cycle. Every policy written in the year
+	// is priced to the same noisy target, so cohorts scatter around
+	// TargetLossRatio while the expected loss ratio stays on it. 0 switches
+	// it off.
+	AdequacyVolatility float64
 	// BaseFrequency is the assumed ground-up occurrence frequency at risk factor 1.
 	BaseFrequency float64
 	// Severity is the assumed ground-up loss mixture.
@@ -292,6 +299,7 @@ func (b BookParams) validate() error {
 func (p PricingParams) validate() error {
 	if err := checkFinite(
 		namedFloat{"pricing.target_loss_ratio", p.TargetLossRatio},
+		namedFloat{"pricing.adequacy_volatility", p.AdequacyVolatility},
 		namedFloat{"pricing.base_frequency", p.BaseFrequency},
 		namedFloat{"pricing.nil_probability", p.NilProbability},
 		namedFloat{"pricing.reopen_probability", p.ReopenProbability},
@@ -302,6 +310,9 @@ func (p PricingParams) validate() error {
 	}
 	if p.TargetLossRatio <= 0 {
 		return fmt.Errorf("pricing.target_loss_ratio: must be positive, got %v", p.TargetLossRatio)
+	}
+	if p.AdequacyVolatility < 0 {
+		return fmt.Errorf("pricing.adequacy_volatility: must not be negative, got %v", p.AdequacyVolatility)
 	}
 	if p.BaseFrequency <= 0 {
 		return fmt.Errorf("pricing.base_frequency: must be positive, got %v", p.BaseFrequency)

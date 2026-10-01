@@ -19,6 +19,7 @@ const FIELD_GROUPS = [
     label: "Pricing",
     fields: [
       { path: ["pricing", "target_loss_ratio"], label: "Target loss ratio", tip: "Assumed loss ratio premium is priced to. Premium = assumed expected loss / target." },
+      { path: ["pricing", "adequacy_volatility"], label: "Pricing adequacy volatility", tip: "Sigma of mean-one lognormal noise on each underwriting year's target loss ratio, like an underwriting cycle; 0 switches it off." },
       { path: ["pricing", "base_frequency"], label: "Assumed base frequency", tip: "Assumed ground-up frequency used for pricing (independent of the true claims frequency)." },
       { path: ["pricing", "severity", "third_party_weight"], label: "Assumed third party weight", tip: "Assumed probability a claim is third party, for pricing." },
       { path: ["pricing", "severity", "own_damage_median_fraction"], label: "Assumed own damage median fraction", tip: "Assumed median own-damage loss as a fraction of sum insured, for pricing." },

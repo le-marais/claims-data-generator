@@ -17,11 +17,12 @@ func pooledLossRatio(r application.SummaryReport) float64 {
 
 // presetLossRatioBand is how far the shipped preset's simulated loss ratio
 // may land from its target, as a factor of the target. The target sets
-// premium, not experience: the realized loss ratio is emergent, and mostly
-// moves with the simulated inflation path, which pricing knows only by its
-// mean. Over seeds 1-40 the preset landed between 0.93 and 1.09 times the
-// target, at a 4k and a 10k initial book alike, so +/-15% leaves room for
-// the preset's pricing and claims assumptions to drift apart by design.
+// premium, not experience: the realized loss ratio is emergent. It moves
+// mostly with the simulated inflation path, which pricing knows only by its
+// mean, and with each underwriting year's adequacy noise. Over seeds 1-40,
+// at a 40k initial book, the preset landed between 0.94 and 1.08 times the
+// target, and the spread barely narrows with book size. +/-15% leaves room
+// for the preset's pricing and claims assumptions to drift apart by design.
 const presetLossRatioBand = 0.15
 
 // The preset's simulated loss ratio lands in a range around its target, not
