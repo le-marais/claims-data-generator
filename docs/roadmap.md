@@ -22,7 +22,7 @@ Only motor personal exists as a line of business today.
 
 ## Near term
 
-The real-claims-data backlog from the mission is complete (claims inflation, nil claims, recoveries, reopened claims), and so is the model-realism pass agreed on 2026-10-01 (MR-13, MR-9, SL-7, MR-7) and CI (CI-1). The next step is the second line of business below, which folds in MR-12 (separate sum-insured and risk spreads) and the per-class switches from MR-8 (liability limit, excess on liability claims). Adding a parameter now follows the checklist in `AGENTS.md`, with tests that catch a field missing from the config mapping or the UI form.
+The real-claims-data backlog is complete (claims inflation, nil claims, recoveries, reopened claims), and so is the model-realism pass agreed on 2026-10-01 (MR-13, MR-9, SL-7, MR-7) and CI (CI-1). The next step is the second line of business below, which folds in MR-12 (separate sum-insured and risk spreads) and the per-class switches from MR-8 (liability limit, excess on liability claims). Adding a parameter now follows the checklist in `AGENTS.md`, with tests that catch a field missing from the config mapping or the UI form.
 
 ## Mid term - second line of business
 

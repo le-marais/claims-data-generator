@@ -2,54 +2,46 @@
 
 ## Pitch
 
-A local app that generates realistic, fully synthetic insurance claims data as dummy input to reserving processes.
+A local app that generates realistic, fully synthetic insurance claims data as input to reserving demos and tests.
 
 ## The problem
 
-Reserving teams often need anonymized individual claims data for demos and testing. Real data is sensitive and hard to share, public datasets lack transaction-level detail, and ad-hoc scripts aren't reusable. This app produces realistic synthetic data on demand, with no data governance concerns since nothing is real.
+Reserving teams need individual claims data for demos and testing. Real data is sensitive and hard to share, public datasets lack transaction-level detail, and ad-hoc scripts are not reusable. claimsgen produces realistic data on demand, and because nothing in it is real, there are no data governance concerns.
 
 ## Who it's for
 
-Reserving actuaries and analysts on our team first. Later, the wider actuarial community as a general-purpose tool for anyone who needs realistic synthetic claims data.
+Reserving actuaries and analysts on our team first, then the wider actuarial community.
 
 ## What it does
 
-The app simulates three linked datasets for a class of business:
+One run simulates a class of business and writes five linked CSVs:
 
-1. **Policy data** - the book of policies per calendar year, used for estimating exposure and simulating claim events in every year. Includes per-policy details such as sum insured, excess, and a risk factor. Varied by calendar year to reflect economic and other business trends.
-2. **Claims data** - claim events arising from the policy book, with realistic occurrence, report, and close dates and an estimated initial claim
- size which is influenced by the policy's details (sum insured, excess, risk factor).
-3. **Transactions** - the case estimate movements and payments over each claim's lifetime.
+- `policies.csv` - the book of policies per calendar year, with sum insured, excess, risk factor and premium
+- `claims.csv` - claim events with occurrence, report and close dates and an initial case estimate
+- `transactions.csv` - each claim's case estimate movements, payments and recoveries over its lifetime
+- `triangles.csv` - monthly development triangles: paid, paid net of recoveries, incurred and reported claim counts
+- `exposure.csv` - premium, exposure and policy count by origin month
 
-The simulated behavior is realistic: claim events are driven by exposure, report lags and close delays reflect the class of business, larger claims take longer to close, and every claim's case estimate converges to zero at closure, with payments derived from case estimate movements.
+Claim events are driven by exposure and policy details, report and settlement lags reflect the class of business, and the data carries the features of a real claims extract: nil claims, reopened claims, salvage and subrogation, and claims inflation across calendar years.
 
-There is no set valuation date - all claims develop fully and run to closure. This is deliberate: for testing, the fully developed data supports out-of-sample analysis.
+Every claim runs to closure - there is no valuation date - so the fully developed data supports out-of-sample testing of reserving methods. The same seed and parameters always produce byte-identical output.
 
-Generation is reproducible - the same seed and parameters produce the same dataset, so tests can rely on repeatable data.
+The engine is parameterized per line of business. Personal motor ships as the embedded preset; a new short-tail class is a YAML file.
 
-The engine is parameterized per line of business and focused on short tail classes - book size, volatility, delays, severities - starting with personal motor insurance.
+It runs as a CLI (`claimsgen generate`) or as a local browser UI (`claimsgen ui`) that also shows summary stats, triangles, distributions and a realism check.
 
 ## Differentiators
 
-- **Transaction-level realism** - not just claim triangles, but full policy, claim, and transaction detail that resembles a real claims system extract.
-- **One parameterizable engine** - adjustable parameters mean any short tail class of business can be simulated with the same code.
-- **Local, fast, zero-setup** - runs entirely on a laptop, no deployment needed. The choice of interface is a design decision.
+- **Transaction-level realism** - full policy, claim and transaction detail resembling a claims system extract, not just triangles.
+- **One parameterizable engine** - any short-tail class can be simulated with the same code by changing parameters.
+- **Local and self-contained** - a single binary with the reference data embedded, no deployment or setup.
 
-## MVP success
+## Success
 
-A team member can generate a realistic motor personal dataset (policies, claims, transactions) on their laptop and feed it into a reserving demo without manual fixes.
+A team member can generate a realistic personal motor dataset on a laptop and feed it into a reserving demo without manual fixes.
 
-To assess realism, the simulated data is compared to Schedule P datasets of a similar class of business.
+Realism is measured against Schedule P: the third-party (liability) section of the shipped preset must sit inside the P5-P95 bands of the private passenger auto liability reference companies.
 
-## Beyond the MVP
+## Next
 
-Extend the engine to more short tail lines of business (e.g. commercial property), then open the tool up to the wider actuarial community. Later, assess whether the simulation can be extended to long tail classes such as liability.
-
-Add further features of real claims data that are excluded from the MVP:
-
-- Nil claims (closed without payment) - done
-- Reopened claims - done
-- Recoveries (salvage and subrogation) - done
-- Claims inflation across calendar years - done
-
-See `docs/roadmap.md` for current status and sequencing.
+More short-tail lines of business, starting with commercial property, then opening the tool to the wider actuarial community. Whether the engine extends to long-tail classes is a later question. See `docs/roadmap.md` for status and sequencing.
