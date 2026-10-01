@@ -174,6 +174,10 @@ function startElapsed() {
 }
 
 let inFlight = null; // AbortController for the run in progress, if any
+// The request behind the results on screen. The download sends it again: the
+// same seed and parameters reproduce the run byte for byte, so the server
+// keeps nothing between the two.
+let shownRun = null;
 
 async function generate(event) {
   event.preventDefault();
@@ -193,7 +197,6 @@ async function generate(event) {
       start_year: Number($("#start-year").value),
       years: Number($("#years").value),
       initial_book_size: Number($("#initial-book-size").value),
-      out_dir: $("#out-dir").value,
       origin_basis: $("#origin-basis").value,
       params: collectParams(),
     };
@@ -204,6 +207,7 @@ async function generate(event) {
       signal: inFlight.signal,
     });
     renderResults(run);
+    shownRun = body;
     markStale(false);
   } catch (e) {
     // An abort is the user's own doing, so it is reported as a state, not a
@@ -215,6 +219,43 @@ async function generate(event) {
     btn.disabled = false;
     btn.textContent = "Generate";
     cancelBtn.hidden = true;
+  }
+}
+
+// download fetches the zip of the run on screen and hands it to the browser
+// as a file.
+async function download() {
+  if (!shownRun) return;
+  clearError();
+  const btn = $("#download-btn");
+  btn.disabled = true;
+  btn.textContent = "Preparing download…";
+  try {
+    const res = await fetch("/api/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(shownRun),
+    });
+    if (!res.ok) {
+      let msg = res.statusText;
+      try { msg = (await res.json()).error || msg; } catch { /* not JSON */ }
+      throw new Error(msg);
+    }
+    const blob = await res.blob();
+    const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") || "")?.[1] || "claimsgen.zip";
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url));
+  } catch (e) {
+    showError(`Download failed: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Download CSVs";
   }
 }
 
@@ -233,7 +274,7 @@ function renderRunHeader(run) {
     `${run.lob} · seed ${run.seed} · ${run.start_year}–${run.start_year + run.years - 1} · ` +
     `${run.origin_basis} origin · ` +
     `${fmtInt.format(run.policies)} policies · ${fmtInt.format(run.claims)} claims · ` +
-    `${fmtInt.format(run.transactions)} transactions · ${run.out_dir}`;
+    `${fmtInt.format(run.transactions)} transactions`;
 }
 
 function th(text, tip) {
@@ -538,6 +579,7 @@ function initTabs() {
 
 $("#config-form").addEventListener("submit", generate);
 $("#cancel-btn").addEventListener("click", () => inFlight?.abort());
+$("#download-btn").addEventListener("click", download);
 $("#reset-params").addEventListener("click", () => {
   if (!preset) { showError("Preset failed to load — reload the page."); return; }
   try { buildParamsForm(); } catch (e) { showError(e.message); }

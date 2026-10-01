@@ -3,7 +3,6 @@ package csv
 import (
 	"fmt"
 	"math"
-	"os"
 	"strconv"
 
 	"github.com/le-marais/claimsgen/internal/application"
@@ -20,12 +19,17 @@ import (
 //
 // exposure.csv holds one row per origin month on the same origin basis.
 func WriteAggregates(dir string, ag application.Aggregates) error {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("creating output directory: %w", err)
+	open, err := dirOpener(dir)
+	if err != nil {
+		return err
 	}
+	return writeAggregates(open, ag)
+}
+
+func writeAggregates(open opener, ag application.Aggregates) error {
 	g := ag.Grid
 	rows := g.Origins() * g.DevPeriods
-	if err := writeFile(dir, "triangles.csv",
+	if err := writeFile(open, "triangles.csv",
 		"origin_month,dev_month,paid,paid_net,incurred,reported_count",
 		rows, func(i int) string {
 			o, d := i/g.DevPeriods, i%g.DevPeriods
@@ -38,7 +42,7 @@ func WriteAggregates(dir string, ag application.Aggregates) error {
 		}); err != nil {
 		return err
 	}
-	return writeFile(dir, "exposure.csv",
+	return writeFile(open, "exposure.csv",
 		"origin_month,premium,exposure_units,policies",
 		len(ag.Exposure), func(i int) string {
 			e := ag.Exposure[i]

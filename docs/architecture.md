@@ -55,7 +55,7 @@ Three read-only passes consume the `Dataset`:
 - `application.Summarize` and `application.ComputeDistributions` build the UI's per-year table and its severity and lag histograms.
 - `application.EvaluateRealism` builds `SectionComparison`, the scored section's annual triangles and premium, and scores it with `triangle.CompareToReference`.
 
-The CLI writes the three dataset CSVs and, from `Aggregates`, `triangles.csv` and `exposure.csv`. The web server writes the same five files and returns the analytics as JSON.
+The CLI writes the three dataset CSVs and, from `Aggregates`, `triangles.csv` and `exposure.csv`, into a directory. The web server returns the analytics as JSON and serves the same five files as a zip download, which regenerates the run from its seed and parameters.
 
 ## Domain packages
 
@@ -104,9 +104,9 @@ The ledger is each claim's event stream, and every measure folds from it: outsta
 ## Adapters
 
 - **`config`** mirrors the domain structs field for field with `yaml` and `json` tags, so the domain stays tag-free and the same structs serve YAML loading and the web API. Decoding is strict, and `Load` maps then validates. The preset registry embeds `motor-personal.yaml` and lists it in `presetInfos` and `presetYAML`. `TestToDomainMapsEveryField` fails if a field is not carried across.
-- **`csv`** writes the five files with fixed formatting, so equal datasets give equal bytes. Every column is numeric, an ISO-8601 date or a fixed enum, so no quoting is needed. `transactions.csv` is in claim-registration order, not date order.
+- **`csv`** writes the five files with fixed formatting, so equal datasets give equal bytes, into a directory (`WriteDataset`, `WriteAggregates`) or one zip archive with fixed entry timestamps (`WriteZip`). Every column is numeric, an ISO-8601 date or a fixed enum, so no quoting is needed. `transactions.csv` is in claim-registration order, not date order.
 - **`schedulep`** reads each reference company's paid and incurred triangles, earned premium, and later reported development, which completes the incurred triangle for the loss-ratio checks. `refdata` embeds the 96 private passenger auto companies; the other five Schedule P lines in `data/reference/schedule p/` are curated but neither embedded nor read.
-- **`web`** serves the embedded single-page UI and a JSON API: `/api/lobs`, `/api/lobs/{id}/preset`, `/api/limits`, `/api/fields` and `/api/generate`. The parameter form is built from the `formFields` registry, which `TestFormFieldsCoverEveryParameter` keeps complete. `ServeHTTP` rejects non-local `Host` and `Origin` headers. Runs are capped in size (`checkRunSize`) and serialised through a one-deep run slot with a short queue, so two tabs cannot write into the same `out_dir` at once.
+- **`web`** serves the embedded single-page UI and a JSON API: `/api/lobs`, `/api/lobs/{id}/preset`, `/api/limits`, `/api/fields`, `/api/generate` (the run's analytics) and `/api/download` (the run's CSVs as a zip). Both run endpoints share one decode, check and generate path. The server is stateless and writes no files: the browser keeps the request behind the results it shows and sends it again to download, and the same seed and parameters reproduce the run byte for byte. The parameter form is built from the `formFields` registry, which `TestFormFieldsCoverEveryParameter` keeps complete. `ServeHTTP` rejects non-local `Host` and `Origin` headers, and runs are capped in size (`checkRunSize`).
 
 The CLI dispatches `generate` (load the preset or a `--config` YAML, generate, write the five CSVs) and `ui` (load the embedded reference data, bind `127.0.0.1:<port>`, serve).
 

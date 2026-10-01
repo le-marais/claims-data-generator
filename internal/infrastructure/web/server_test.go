@@ -1,9 +1,11 @@
 package web_test
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -14,6 +16,7 @@ import (
 
 	refdata "github.com/le-marais/claimsgen/data/reference"
 	"github.com/le-marais/claimsgen/internal/application"
+	"github.com/le-marais/claimsgen/internal/domain/triangle"
 	"github.com/le-marais/claimsgen/internal/infrastructure/config"
 	csvout "github.com/le-marais/claimsgen/internal/infrastructure/csv"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
@@ -94,7 +97,7 @@ func TestPresetUnknown(t *testing.T) {
 	}
 }
 
-func generateBody(t *testing.T, outDir string) map[string]any {
+func generateBody(t *testing.T) map[string]any {
 	t.Helper()
 	params, err := config.PresetParams("motor-personal")
 	if err != nil {
@@ -105,14 +108,12 @@ func generateBody(t *testing.T, outDir string) map[string]any {
 		"start_year":        1998,
 		"years":             2,
 		"initial_book_size": 300,
-		"out_dir":           outDir,
 		"params":            params,
 	}
 }
 
 func TestGenerateRoundTrip(t *testing.T) {
-	outDir := t.TempDir()
-	rec := do(t, newTestServer(t), "POST", "/api/generate", generateBody(t, outDir))
+	rec := do(t, newTestServer(t), "POST", "/api/generate", generateBody(t))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -181,8 +182,22 @@ func TestGenerateRoundTrip(t *testing.T) {
 	if resp.Realism.LossRatioDrift.Value <= 0 {
 		t.Fatalf("realism.loss_ratio_drift = %+v", resp.Realism.LossRatioDrift)
 	}
+}
 
-	// The UI path must write byte-identical CSVs to the CLI path.
+// The download is the CLI's five CSVs, byte for byte, as one zip named after
+// the line of business and seed.
+func TestDownloadMatchesTheCLI(t *testing.T) {
+	rec := do(t, newTestServer(t), "POST", "/api/download", generateBody(t))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/zip" {
+		t.Errorf("Content-Type = %q, want application/zip", got)
+	}
+	if got := rec.Header().Get("Content-Disposition"); got != `attachment; filename="motor-personal-seed-7.zip"` {
+		t.Errorf("Content-Disposition = %q", got)
+	}
+
 	params, err := config.PresetParams("motor-personal")
 	if err != nil {
 		t.Fatal(err)
@@ -193,42 +208,70 @@ func TestGenerateRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	ag, err := application.Aggregate(ds, 1998, 2, triangle.AccidentMonth)
+	if err != nil {
+		t.Fatal(err)
+	}
 	wantDir := t.TempDir()
 	if err := csvout.WriteDataset(wantDir, ds); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"policies.csv", "claims.csv", "transactions.csv"} {
-		got, err := os.ReadFile(filepath.Join(outDir, name))
+	if err := csvout.WriteAggregates(wantDir, ag); err != nil {
+		t.Fatal(err)
+	}
+	z, err := zip.NewReader(bytes.NewReader(rec.Body.Bytes()), int64(rec.Body.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(z.File) != 5 {
+		t.Fatalf("zip holds %d files, want 5", len(z.File))
+	}
+	for _, f := range z.File {
+		rc, err := f.Open()
 		if err != nil {
 			t.Fatal(err)
 		}
-		want, err := os.ReadFile(filepath.Join(wantDir, name))
+		got, err := io.ReadAll(rc)
+		if cerr := rc.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := os.ReadFile(filepath.Join(wantDir, f.Name))
 		if err != nil {
 			t.Fatal(err)
 		}
 		if !bytes.Equal(got, want) {
-			t.Fatalf("%s differs between UI and CLI path", name)
+			t.Errorf("%s differs between the download and the CLI path", f.Name)
 		}
 	}
 }
 
-func TestGenerateWritesTrianglesAndExposure(t *testing.T) {
-	outDir := t.TempDir()
-	rec := do(t, newTestServer(t), "POST", "/api/generate", generateBody(t, outDir))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+func TestDownloadRejectsAnInvalidRun(t *testing.T) {
+	body := generateBody(t)
+	body["years"] = 0
+	rec := do(t, newTestServer(t), "POST", "/api/download", body)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "years") {
+		t.Fatalf("status = %d, body = %s; want a 400 naming years", rec.Code, rec.Body.String())
 	}
-	for _, name := range []string{"policies.csv", "claims.csv", "transactions.csv", "triangles.csv", "exposure.csv"} {
-		if _, err := os.Stat(filepath.Join(outDir, name)); err != nil {
-			t.Errorf("missing %s: %v", name, err)
-		}
+}
+
+// The browser no longer sends an output directory, and an old client that
+// still does is told so rather than silently ignored.
+func TestGenerateRejectsAnOutputDirectory(t *testing.T) {
+	body := generateBody(t)
+	body["out_dir"] = t.TempDir()
+	rec := do(t, newTestServer(t), "POST", "/api/generate", body)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "out_dir") {
+		t.Fatalf("status = %d, body = %s; want a 400 naming out_dir", rec.Code, rec.Body.String())
 	}
 }
 
 func TestGenerateDefaultsToTheAccidentBasis(t *testing.T) {
 	// generateBody carries no origin_basis, so the response must report the
 	// accident default rather than an empty string.
-	rec := do(t, newTestServer(t), "POST", "/api/generate", generateBody(t, t.TempDir()))
+	rec := do(t, newTestServer(t), "POST", "/api/generate", generateBody(t))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -246,7 +289,7 @@ func TestGenerateDefaultsToTheAccidentBasis(t *testing.T) {
 }
 
 func TestGenerateAcceptsTheUnderwritingBasis(t *testing.T) {
-	body := generateBody(t, t.TempDir())
+	body := generateBody(t)
 	body["origin_basis"] = "underwriting"
 	rec := do(t, newTestServer(t), "POST", "/api/generate", body)
 	if rec.Code != http.StatusOK {
@@ -266,7 +309,7 @@ func TestGenerateAcceptsTheUnderwritingBasis(t *testing.T) {
 }
 
 func TestGenerateRejectsAnUnknownOriginBasis(t *testing.T) {
-	body := generateBody(t, t.TempDir())
+	body := generateBody(t)
 	body["origin_basis"] = "policy"
 	rec := do(t, newTestServer(t), "POST", "/api/generate", body)
 	if rec.Code != http.StatusBadRequest {
@@ -278,8 +321,7 @@ func TestGenerateRejectsAnUnknownOriginBasis(t *testing.T) {
 }
 
 func TestGenerateResponseIncludesNilCount(t *testing.T) {
-	outDir := t.TempDir()
-	rec := do(t, newTestServer(t), "POST", "/api/generate", generateBody(t, outDir))
+	rec := do(t, newTestServer(t), "POST", "/api/generate", generateBody(t))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
 	}
@@ -324,7 +366,7 @@ func TestGenerateResponseIncludesNilCount(t *testing.T) {
 }
 
 func TestGenerateValidationError(t *testing.T) {
-	body := generateBody(t, t.TempDir())
+	body := generateBody(t)
 	body["years"] = 0
 	rec := do(t, newTestServer(t), "POST", "/api/generate", body)
 	if rec.Code != http.StatusBadRequest {
@@ -336,7 +378,7 @@ func TestGenerateValidationError(t *testing.T) {
 }
 
 func TestGenerateBadParam(t *testing.T) {
-	body := generateBody(t, t.TempDir())
+	body := generateBody(t)
 	params := body["params"].(config.LOBParams)
 	params.Book.GrowthFactor = 0
 	body["params"] = params
@@ -466,7 +508,7 @@ func TestGenerateRejectsOversizedRuns(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			body := generateBody(t, t.TempDir())
+			body := generateBody(t)
 			tc.edit(body)
 			rec := do(t, newTestServer(t), "POST", "/api/generate", body)
 			if rec.Code != http.StatusBadRequest {
@@ -480,8 +522,7 @@ func TestGenerateRejectsOversizedRuns(t *testing.T) {
 }
 
 func TestGenerateReportsACancelledRun(t *testing.T) {
-	outDir := t.TempDir()
-	b, err := json.Marshal(generateBody(t, outDir))
+	b, err := json.Marshal(generateBody(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -494,13 +535,5 @@ func TestGenerateReportsACancelledRun(t *testing.T) {
 
 	if rec.Code != 499 {
 		t.Fatalf("status = %d, want 499 (client closed request); body = %s", rec.Code, rec.Body.String())
-	}
-	// A cancelled run must not leave a half-written CSV behind.
-	entries, err := os.ReadDir(outDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(entries) != 0 {
-		t.Fatalf("cancelled run wrote %d files into the output directory", len(entries))
 	}
 }

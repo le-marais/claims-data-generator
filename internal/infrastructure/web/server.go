@@ -3,6 +3,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
@@ -12,9 +13,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"path/filepath"
 	"strconv"
-	"sync/atomic"
+	"strings"
 
 	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
@@ -45,33 +45,23 @@ const (
 // set says "you cancelled this yourself".
 const statusClientClosedRequest = 499
 
-// maxRunsInFlight is how many generate requests may be running or queued
-// before the rest are turned away. One local user needs one run; the slack is
-// for a stray double-click or a second tab, not for throughput.
-const maxRunsInFlight = 4
-
-// Server handles the UI's HTTP API. Apart from the loaded reference sets and
-// the run slot it is stateless: the latest run lives in the browser.
+// Server handles the UI's HTTP API. Apart from the loaded reference sets it
+// is stateless: the latest run lives in the browser, and a download
+// regenerates the run from its seed and parameters, which reproduce it byte
+// for byte. The server writes no files.
 type Server struct {
 	refs []triangle.ReferenceSet
 	mux  *http.ServeMux
-	// runSlot is a one-deep semaphore holding the right to generate. Two runs
-	// pointed at the same out_dir would interleave writes to the same three
-	// CSVs and both report success, so runs are serialized. Waiting for the
-	// slot is cancellable, unlike a mutex: a cancelled run keeps working until
-	// the next stage boundary, and the retry that usually follows should queue
-	// behind it rather than be rejected.
-	runSlot  chan struct{}
-	inFlight atomic.Int32
 }
 
 func NewServer(refs []triangle.ReferenceSet) *Server {
-	s := &Server{refs: refs, mux: http.NewServeMux(), runSlot: make(chan struct{}, 1)}
+	s := &Server{refs: refs, mux: http.NewServeMux()}
 	s.mux.HandleFunc("GET /api/lobs", s.handleLOBs)
 	s.mux.HandleFunc("GET /api/lobs/{id}/preset", s.handlePreset)
 	s.mux.HandleFunc("GET /api/limits", s.handleLimits)
 	s.mux.HandleFunc("GET /api/fields", s.handleFields)
 	s.mux.HandleFunc("POST /api/generate", s.handleGenerate)
+	s.mux.HandleFunc("POST /api/download", s.handleDownload)
 
 	staticRoot, err := fs.Sub(staticFS, "static")
 	if err != nil {
@@ -152,58 +142,51 @@ type generateRequest struct {
 	StartYear       int              `json:"start_year"`
 	Years           int              `json:"years"`
 	InitialBookSize int              `json:"initial_book_size"`
-	OutDir          string           `json:"out_dir"`
 	OriginBasis     string           `json:"origin_basis"`
 	Params          config.LOBParams `json:"params"`
 }
 
-func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
+// run is one generated run: the request it answers, the line of business it
+// was generated for, the dataset and its aggregates.
+type run struct {
+	req  generateRequest
+	line lob.LineOfBusiness
+	ds   application.Dataset
+	ag   application.Aggregates
+}
+
+// runError is a failed run with the HTTP status that reports it.
+type runError struct {
+	status int
+	msg    string
+}
+
+// generate decodes a run request, checks it, and generates and aggregates the
+// run. Request, validation and domain errors and an oversized run are a 400,
+// a run cancelled by the client a 499, and an aggregation failure a 500.
+func (s *Server) generate(w http.ResponseWriter, r *http.Request) (run, *runError) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	var req generateRequest
 	if err := dec.Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("parsing request: %v", err))
-		return
+		return run{}, &runError{http.StatusBadRequest, fmt.Sprintf("parsing request: %v", err)}
 	}
 	seed, err := strconv.ParseUint(req.Seed, 10, 64)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "seed: must be a base-10 unsigned integer")
-		return
+		return run{}, &runError{http.StatusBadRequest, "seed: must be a base-10 unsigned integer"}
 	}
-	if req.OutDir == "" {
-		writeError(w, http.StatusBadRequest, "out_dir: must not be empty")
-		return
-	}
-	absOut, err := filepath.Abs(req.OutDir)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Sprintf("out_dir: %v", err))
-		return
-	}
-	req.OutDir = absOut
 	if req.OriginBasis == "" {
 		req.OriginBasis = string(triangle.AccidentMonth)
 	}
 	basis := triangle.OriginBasis(req.OriginBasis)
 	if err := basis.Validate(); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return run{}, &runError{http.StatusBadRequest, err.Error()}
 	}
 	line := req.Params.ToDomain()
 	if err := checkRunSize(line, req.Years, req.InitialBookSize); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
+		return run{}, &runError{http.StatusBadRequest, err.Error()}
 	}
-	if err := s.acquireRun(r.Context()); err != nil {
-		if errors.Is(err, errTooManyRuns) {
-			writeError(w, http.StatusConflict, err.Error())
-		} else {
-			writeError(w, statusClientClosedRequest, "run cancelled")
-		}
-		return
-	}
-	defer s.releaseRun()
-
 	ds, err := application.GenerateDataset(r.Context(), random.NewSource(seed), application.GenerateRequest{
 		LOB:             line,
 		StartYear:       req.StartYear,
@@ -211,55 +194,68 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		InitialBookSize: req.InitialBookSize,
 	})
 	if errors.Is(err, context.Canceled) {
-		writeError(w, statusClientClosedRequest, "run cancelled")
-		return
+		return run{}, &runError{statusClientClosedRequest, "run cancelled"}
 	}
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := csvout.WriteDataset(req.OutDir, ds); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+		return run{}, &runError{http.StatusBadRequest, err.Error()}
 	}
 	ag, err := application.Aggregate(ds, req.StartYear, req.Years, basis)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		return run{}, &runError{http.StatusInternalServerError, err.Error()}
+	}
+	return run{req: req, line: line, ds: ds, ag: ag}, nil
+}
+
+// handleGenerate runs a request and returns its analytics for the browser.
+func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
+	res, rerr := s.generate(w, r)
+	if rerr != nil {
+		writeError(w, rerr.status, rerr.msg)
 		return
 	}
-	if err := csvout.WriteAggregates(req.OutDir, ag); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	realism, err := application.EvaluateRealism(ds, req.StartYear, req.Years, line.Claims.ScoredSection(), s.refs)
+	realism, err := application.EvaluateRealism(res.ds, res.req.StartYear, res.req.Years, res.line.Claims.ScoredSection(), s.refs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, buildResponse(req, ds, ag, realism))
+	writeJSON(w, http.StatusOK, buildResponse(res.req, res.ds, res.ag, realism))
 }
 
-var errTooManyRuns = errors.New("too many generation runs in flight; wait for one to finish")
-
-// acquireRun blocks until this request owns the single run slot, the client
-// goes away, or too many requests are already stacked up behind it.
-func (s *Server) acquireRun(ctx context.Context) error {
-	if s.inFlight.Add(1) > maxRunsInFlight {
-		s.inFlight.Add(-1)
-		return errTooManyRuns
+// handleDownload runs a request and returns its five CSVs as one zip archive.
+// The browser sends the request of the run it shows, and the same seed and
+// parameters reproduce that run byte for byte.
+func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
+	res, rerr := s.generate(w, r)
+	if rerr != nil {
+		writeError(w, rerr.status, rerr.msg)
+		return
 	}
-	select {
-	case s.runSlot <- struct{}{}:
-		return nil
-	case <-ctx.Done():
-		s.inFlight.Add(-1)
-		return ctx.Err()
+	// The archive is built in memory first, so a failure is still a clean 500
+	// rather than a truncated download.
+	var buf bytes.Buffer
+	if err := csvout.WriteZip(&buf, res.ds, res.ag); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
 	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, downloadName(res.req)))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes()) // a failed write means the client has gone; there is no one left to tell
 }
 
-func (s *Server) releaseRun() {
-	<-s.runSlot
-	s.inFlight.Add(-1)
+// downloadName names a run's archive after its line of business and seed,
+// keeping only characters that are safe in a file name and a header.
+func downloadName(req generateRequest) string {
+	name := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' {
+			return r
+		}
+		return -1
+	}, req.Params.Name)
+	if name == "" {
+		name = "claimsgen"
+	}
+	return fmt.Sprintf("%s-seed-%s.zip", name, req.Seed)
 }
 
 // checkRunSize rejects a run that would be too large to be a deliberate ask.
