@@ -76,7 +76,8 @@ claims:
   # Salvage sells the insured vehicle's wreck; subrogation recovers the
   # payout from an at-fault third party. Each recovery is a Beta-distributed
   # share of the claim's gross paid, received a lognormal lag after close.
-  # probability 0 switches a recovery type off.
+  # probability 0 switches a recovery type off, and the other fields of that
+  # type may then be left out.
   recoveries:
     salvage:
       probability: 0.10
@@ -95,7 +96,7 @@ claims:
   # an additional amount (`estimate_factor` times the claim's ultimate, with
   # lognormal noise, capped for own damage at the cover left), then the claim
   # closes for good. claims.csv shows the final close date. probability 0 switches
-  # reopening off.
+  # reopening off, and the other fields may then be left out.
   reopening:
     probability: 0.04
     estimate_factor: 0.45

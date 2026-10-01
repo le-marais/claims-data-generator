@@ -162,3 +162,21 @@ func TestExpectedSectionLossSplitsThePolicyLoss(t *testing.T) {
 		}
 	}
 }
+
+// A zero-weight severity component is skipped, so its unvalidated parameters
+// cannot turn the section cost into NaN or infinity.
+func TestExpectedSectionLossSkipsZeroWeightComponent(t *testing.T) {
+	p := PricingParams{
+		TargetLossRatio: 0.7, BaseFrequency: 0.1, InflationMean: 1,
+		Severity: SeverityParams{ThirdPartyWeight: 0, OwnDamageMedianFraction: 0.15, OwnDamageSigma: 1},
+	}
+	od, tp := p.ExpectedSectionLoss(20000, 500, 1, 1, 1)
+	if tp != 0 || !(od > 0) || math.IsInf(od, 0) {
+		t.Fatalf("no third party: got own damage %v, third party %v", od, tp)
+	}
+	p.Severity = SeverityParams{ThirdPartyWeight: 1, ThirdPartyScale: 5000, ThirdPartyAlpha: 2}
+	od, tp = p.ExpectedSectionLoss(20000, 500, 1, 1, 1)
+	if od != 0 || !(tp > 0) || math.IsInf(tp, 0) {
+		t.Fatalf("no own damage: got own damage %v, third party %v", od, tp)
+	}
+}

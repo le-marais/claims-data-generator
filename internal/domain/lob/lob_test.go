@@ -213,19 +213,84 @@ func TestValidateAcceptsIdentityInflationAndZeroNil(t *testing.T) {
 	}
 }
 
-func TestValidateAcceptsZeroRecoveryProbabilities(t *testing.T) {
-	l := validMotor()
-	l.Claims.Recoveries.Salvage.Probability = 0
-	l.Claims.Recoveries.Subrogation.Probability = 0
-	if err := l.Validate(); err != nil {
-		t.Fatalf("zero recovery probabilities (the off switch): want nil, got %v", err)
+// A sub-block that is switched off is never read, so a YAML author need not
+// invent parameters for it (MF-3): every field the switch makes unused is
+// left at its zero value here.
+func TestValidateSkipsSwitchedOffBlocks(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*LineOfBusiness)
+	}{
+		{"salvage off", func(l *LineOfBusiness) {
+			l.Claims.Recoveries.Salvage = RecoveryTypeParams{}
+		}},
+		{"subrogation off", func(l *LineOfBusiness) {
+			l.Claims.Recoveries.Subrogation = RecoveryTypeParams{}
+		}},
+		{"reopening off", func(l *LineOfBusiness) {
+			l.Claims.Reopening = ReopeningParams{}
+		}},
+		{"pricing reopen off", func(l *LineOfBusiness) {
+			l.Pricing.ReopenProbability = 0
+			l.Pricing.ReopenEstimateFactor = 0
+		}},
+		{"no third party", func(l *LineOfBusiness) {
+			for _, sev := range []*SeverityParams{&l.Claims.Severity, &l.Pricing.Severity} {
+				sev.ThirdPartyWeight = 0
+				sev.ThirdPartyScale = 0
+				sev.ThirdPartyAlpha = 0
+			}
+			l.Claims.CloseLag.ThirdPartyShape = 0
+			l.Claims.CloseLag.ThirdPartyMeanDays = 0
+		}},
+		{"no own damage", func(l *LineOfBusiness) {
+			for _, sev := range []*SeverityParams{&l.Claims.Severity, &l.Pricing.Severity} {
+				sev.ThirdPartyWeight = 1
+				sev.OwnDamageMedianFraction = 0
+				sev.OwnDamageSigma = 0
+			}
+		}},
+	}
+	for _, c := range cases {
+		l := validMotor()
+		c.mutate(&l)
+		if err := l.Validate(); err != nil {
+			t.Errorf("%s: want nil, got %v", c.name, err)
+		}
 	}
 }
 
-func TestValidateAcceptsZeroReopeningProbability(t *testing.T) {
-	l := validMotor()
-	l.Claims.Reopening.Probability = 0
-	if err := l.Validate(); err != nil {
-		t.Fatalf("zero reopening probability (the off switch): want nil, got %v", err)
+// The skip is tied to the switch: the same zeroed fields are still rejected
+// while the block is on.
+func TestValidateChecksEnabledBlocks(t *testing.T) {
+	cases := []struct {
+		field  string
+		mutate func(*LineOfBusiness)
+	}{
+		{"claims.recoveries.salvage.mean_share", func(l *LineOfBusiness) {
+			l.Claims.Recoveries.Salvage = RecoveryTypeParams{Probability: 0.1}
+		}},
+		{"claims.reopening.estimate_factor", func(l *LineOfBusiness) {
+			l.Claims.Reopening = ReopeningParams{Probability: 0.1}
+		}},
+		{"claims.close_lag.third_party_shape", func(l *LineOfBusiness) {
+			l.Claims.CloseLag.ThirdPartyShape = 0
+		}},
+		{"claims.severity.third_party_scale", func(l *LineOfBusiness) {
+			l.Claims.Severity.ThirdPartyWeight = 1
+			l.Claims.Severity.ThirdPartyScale = 0
+		}},
+		{"claims.severity.own_damage_sigma", func(l *LineOfBusiness) {
+			l.Claims.Severity.ThirdPartyWeight = 0
+			l.Claims.Severity.OwnDamageSigma = 0
+		}},
+	}
+	for _, c := range cases {
+		l := validMotor()
+		c.mutate(&l)
+		err := l.Validate()
+		if err == nil || !strings.Contains(err.Error(), c.field) {
+			t.Errorf("want error naming %q, got %v", c.field, err)
+		}
 	}
 }

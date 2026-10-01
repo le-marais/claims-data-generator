@@ -305,7 +305,7 @@ func (p PricingParams) validate() error {
 	if p.ReopenProbability < 0 || p.ReopenProbability >= 1 {
 		return fmt.Errorf("pricing.reopen_probability: must be in [0, 1), got %v", p.ReopenProbability)
 	}
-	if p.ReopenEstimateFactor <= 0 {
+	if p.ReopenProbability > 0 && p.ReopenEstimateFactor <= 0 {
 		return fmt.Errorf("pricing.reopen_estimate_factor: must be positive, got %v", p.ReopenEstimateFactor)
 	}
 	if p.InflationMean <= 0 {
@@ -350,7 +350,7 @@ func (c ClaimParams) validate() error {
 	if err := c.Reopening.validate(); err != nil {
 		return err
 	}
-	return c.CloseLag.validate()
+	return c.CloseLag.validate(c.Severity.ThirdPartyWeight > 0)
 }
 
 func (i InflationParams) validate() error {
@@ -382,6 +382,9 @@ func (r RecoveryTypeParams) validate(prefix string) error {
 	if r.Probability < 0 || r.Probability >= 1 {
 		return fmt.Errorf("%s.probability: must be in [0, 1), got %v", prefix, r.Probability)
 	}
+	if r.Probability == 0 {
+		return nil // switched off: the rest of the block is never read
+	}
 	if r.MeanShare <= 0 || r.MeanShare >= 1 {
 		return fmt.Errorf("%s.mean_share: must be in (0, 1), got %v", prefix, r.MeanShare)
 	}
@@ -409,6 +412,9 @@ func (r ReopeningParams) validate() error {
 	}
 	if r.Probability < 0 || r.Probability >= 1 {
 		return fmt.Errorf("claims.reopening.probability: must be in [0, 1), got %v", r.Probability)
+	}
+	if r.Probability == 0 {
+		return nil // switched off: the rest of the block is never read
 	}
 	if r.EstimateFactor <= 0 {
 		return fmt.Errorf("claims.reopening.estimate_factor: must be positive, got %v", r.EstimateFactor)
@@ -438,22 +444,31 @@ func (s SeverityParams) validate(prefix string) error {
 	if s.ThirdPartyWeight < 0 || s.ThirdPartyWeight > 1 {
 		return fmt.Errorf("%s.third_party_weight: must be in [0, 1], got %v", prefix, s.ThirdPartyWeight)
 	}
-	if s.OwnDamageMedianFraction <= 0 {
-		return fmt.Errorf("%s.own_damage_median_fraction: must be positive, got %v", prefix, s.OwnDamageMedianFraction)
+	// A component with zero weight is never drawn, so its parameters are not
+	// required.
+	if s.ThirdPartyWeight < 1 {
+		if s.OwnDamageMedianFraction <= 0 {
+			return fmt.Errorf("%s.own_damage_median_fraction: must be positive, got %v", prefix, s.OwnDamageMedianFraction)
+		}
+		if s.OwnDamageSigma <= 0 {
+			return fmt.Errorf("%s.own_damage_sigma: must be positive, got %v", prefix, s.OwnDamageSigma)
+		}
 	}
-	if s.OwnDamageSigma <= 0 {
-		return fmt.Errorf("%s.own_damage_sigma: must be positive, got %v", prefix, s.OwnDamageSigma)
-	}
-	if s.ThirdPartyScale <= 0 {
-		return fmt.Errorf("%s.third_party_scale: must be positive, got %v", prefix, s.ThirdPartyScale)
-	}
-	if s.ThirdPartyAlpha <= 1 {
-		return fmt.Errorf("%s.third_party_alpha: must exceed 1 for a finite mean, got %v", prefix, s.ThirdPartyAlpha)
+	if s.ThirdPartyWeight > 0 {
+		if s.ThirdPartyScale <= 0 {
+			return fmt.Errorf("%s.third_party_scale: must be positive, got %v", prefix, s.ThirdPartyScale)
+		}
+		if s.ThirdPartyAlpha <= 1 {
+			return fmt.Errorf("%s.third_party_alpha: must exceed 1 for a finite mean, got %v", prefix, s.ThirdPartyAlpha)
+		}
 	}
 	return nil
 }
 
-func (c CloseLagParams) validate() error {
+// validate checks the close-lag parameters. thirdParty is false when the
+// claims severity gives third-party claims no weight, so the third-party
+// regime is never drawn and its parameters are not required.
+func (c CloseLagParams) validate(thirdParty bool) error {
 	if err := checkFinite(
 		namedFloat{"claims.close_lag.shape", c.Shape},
 		namedFloat{"claims.close_lag.mean_days", c.MeanDays},
@@ -479,6 +494,9 @@ func (c CloseLagParams) validate() error {
 	}
 	if c.RiskLoading < 0 {
 		return fmt.Errorf("claims.close_lag.risk_loading: must not be negative, got %v", c.RiskLoading)
+	}
+	if !thirdParty {
+		return nil
 	}
 	if c.ThirdPartyShape <= 0 {
 		return fmt.Errorf("claims.close_lag.third_party_shape: must be positive, got %v", c.ThirdPartyShape)

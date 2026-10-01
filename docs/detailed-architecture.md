@@ -166,15 +166,15 @@ The `RandomSource` interface, covered in section 4.1.
 
 A helper `checkFinite(fields ...namedFloat) error` screens NaN and infinity first, because "every comparison with NaN is false" would otherwise let a NaN slip past ordinary range checks. `namedFloat{name, v}` pairs a field's display name with its value.
 
-Notable per-struct rules:
+Notable per-struct rules. A sub-block that is switched off is never read, so only its switch is validated: a YAML author does not have to invent parameters for a feature they turned off. Every field still passes the finite check.
 
 - `BookParams`: growth/spread/median/inflation all `> 0`; volatility `>= 0`; `ExcessChoices` non-empty with each weight `>= 0` and a positive total weight; each value `>= 0`.
-- `PricingParams`: `TargetLossRatio`, `BaseFrequency`, `InflationMean`, `ReopenEstimateFactor` all `> 0`; `ReopenProbability` in `[0, 1)`; delegates to `Severity.validate("pricing.severity")`.
+- `PricingParams`: `TargetLossRatio`, `BaseFrequency`, `InflationMean` all `> 0`; `ReopenProbability` in `[0, 1)`, and `ReopenEstimateFactor > 0` unless the reopen probability is 0; delegates to `Severity.validate("pricing.severity")`.
 - `ClaimParams`: base frequency, report-lag median/sigma `> 0`; `NilProbability` in `[0, 1)`; delegates to `Severity.validate("claims.severity")`, inflation, both recovery types (with the prefix passed in), reopening, and close lag.
-- `SeverityParams.validate(prefix string)`: `ThirdPartyWeight` in `[0, 1]` (inclusive, unlike the other probabilities); own-damage fraction/sigma, third-party scale `> 0`; `ThirdPartyAlpha > 1`. The prefix names the offending field for either the pricing or claims severity block.
-- `CloseLagParams`: shapes and mean days `> 0`; `SizeMultiplier >= 1`; loadings/threshold `>= 0`.
-- `RecoveryTypeParams.validate(prefix string)`: `Probability` in `[0, 1)`, `MeanShare` in the open interval `(0, 1)`, `Concentration`/`LagMedianDays > 0`, `LagSigma >= 0`.
-- `ReopeningParams`: `Probability` in `[0, 1)`, `EstimateFactor > 0`, sigmas/median with the usual non-negativity/positivity.
+- `SeverityParams.validate(prefix string)`: `ThirdPartyWeight` in `[0, 1]` (inclusive, unlike the other probabilities); own-damage fraction/sigma `> 0` unless the weight is 1; third-party scale `> 0` and `ThirdPartyAlpha > 1` unless the weight is 0. The prefix names the offending field for either the pricing or claims severity block.
+- `CloseLagParams.validate(thirdParty bool)`: shapes and mean days `> 0`; `SizeMultiplier >= 1`; loadings/threshold `>= 0`. The third-party shape and mean are skipped when the claims severity gives third-party claims no weight.
+- `RecoveryTypeParams.validate(prefix string)`: `Probability` in `[0, 1)`; when it is above 0, `MeanShare` in the open interval `(0, 1)`, `Concentration`/`LagMedianDays > 0`, `LagSigma >= 0`.
+- `ReopeningParams`: `Probability` in `[0, 1)`; when it is above 0, `EstimateFactor > 0`, sigmas/median with the usual non-negativity/positivity.
 - `RunoffParams`: `SettlementShare` in `(0, 1]`; adequacy mean/concentration `> 0`; the rest `>= 0`.
 
 ### 6.3 Expected-loss pricing (`expectedloss.go`)
@@ -186,7 +186,7 @@ This file prices premium deterministically (no randomness) from the assumed loss
 - `limitedStopLossLognormal(median, sigma, excess, cap)` - `E[(min(X,cap)-excess)+]`, i.e. the layer between `excess` and `cap`. Returns 0 when `cap <= excess`, else the difference of two stop-loss layers. This is the own-damage cover between the deductible and a total-loss cap.
 - `stopLossPareto(scale, alpha, excess)` - `E[(X-excess)+]` for a Pareto. Mean is `scale*alpha/(alpha-1)`. For `excess <= scale` it is `mean - excess`; otherwise the closed form `(scale/(alpha-1))*(scale/excess)^(alpha-1)`.
 - `(p PricingParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflationFactor, siDrift float64) float64` - the deterministic expected ultimate gross incurred loss for one policy under the pricing assumptions. It backs out the base-year sum insured (`baseSI = sumInsured/siDrift`), trends the assumed own-damage median by the claims index (`odMedian = inflationFactor*baseSI*OwnDamageMedianFraction`), prices own damage as a limited stop-loss capped at the drifted `sumInsured`, prices third party as an uncapped Pareto stop-loss on a claims-trended scale, mixes them by the assumed `ThirdPartyWeight`, applies a reopen uplift `1 + ReopenProbability*ReopenEstimateFactor`, and multiplies by the assumed `BaseFrequency*riskFactor`. Recoveries are excluded (gross basis). It draws no randomness, so pricing never perturbs a sub-stream.
-- `(p PricingParams) ExpectedSectionLoss(...) (ownDamage, thirdParty float64)` - the same expected loss split into the policy's own-damage and third-party liability sections; `ExpectedPolicyLoss` is their sum.
+- `(p PricingParams) ExpectedSectionLoss(...) (ownDamage, thirdParty float64)` - the same expected loss split into the policy's own-damage and third-party liability sections; `ExpectedPolicyLoss` is their sum. A section whose severity weight is zero is skipped rather than multiplied by zero, because its parameters are not validated and zero times an infinite layer cost is NaN.
 
 ## 7. Domain: `policy` - the book (step 1)
 

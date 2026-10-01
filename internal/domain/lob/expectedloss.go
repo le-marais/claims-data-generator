@@ -58,12 +58,21 @@ func (p PricingParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflat
 // the claims index and is uncapped. Both carry the reopen uplift.
 func (p PricingParams) ExpectedSectionLoss(sumInsured, excess, riskFactor, inflationFactor, siDrift float64) (ownDamage, thirdParty float64) {
 	s := p.Severity
-	baseSI := sumInsured / siDrift
-	odMedian := inflationFactor * baseSI * s.OwnDamageMedianFraction
-	od := limitedStopLossLognormal(odMedian, s.OwnDamageSigma, excess, sumInsured)
-	tpScale := inflationFactor * s.ThirdPartyScale
-	tp := stopLossPareto(tpScale, s.ThirdPartyAlpha, excess)
 	reopenUplift := 1 + p.ReopenProbability*p.ReopenEstimateFactor
 	perClaim := p.BaseFrequency * riskFactor * reopenUplift
-	return perClaim * (1 - s.ThirdPartyWeight) * od, perClaim * s.ThirdPartyWeight * tp
+	// A zero-weight component is skipped rather than multiplied by zero: its
+	// parameters need not be valid (see SeverityParams.validate), and zero
+	// times an infinite or NaN layer cost is NaN.
+	if s.ThirdPartyWeight < 1 {
+		baseSI := sumInsured / siDrift
+		odMedian := inflationFactor * baseSI * s.OwnDamageMedianFraction
+		od := limitedStopLossLognormal(odMedian, s.OwnDamageSigma, excess, sumInsured)
+		ownDamage = perClaim * (1 - s.ThirdPartyWeight) * od
+	}
+	if s.ThirdPartyWeight > 0 {
+		tpScale := inflationFactor * s.ThirdPartyScale
+		tp := stopLossPareto(tpScale, s.ThirdPartyAlpha, excess)
+		thirdParty = perClaim * s.ThirdPartyWeight * tp
+	}
+	return ownDamage, thirdParty
 }

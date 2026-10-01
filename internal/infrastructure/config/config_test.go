@@ -139,6 +139,34 @@ func TestLoadRejectsMissingReopeningBlock(t *testing.T) {
 	}
 }
 
+// A switched-off recovery or reopen block needs only its probability (MF-3).
+func TestLoadAcceptsSwitchedOffBlockWithOnlyProbability(t *testing.T) {
+	off := strings.Replace(validYAML, `    salvage:
+      probability: 0.1
+      mean_share: 0.15
+      concentration: 10
+      lag_median_days: 21
+      lag_sigma: 0.5
+`, `    salvage:
+      probability: 0
+`, 1)
+	off = strings.Replace(off, `  reopening:
+    probability: 0.04
+    estimate_factor: 0.45
+    estimate_sigma: 0.5
+    lag_median_days: 90
+    lag_sigma: 0.7
+`, `  reopening:
+    probability: 0
+`, 1)
+	if off == validYAML {
+		t.Fatal("fixture replacement did not apply")
+	}
+	if _, err := Load(strings.NewReader(off)); err != nil {
+		t.Fatalf("switched-off blocks with only a probability: want nil, got %v", err)
+	}
+}
+
 func TestLoadRejectsUnknownKeys(t *testing.T) {
 	bad := strings.Replace(validYAML, "growth_factor:", "growht_factor:", 1)
 	if _, err := Load(strings.NewReader(bad)); err == nil {
