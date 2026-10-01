@@ -2,7 +2,7 @@
 
 ## Pitch
 
-A local app that generates realistic, fully synthetic insurance claims data as input to reserving demos and tests.
+An app that can easily be run on a local machine which generates realistic, fully synthetic insurance claims data for research, demonstrations and dummy placeholder data in models.
 
 ## The problem
 
@@ -10,7 +10,7 @@ Reserving teams need individual claims data for demos and testing. Real data is 
 
 ## Who it's for
 
-Reserving actuaries and analysts on our team first, then the wider actuarial community.
+Reserving actuaries and researchers in the wider actuarial community.
 
 ## What it does
 
