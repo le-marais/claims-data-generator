@@ -29,9 +29,9 @@ touching the area.
 - No third-party claim is below about $3,050 after excess, the mode sits at the
   Pareto minimum, there is no policy limit, and the excess is applied to
   liability claims, which a US auto liability book would not do.
-- The limit and the excess switch are per-class decisions, so they belong with
-  the second line of business. The body shape shows in the claim-size
-  histogram but barely moves the triangles, so it can wait.
-- Action: with the second line of business, an optional liability limit and a
-  switch for applying the excess to third-party claims. Later, a lognormal
-  body with a Pareto tail.
+- The limit and the excess switch are per-section settings, so they belong on
+  `SectionParams` with the second line of business. The body shape shows in
+  the claim-size histogram but barely moves the triangles, so it can wait.
+- Action: with the second line of business, an optional per-section limit and
+  a per-section switch for applying the excess. Later, a lognormal body with a
+  Pareto tail as a third severity kind.

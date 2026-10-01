@@ -12,6 +12,12 @@ import (
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 )
 
+// Section indices in the motor preset.
+const (
+	ownDamage  = 0
+	thirdParty = 1
+)
+
 func request(t *testing.T) application.GenerateRequest {
 	t.Helper()
 	l, err := config.MotorPersonal()

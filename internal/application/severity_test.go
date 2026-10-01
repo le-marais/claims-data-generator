@@ -12,7 +12,7 @@ import (
 func meanOwnDamageByYear(ds application.Dataset, firstYear, lastYear int) (first, last float64) {
 	var fs, ls, fn, ln float64
 	for _, c := range ds.Claims {
-		if !c.OwnDamage {
+		if c.Section != ownDamage {
 			continue
 		}
 		switch c.OccurrenceDate.Year() {

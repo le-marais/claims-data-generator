@@ -40,7 +40,7 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, refs)
+			report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSection(), refs)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -63,7 +63,7 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, refs)
+	report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSection(), refs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,9 +78,9 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 	}
 }
 
-// The reference is a liability line, so the gate must score the third-party
-// section alone: own-damage settlement speed cannot move it.
-func TestRealismScoresOnlyTheLiabilitySection(t *testing.T) {
+// The reference is a liability line, so the gate must score the scored
+// third-party section alone: own-damage settlement speed cannot move it.
+func TestRealismScoresOnlyTheScoredSection(t *testing.T) {
 	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
 	if err != nil {
 		t.Fatal(err)
@@ -89,12 +89,12 @@ func TestRealismScoresOnlyTheLiabilitySection(t *testing.T) {
 		req := request(t)
 		req.Years = 10
 		req.InitialBookSize = 3000
-		req.LOB.Claims.CloseLag.MeanDays = ownDamageMeanDays
+		req.LOB.Claims.Sections[ownDamage].CloseLag.MeanDays = ownDamageMeanDays
 		ds, err := application.GenerateDataset(t.Context(), random.NewSource(5), req)
 		if err != nil {
 			t.Fatal(err)
 		}
-		report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, refs)
+		report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSection(), refs)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -105,7 +105,7 @@ func TestRealismScoresOnlyTheLiabilitySection(t *testing.T) {
 	}
 }
 
-func TestLiabilitySectionPremiumAndClaims(t *testing.T) {
+func TestScoredSectionPremiumAndClaims(t *testing.T) {
 	req := request(t)
 	ds, err := application.GenerateDataset(t.Context(), random.NewSource(8), req)
 	if err != nil {
@@ -115,7 +115,7 @@ func TestLiabilitySectionPremiumAndClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	liability, err := application.LiabilityComparison(ds, req.StartYear, req.Years)
+	liability, err := application.SectionComparison(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSection())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,12 +125,12 @@ func TestLiabilitySectionPremiumAndClaims(t *testing.T) {
 		}
 	}
 	tpPaid := 0.0
-	byClaim := map[int]bool{}
+	section := map[int]int{}
 	for _, c := range ds.Claims {
-		byClaim[c.ID] = c.OwnDamage
+		section[c.ID] = c.Section
 	}
 	for _, tx := range ds.Transactions {
-		if tx.Type == transaction.Payment && !byClaim[tx.ClaimID] {
+		if tx.Type == transaction.Payment && section[tx.ClaimID] == thirdParty {
 			tpPaid += tx.Amount.Dollars()
 		}
 	}
@@ -165,7 +165,7 @@ func pooledLiabilityDrift(t *testing.T, req application.GenerateRequest, seeds [
 			defer wg.Done()
 			ds, err := application.GenerateDataset(t.Context(), random.NewSource(seed), req)
 			if err == nil {
-				comps[i], err = application.LiabilityComparison(ds, req.StartYear, req.Years)
+				comps[i], err = application.SectionComparison(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSection())
 			}
 			errs[i] = err
 		}()

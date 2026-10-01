@@ -17,14 +17,33 @@ func recoveryParams() lob.RecoveryParams {
 	}
 }
 
+// Section indices in withSections: own damage allows recoveries, third party
+// does not.
+const (
+	ownDamage  = 0
+	thirdParty = 1
+)
+
+// withSections wraps recovery parameters in the claim parameters the
+// recovery simulator reads: they decide which sections are eligible.
+func withSections(p lob.RecoveryParams) lob.ClaimParams {
+	return lob.ClaimParams{
+		Sections:   []lob.SectionParams{{Name: "own_damage", Recoveries: true}, {Name: "third_party"}},
+		Recoveries: p,
+	}
+}
+
 // recoveryFixture runs the runoff over a mixed book - own-damage, third
 // party, and nil claims - then applies recoveries with the given params.
 func recoveryFixture(t *testing.T, p lob.RecoveryParams, seed uint64) ([]claim.Claim, []transaction.Transaction) {
 	t.Helper()
 	claims := testClaims(300)
 	for i := range claims {
-		claims[i].OwnDamage = i%3 != 0 // two thirds own damage
-		if claims[i].OwnDamage && i%4 == 1 {
+		claims[i].Section = thirdParty
+		if i%3 != 0 { // two thirds own damage
+			claims[i].Section = ownDamage
+		}
+		if claims[i].Section == ownDamage && i%4 == 1 {
 			claims[i].CoverLimit = claims[i].Episodes[0].Ultimate // a total loss: paid up to the cover limit
 		}
 		if i%10 == 0 {
@@ -32,11 +51,11 @@ func recoveryFixture(t *testing.T, p lob.RecoveryParams, seed uint64) ([]claim.C
 		}
 	}
 	txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(seed), claims)
-	return claims, transaction.NewRecoverySimulator(p).Apply(random.NewSource(seed), claims, txs)
+	return claims, transaction.NewRecoverySimulator(withSections(p)).Apply(random.NewSource(seed), claims, txs)
 }
 
-// Subrogation attaches to paid own-damage claims, salvage only to paid total
-// losses (MR-7).
+// Subrogation attaches to paid claims in a section with recoveries, salvage
+// only to paid total losses (MR-7).
 func TestRecoveriesOnlyOnEligibleClaims(t *testing.T) {
 	certain := recoveryParams()
 	certain.Salvage.Probability = 1
@@ -45,7 +64,7 @@ func TestRecoveriesOnlyOnEligibleClaims(t *testing.T) {
 
 	eligible := map[transaction.Type]map[int]bool{transaction.Salvage: {}, transaction.Subrogation: {}}
 	for _, c := range claims {
-		eligible[transaction.Subrogation][c.ID] = c.OwnDamage && !c.Nil()
+		eligible[transaction.Subrogation][c.ID] = c.Section == ownDamage && !c.Nil()
 		eligible[transaction.Salvage][c.ID] = c.TotalLoss() && !c.Nil()
 	}
 	got := map[transaction.Type]map[int]bool{transaction.Salvage: {}, transaction.Subrogation: {}}
@@ -130,12 +149,9 @@ func TestRecoveriesOffReturnsRunoffUnchanged(t *testing.T) {
 		Salvage:     lob.RecoveryTypeParams{Probability: 0, MeanShare: 0.15, Concentration: 10, LagMedianDays: 21, LagSigma: 0.5},
 		Subrogation: lob.RecoveryTypeParams{Probability: 0, MeanShare: 0.8, Concentration: 10, LagMedianDays: 180, LagSigma: 0.7},
 	}
-	claims := testClaims(100)
-	for i := range claims {
-		claims[i].OwnDamage = true
-	}
+	claims := testClaims(100) // every claim in the own-damage section
 	before := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(4), claims)
-	after := transaction.NewRecoverySimulator(off).Apply(random.NewSource(4), claims, before)
+	after := transaction.NewRecoverySimulator(withSections(off)).Apply(random.NewSource(4), claims, before)
 	if len(after) != len(before) {
 		t.Fatalf("lengths differ: %d vs %d", len(after), len(before))
 	}

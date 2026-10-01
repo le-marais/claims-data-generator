@@ -77,19 +77,21 @@ func TestLimitedStopLossLognormal(t *testing.T) {
 	}
 }
 
-func TestExpectedPolicyLossScalesWithRiskAndInflation(t *testing.T) {
-	p := PricingParams{
-		BaseFrequency: 0.12,
-		Severity: SeverityParams{
-			ThirdPartyWeight:        0.20,
-			OwnDamageMedianFraction: 0.12,
-			OwnDamageSigma:          1.0,
-			ThirdPartyScale:         4000,
-			ThirdPartyAlpha:         2.2,
+// motorPricing is a two-section pricing basis: own damage sized off the sum
+// insured and a Pareto third-party section.
+func motorPricing() PricingParams {
+	return PricingParams{
+		Sections: []PricingSectionParams{
+			{Name: "own_damage", BaseFrequency: 0.096, Severity: SeverityParams{Kind: SumInsuredLognormal, MedianFraction: 0.12, Sigma: 1.0}},
+			{Name: "third_party", BaseFrequency: 0.024, Severity: SeverityParams{Kind: Pareto, Scale: 4000, Alpha: 2.2}},
 		},
 		ReopenProbability:    0.04,
 		ReopenEstimateFactor: 0.45,
 	}
+}
+
+func TestExpectedPolicyLossScalesWithRiskAndInflation(t *testing.T) {
+	p := motorPricing()
 	base := p.ExpectedPolicyLoss(20000, 300, 1.0, 1.0, 1.0)
 	if base <= 0 {
 		t.Fatalf("expected positive loss, got %v", base)
@@ -104,80 +106,55 @@ func TestExpectedPolicyLossScalesWithRiskAndInflation(t *testing.T) {
 	}
 }
 
-func TestExpectedPolicyLossRebasesAndCapsOwnDamage(t *testing.T) {
-	p := PricingParams{
-		BaseFrequency: 0.12,
-		Severity: SeverityParams{
-			ThirdPartyWeight:        0, // pure own damage
-			OwnDamageMedianFraction: 0.12,
-			OwnDamageSigma:          1.0,
-			ThirdPartyScale:         4000,
-			ThirdPartyAlpha:         2.2,
-		},
-		ReopenProbability:    0.04,
-		ReopenEstimateFactor: 0.45,
-	}
+func TestExpectedSectionLossRebasesAndCapsSumInsuredSeverity(t *testing.T) {
+	p := motorPricing()
 	// De-drift: a larger siDrift (same nominal SI) means a smaller base-year
 	// severity, so the expected loss falls.
-	full := p.ExpectedPolicyLoss(20000, 300, 1.0, 1.0, 1.0)
-	deDrifted := p.ExpectedPolicyLoss(20000, 300, 1.0, 1.0, 2.0)
+	full := p.ExpectedSectionLoss(0, 20000, 300, 1.0, 1.0, 1.0)
+	deDrifted := p.ExpectedSectionLoss(0, 20000, 300, 1.0, 1.0, 2.0)
 	if !(deDrifted < full) {
-		t.Fatalf("siDrift should de-drift OD: siDrift=2 %.4f not < siDrift=1 %.4f", deDrifted, full)
+		t.Fatalf("siDrift should de-drift the sum-insured section: siDrift=2 %.4f not < siDrift=1 %.4f", deDrifted, full)
 	}
-	// Cap: per-claim OD cannot exceed (sumInsured - excess); drive baseSI far
+	// Cap: per-claim cost cannot exceed (sumInsured - excess); drive baseSI far
 	// above the cap with a tiny siDrift and check the ceiling holds.
 	const si, excess = 20000.0, 300.0
 	reopenUplift := 1 + p.ReopenProbability*p.ReopenEstimateFactor
-	ceiling := p.BaseFrequency * 1.0 * (si - excess) * reopenUplift
-	if got := p.ExpectedPolicyLoss(si, excess, 1.0, 1.0, 0.01); got > ceiling {
-		t.Fatalf("capped OD exceeds ceiling: got %.4f, ceiling %.4f", got, ceiling)
+	ceiling := p.Sections[0].BaseFrequency * (si - excess) * reopenUplift
+	if got := p.ExpectedSectionLoss(0, si, excess, 1.0, 1.0, 0.01); got > ceiling {
+		t.Fatalf("capped section exceeds ceiling: got %.4f, ceiling %.4f", got, ceiling)
 	}
 }
 
-func TestExpectedSectionLossSplitsThePolicyLoss(t *testing.T) {
-	p := PricingParams{
-		BaseFrequency: 0.12,
-		Severity: SeverityParams{
-			ThirdPartyWeight:        0.2,
-			OwnDamageMedianFraction: 0.12,
-			OwnDamageSigma:          1.0,
-			ThirdPartyScale:         4000,
-			ThirdPartyAlpha:         2.2,
-		},
-		ReopenProbability:    0.04,
-		ReopenEstimateFactor: 0.45,
-	}
-	od, tp := p.ExpectedSectionLoss(20000, 300, 1.3, 1.1, 1.05)
+func TestExpectedSectionLossesAddUpToThePolicyLoss(t *testing.T) {
+	p := motorPricing()
+	od := p.ExpectedSectionLoss(0, 20000, 300, 1.3, 1.1, 1.05)
+	tp := p.ExpectedSectionLoss(1, 20000, 300, 1.3, 1.1, 1.05)
 	if od <= 0 || tp <= 0 {
 		t.Fatalf("both sections should carry loss: own damage %v, third party %v", od, tp)
 	}
 	if total := p.ExpectedPolicyLoss(20000, 300, 1.3, 1.1, 1.05); math.Abs(od+tp-total) > 1e-9*total {
 		t.Fatalf("sections %v + %v do not add up to the policy loss %v", od, tp, total)
 	}
-	for _, w := range []float64{0, 1} {
-		p.Severity.ThirdPartyWeight = w
-		od, tp := p.ExpectedSectionLoss(20000, 300, 1.0, 1.0, 1.0)
-		if (w == 0 && tp != 0) || (w == 1 && od != 0) {
-			t.Fatalf("third-party weight %v: own damage %v, third party %v", w, od, tp)
-		}
+	// A section's frequency scales its loss alone.
+	p.Sections[1].BaseFrequency *= 2
+	if got := p.ExpectedSectionLoss(1, 20000, 300, 1.3, 1.1, 1.05); math.Abs(got-2*tp) > 1e-9*tp {
+		t.Fatalf("doubled third-party frequency: got %v, want %v", got, 2*tp)
+	}
+	if got := p.ExpectedSectionLoss(0, 20000, 300, 1.3, 1.1, 1.05); got != od {
+		t.Fatalf("own damage moved with the third-party frequency: got %v, want %v", got, od)
 	}
 }
 
-// A zero-weight severity component is skipped, so its unvalidated parameters
-// cannot turn the section cost into NaN or infinity.
-func TestExpectedSectionLossSkipsZeroWeightComponent(t *testing.T) {
-	p := PricingParams{
-		TargetLossRatio: 0.7, BaseFrequency: 0.1, InflationMean: 1,
-		Severity: SeverityParams{ThirdPartyWeight: 0, OwnDamageMedianFraction: 0.15, OwnDamageSigma: 1},
+// A section priced at no frequency is skipped, so its unvalidated severity
+// cannot turn the cost into NaN or infinity.
+func TestExpectedSectionLossSkipsAZeroFrequencySection(t *testing.T) {
+	p := motorPricing()
+	p.Sections[1] = PricingSectionParams{Name: "third_party"}
+	if got := p.ExpectedSectionLoss(1, 20000, 500, 1, 1, 1); got != 0 {
+		t.Fatalf("zero-frequency section: got %v, want 0", got)
 	}
-	od, tp := p.ExpectedSectionLoss(20000, 500, 1, 1, 1)
-	if tp != 0 || !(od > 0) || math.IsInf(od, 0) {
-		t.Fatalf("no third party: got own damage %v, third party %v", od, tp)
-	}
-	p.Severity = SeverityParams{ThirdPartyWeight: 1, ThirdPartyScale: 5000, ThirdPartyAlpha: 2}
-	od, tp = p.ExpectedSectionLoss(20000, 500, 1, 1, 1)
-	if od != 0 || !(tp > 0) || math.IsInf(tp, 0) {
-		t.Fatalf("no own damage: got own damage %v, third party %v", od, tp)
+	if got := p.ExpectedPolicyLoss(20000, 500, 1, 1, 1); !(got > 0) || math.IsInf(got, 0) {
+		t.Fatalf("policy loss with one section off: got %v", got)
 	}
 }
 
@@ -185,18 +162,7 @@ func TestExpectedSectionLossSkipsZeroWeightComponent(t *testing.T) {
 // the expected payout per claim is 1 - nil + reopen probability x factor
 // (MR-3).
 func TestExpectedPolicyLossAllowsForNilClaims(t *testing.T) {
-	p := PricingParams{
-		BaseFrequency: 0.12,
-		Severity: SeverityParams{
-			ThirdPartyWeight:        0.2,
-			OwnDamageMedianFraction: 0.12,
-			OwnDamageSigma:          1.0,
-			ThirdPartyScale:         4000,
-			ThirdPartyAlpha:         2.2,
-		},
-		ReopenProbability:    0.04,
-		ReopenEstimateFactor: 0.45,
-	}
+	p := motorPricing()
 	without := p.ExpectedPolicyLoss(20000, 300, 1.0, 1.0, 1.0)
 	p.NilProbability = 0.08
 	with := p.ExpectedPolicyLoss(20000, 300, 1.0, 1.0, 1.0)

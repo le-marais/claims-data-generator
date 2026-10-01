@@ -10,20 +10,22 @@ import (
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 )
 
+// windowParams has a high frequency, so tail policies would spill without
+// windowing.
 func windowParams() lob.ClaimParams {
-	return lob.ClaimParams{
-		BaseFrequency:   3.0, // high, so tail policies would spill without windowing
-		ReportLagMedian: 2,
-		ReportLagSigma:  1.2,
-		Severity: lob.SeverityParams{
-			ThirdPartyWeight:        0.2,
-			OwnDamageMedianFraction: 0.12,
-			OwnDamageSigma:          1.0,
-			ThirdPartyScale:         4000,
-			ThirdPartyAlpha:         2.2,
+	closeLag := lob.CloseLagParams{Shape: 1.2, MeanDays: 120, RiskLoading: 0.3}
+	return lob.ClaimParams{Sections: []lob.SectionParams{
+		{
+			Name: "own_damage", BaseFrequency: 2.4,
+			Severity:  lob.SeverityParams{Kind: lob.SumInsuredLognormal, MedianFraction: 0.12, Sigma: 1.0},
+			ReportLag: lob.ReportLagParams{Median: 2, Sigma: 1.2}, CloseLag: closeLag,
 		},
-		CloseLag: lob.CloseLagParams{Shape: 1.2, MeanDays: 120, SizeThreshold: 20000, SizeMultiplier: 6, RiskLoading: 0.3, ThirdPartyShape: 1.0, ThirdPartyMeanDays: 680},
-	}
+		{
+			Name: "third_party", BaseFrequency: 0.6,
+			Severity:  lob.SeverityParams{Kind: lob.Pareto, Scale: 4000, Alpha: 2.2},
+			ReportLag: lob.ReportLagParams{Median: 2, Sigma: 1.2}, CloseLag: closeLag,
+		},
+	}}
 }
 
 // lateBook writes policies deep in the final underwriting year, whose 12-month

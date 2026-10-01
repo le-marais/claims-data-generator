@@ -19,7 +19,7 @@ import (
 // It guards against unintended changes to the generated data or its CSV
 // encoding. If a change to the output is intentional, regenerate this digest
 // by running the test once (it prints the actual value) and paste it back in.
-const wantHash = "973b8d03e89a4e3e81de29f2cd7e9b1215747e970ef0354a08935c5b67ee5721"
+const wantHash = "0c9df2b63bfc3a9107d8be7b308eecfed110359cdba1d01ab173ce95a08031ed"
 
 func TestGoldenCSVBytes(t *testing.T) {
 	ds, err := application.GenerateDataset(t.Context(), random.NewSource(1), request(t))
@@ -48,7 +48,7 @@ func TestGoldenCSVBytes(t *testing.T) {
 // small deterministic dataset. Regenerate it the same way as wantHash: run the
 // test once, it prints the actual value, paste it back in. Do not update it to
 // hide an unintended change.
-const wantAggregateHash = "1d0321d4e5e982a07eb684225351b06f2db15b7e0e2e548cce8152a5b9ac5928"
+const wantAggregateHash = "3b29bf1d47a657ff8e5e9c6c197229705921f236dd4724f3455a8a4786456ae0"
 
 func TestGoldenAggregateCSVBytes(t *testing.T) {
 	req := request(t)
@@ -79,9 +79,9 @@ func TestGoldenAggregateCSVBytes(t *testing.T) {
 }
 
 // wantAnnualHash pins ag.Annual's three cumulative triangles - Paid, NetPaid
-// and Incurred - plus the liability comparison the realism gate scores (its
+// and Incurred - plus the section comparison the realism gate scores (its
 // net paid and incurred triangles and earned premium, from
-// LiabilityComparison), for the same small deterministic dataset. It exists because
+// SectionComparison), for the same small deterministic dataset. It exists because
 // the annual triangles are a coarsened view of the monthly grid, derived by
 // Coarsen keying both axes on calendar period rather than computed directly,
 // and the branch that introduced that derivation stated as an invariant that
@@ -93,7 +93,7 @@ func TestGoldenAggregateCSVBytes(t *testing.T) {
 // Regenerate it the same way as wantHash: run the test once, it prints the
 // actual value, paste it back in. Do not update it to hide an unintended
 // change.
-const wantAnnualHash = "f3ef89a47f451f79cb0077fdec57a398b10007e4b03a51cf49bccc7aa7590391"
+const wantAnnualHash = "994d4856b0d35c959d0174ef20bc3a56b493418922e6baf5432c5f7261b065f8"
 
 func TestGoldenAnnualTriangles(t *testing.T) {
 	req := request(t)
@@ -105,7 +105,7 @@ func TestGoldenAnnualTriangles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	liability, err := application.LiabilityComparison(ds, req.StartYear, req.Years)
+	liability, err := application.SectionComparison(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSection())
 	if err != nil {
 		t.Fatal(err)
 	}

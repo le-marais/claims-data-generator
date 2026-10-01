@@ -2,6 +2,7 @@ package policy_test
 
 import (
 	"math"
+	"reflect"
 	"sort"
 	"testing"
 	"time"
@@ -32,13 +33,9 @@ func params() lob.BookParams {
 func pricingParams() lob.PricingParams {
 	return lob.PricingParams{
 		TargetLossRatio: 0.72,
-		BaseFrequency:   0.12,
-		Severity: lob.SeverityParams{
-			ThirdPartyWeight:        0.20,
-			OwnDamageMedianFraction: 0.12,
-			OwnDamageSigma:          1.0,
-			ThirdPartyScale:         4000,
-			ThirdPartyAlpha:         2.2,
+		Sections: []lob.PricingSectionParams{
+			{Name: "own_damage", BaseFrequency: 0.096, Severity: lob.SeverityParams{Kind: lob.SumInsuredLognormal, MedianFraction: 0.12, Sigma: 1.0}},
+			{Name: "third_party", BaseFrequency: 0.024, Severity: lob.SeverityParams{Kind: lob.Pareto, Scale: 4000, Alpha: 2.2}},
 		},
 		ReopenProbability:    0.04,
 		ReopenEstimateFactor: 0.45,
@@ -205,7 +202,7 @@ func TestSimulateIsDeterministic(t *testing.T) {
 		t.Fatalf("lengths differ: %d vs %d", len(a), len(b))
 	}
 	for i := range a {
-		if a[i] != b[i] {
+		if !reflect.DeepEqual(a[i], b[i]) {
 			t.Fatalf("policy %d differs between identical runs", i)
 		}
 	}
@@ -323,6 +320,28 @@ func TestPolicyRecordsBaseSumInsured(t *testing.T) {
 		want := p.SumInsured.Dollars() / math.Pow(prm.SumInsuredInflation, offset)
 		if p.BaseSumInsured != want {
 			t.Fatalf("policy %d (written %d): base sum insured %v, want %v", p.ID, p.CoverStart.Year(), p.BaseSumInsured, want)
+		}
+	}
+}
+
+// Each section is priced on its own assumption, and the sections make up the
+// whole premium, give or take a cent of rounding per section.
+func TestSectionPremiumsMakeUpThePremium(t *testing.T) {
+	pp := pricingParams()
+	book := policy.NewBookSimulator(params(), pp).Simulate(random.NewSource(5), 1998, 2, 300)
+	for _, p := range book {
+		if len(p.SectionPremiums) != len(pp.Sections) {
+			t.Fatalf("policy %d has %d section premiums, want %d", p.ID, len(p.SectionPremiums), len(pp.Sections))
+		}
+		sum := shared.Money(0)
+		for _, sp := range p.SectionPremiums {
+			if sp <= 0 {
+				t.Fatalf("policy %d has a non-positive section premium %v", p.ID, sp)
+			}
+			sum += sp
+		}
+		if d := sum - p.Premium; d < -1 || d > 1 {
+			t.Fatalf("policy %d section premiums sum to %v, want its premium %v", p.ID, sum, p.Premium)
 		}
 	}
 }

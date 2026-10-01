@@ -27,28 +27,26 @@ func bookForCap(n int) []policy.Policy {
 	return b
 }
 
-func TestOwnDamageIsCappedAtSumInsured(t *testing.T) {
-	params := lob.ClaimParams{
-		BaseFrequency:   2.0, // many claims per policy so the tail is exercised
-		ReportLagMedian: 2,
-		ReportLagSigma:  1.2,
-		Severity: lob.SeverityParams{
-			ThirdPartyWeight:        0,   // pure own damage
-			OwnDamageMedianFraction: 0.5, // heavy, so the cap bites often
-			OwnDamageSigma:          1.5,
-			ThirdPartyScale:         4000,
-			ThirdPartyAlpha:         2.2,
-		},
-		CloseLag: lob.CloseLagParams{Shape: 1.2, MeanDays: 120, SizeThreshold: 20000, SizeMultiplier: 6, RiskLoading: 0.3, ThirdPartyShape: 1.0, ThirdPartyMeanDays: 680},
-	}
+// ownDamageOnly is a class with a single sum-insured section.
+func ownDamageOnly(frequency, medianFraction, sigma float64, cl lob.CloseLagParams) lob.ClaimParams {
+	return lob.ClaimParams{Sections: []lob.SectionParams{{
+		Name:          "own_damage",
+		BaseFrequency: frequency,
+		Severity:      lob.SeverityParams{Kind: lob.SumInsuredLognormal, MedianFraction: medianFraction, Sigma: sigma},
+		ReportLag:     lob.ReportLagParams{Median: 2, Sigma: 1.2},
+		CloseLag:      cl,
+	}}}
+}
+
+func TestSumInsuredSeverityIsCappedAtSumInsured(t *testing.T) {
+	// Many claims per policy so the tail is exercised, and a heavy severity so
+	// the cap bites often.
+	params := ownDamageOnly(2.0, 0.5, 1.5, lob.CloseLagParams{Shape: 1.2, MeanDays: 120, RiskLoading: 0.3})
 	claims := NewClaimSimulator(params).Simulate(random.NewSource(1), bookForCap(500))
 	if len(claims) == 0 {
 		t.Fatal("no claims generated")
 	}
 	for _, c := range claims {
-		if !c.OwnDamage {
-			continue
-		}
 		groundUp := c.Episodes[0].Ultimate.Dollars() + 300 // + excess
 		if groundUp > 20000+1e-6 {
 			t.Fatalf("claim %d own-damage ground-up %.2f exceeds sum insured 20000", c.ID, groundUp)
@@ -56,15 +54,11 @@ func TestOwnDamageIsCappedAtSumInsured(t *testing.T) {
 	}
 }
 
-// RF-14: own-damage severity is sized off the policy's BaseSumInsured, so the
+// RF-14: a sum-insured severity is sized off the policy's BaseSumInsured, so the
 // claim stage needs no book parameter; a policy without one falls back to the
 // nominal sum insured.
-func TestOwnDamageSeverityReadsBaseSumInsured(t *testing.T) {
-	params := lob.ClaimParams{
-		BaseFrequency: 1, ReportLagMedian: 2, ReportLagSigma: 1.2,
-		Severity: lob.SeverityParams{ThirdPartyWeight: 0, OwnDamageMedianFraction: 0.01, OwnDamageSigma: 0.5},
-		CloseLag: lob.CloseLagParams{Shape: 1.2, MeanDays: 40, SizeThreshold: 20000, SizeMultiplier: 3, ThirdPartyShape: 1, ThirdPartyMeanDays: 400},
-	}
+func TestSumInsuredSeverityReadsBaseSumInsured(t *testing.T) {
+	params := ownDamageOnly(1, 0.01, 0.5, lob.CloseLagParams{Shape: 1.2, MeanDays: 40})
 	book := func(base float64) []policy.Policy {
 		var b []policy.Policy
 		start := shared.NewDate(2000, time.January, 1)

@@ -78,7 +78,7 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 	if err := ctx.Err(); err != nil {
 		return Dataset{}, err
 	}
-	txs = transaction.NewRecoverySimulator(req.LOB.Claims.Recoveries).
+	txs = transaction.NewRecoverySimulator(req.LOB.Claims).
 		Apply(src.Split("recovery"), claims, txs)
 	return Dataset{Policies: book, Claims: claims, Transactions: txs}, nil
 }

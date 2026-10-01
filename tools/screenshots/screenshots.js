@@ -82,12 +82,12 @@ async function selectTab(page, tab) {
   await selectTab(page, "realism");
   await shootResults(page, "ui-realism-pass.png");
 
-  // Failing run for the README: base frequency 0.5 pushes the loss ratio
-  // outside its band.
+  // Failing run for the README: a third-party base frequency of 0.1 pushes
+  // the scored section's loss ratio outside its band.
   await page.evaluate(() => {
     const input = [...document.querySelectorAll("#params-form input[data-path]")]
-      .find((i) => i.dataset.path === JSON.stringify(["claims", "base_frequency"]));
-    input.value = "0.5";
+      .find((i) => i.dataset.path === JSON.stringify(["claims", "sections", 1, "base_frequency"]));
+    input.value = "0.1";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     input.dispatchEvent(new Event("change", { bubbles: true }));
   });

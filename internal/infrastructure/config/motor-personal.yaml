@@ -35,58 +35,76 @@ pricing:
   # scatter around the target. 0 switches it off. 0.03 is a modest default;
   # real underwriting cycles are larger and persist across years.
   adequacy_volatility: 0.03
-  base_frequency: 0.12
-  severity:
-    third_party_weight: 0.20
-    own_damage_median_fraction: 0.12
-    own_damage_sigma: 1.0
-    third_party_scale: 4000
-    third_party_alpha: 2.2
+  # The assumed frequency and severity of each claims section below, by the
+  # same names and in the same order. Each section's premium is priced on
+  # its own assumption.
+  sections:
+    - name: own_damage
+      base_frequency: 0.096
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.12, sigma: 1.0}
+    - name: third_party
+      base_frequency: 0.024
+      severity: {kind: pareto, scale: 4000, alpha: 2.2}
   nil_probability: 0.08
   reopen_probability: 0.04
   reopen_estimate_factor: 0.45
   inflation_mean: 1.04
 claims:
-  base_frequency: 0.12
-  # Occurrence-to-report lag in days (lognormal). The shared lag is short,
-  # as own-damage claims are reported within days. Third-party injury claims
-  # get their own, longer lag: median 20 days, mean about 72, and about 3.5%
-  # reported more than a year after the accident. That is what gives the
-  # reported counts and the incurred some pure IBNR to estimate. A
-  # third-party median of 0 would use the shared lag instead.
-  report_lag_median: 2
-  report_lag_sigma: 1.2
-  third_party_report_lag_median: 20
-  third_party_report_lag_sigma: 1.6
-  severity:
-    third_party_weight: 0.20
-    own_damage_median_fraction: 0.12
-    own_damage_sigma: 1.0
-    third_party_scale: 4000
-    third_party_alpha: 2.2
-  # Report-to-close lag. The base shape/mean_days (with the size stretch)
-  # govern own-damage claims, which settle in weeks; these are judgement
-  # values, since no 10-year physical damage reference exists to score them
-  # against. third_party_shape and third_party_mean_days give third-party
-  # (liability) claims their own regime, calibrated to the Schedule P
-  # reference: third_party_mean_days is the mean lag of a claim costing
-  # third_party_size_reference in start-year dollars, and the mean scales by
-  # (size / reference)^third_party_size_elasticity, so larger injury claims
-  # take longer to settle, smoothly. Re-run the realism gate after any change
-  # to third-party paid development.
-  close_lag:
-    shape: 1.2
-    mean_days: 40
-    # Own-damage claims costing more than size_threshold in start-year
-    # dollars (deflated by the claims inflation index) settle
-    # size_multiplier times slower on average.
-    size_threshold: 20000
-    size_multiplier: 3
-    risk_loading: 0.3
-    third_party_shape: 1.0
-    third_party_mean_days: 340
-    third_party_size_elasticity: 0.25
-    third_party_size_reference: 5000
+  # Sections of cover. Each draws its own claims per policy-year: a Poisson
+  # count at base_frequency times the policy's risk factor, a ground-up loss
+  # from its severity, and its own report and close lags. base_frequency 0
+  # switches a section off. Losses that do not exceed the policy's excess
+  # are never reported.
+  #
+  # severity kinds: sum_insured_lognormal is a lognormal fraction of the sum
+  # insured in start-year dollars, capped at the sum insured (a total loss);
+  # pareto is a Pareto loss in dollars with no cap.
+  #
+  # report_lag is the lognormal occurrence-to-report lag in days. close_lag
+  # is the gamma report-to-close lag: a claim costing size_reference in
+  # start-year dollars (deflated by the claims inflation index) settles in
+  # mean_days on average, and the mean scales by
+  # (size / size_reference)^size_elasticity and risk factor^risk_loading,
+  # so larger and riskier claims take longer, smoothly.
+  #
+  # recoveries: true makes the section's claims eligible for salvage and
+  # subrogation. scored: true marks the section the realism gate scores
+  # against the Schedule P reference.
+  sections:
+    # Own damage: vehicle damage, sized off the sum insured, reported within
+    # days and settled in weeks. Its lags are judgement values, since no
+    # 10-year physical damage reference exists to score them against. A
+    # typical repair costs about size_reference and settles in about
+    # mean_days; the size elasticity has a $20,000 write-off take about 1.6
+    # times as long.
+    - name: own_damage
+      base_frequency: 0.096
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.12, sigma: 1.0}
+      report_lag: {median: 2, sigma: 1.2}
+      close_lag:
+        shape: 1.2
+        mean_days: 40
+        size_reference: 2000
+        size_elasticity: 0.2
+        risk_loading: 0.3
+      recoveries: true
+    # Third-party liability, the section the realism gate scores. Injury
+    # claims are reported later: median 20 days, mean about 72, and about
+    # 3.5% more than a year after the accident, which gives the reported
+    # counts and the incurred some pure IBNR to estimate. They settle far
+    # slower, in a regime calibrated to the Schedule P reference. Re-run the
+    # realism gate after any change to this section.
+    - name: third_party
+      base_frequency: 0.024
+      severity: {kind: pareto, scale: 4000, alpha: 2.2}
+      report_lag: {median: 20, sigma: 1.6}
+      close_lag:
+        shape: 1.0
+        mean_days: 340
+        size_reference: 5000
+        size_elasticity: 0.25
+        risk_loading: 0.3
+      scored: true
   # Claims inflation applied by occurrence date to every claim's ground-up
   # loss. Stochastic: each year's factor is `mean` times lognormal noise of
   # sigma `volatility`, compounded from 1.0 in the start year. The index sits
@@ -97,12 +115,12 @@ claims:
   # Probability a reported claim closes without payment. 0 switches nil
   # claims off.
   nil_probability: 0.08
-  # Recoveries: money coming back on own-damage claims after they close.
-  # Salvage sells the insured vehicle's wreck; subrogation recovers the
-  # payout from an at-fault third party. Each recovery is a Beta-distributed
-  # share of the claim's gross paid, received a lognormal lag after close.
-  # probability 0 switches a recovery type off, and the other fields of that
-  # type may then be left out.
+  # Recoveries: money coming back after close on claims in a section with
+  # recoveries: true. Salvage sells the insured vehicle's wreck; subrogation
+  # recovers the payout from an at-fault third party. Each recovery is a
+  # Beta-distributed share of the claim's gross paid, received a lognormal
+  # lag after close. probability 0 switches a recovery type off, and the
+  # other fields of that type may then be left out.
   recoveries:
     # Salvage only on total losses, where the vehicle is written off and its
     # wreck sold: most total losses yield it, at about a fifth of the payout.
@@ -121,9 +139,10 @@ claims:
   # Reopening: a closed claim can reopen once - the case is re-raised a
   # lognormal lag after the first close, a second episode develops and pays
   # an additional amount (`estimate_factor` times the claim's ultimate, with
-  # lognormal noise, capped for own damage at the cover left), then the claim
-  # closes for good. claims.csv shows the final close date. probability 0 switches
-  # reopening off, and the other fields may then be left out.
+  # lognormal noise, capped on a sum-insured section at the cover left), then
+  # the claim closes for good. claims.csv shows the final close date.
+  # probability 0 switches reopening off, and the other fields may then be
+  # left out.
   reopening:
     probability: 0.04
     estimate_factor: 0.45
