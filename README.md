@@ -167,7 +167,10 @@ catches systematic drift such as pricing and claims inflation trending apart.
 ```
 go test ./...
 go vet ./...
+golangci-lint run ./...
 ```
+
+CI runs gofmt, `go vet`, `go test` (on the minimum Go version in `go.mod` and on the current stable release), `govulncheck` and `golangci-lint` on every pull request.
 
 Screenshots are regenerated with `tools/screenshots` (start the UI on port 8093, `npm install`, `node screenshots.js`).
 

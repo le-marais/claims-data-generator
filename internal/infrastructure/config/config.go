@@ -202,12 +202,11 @@ func Preset(id string) (lob.LineOfBusiness, error) {
 
 // LoadFile loads a line of business definition from a YAML file.
 func LoadFile(path string) (lob.LineOfBusiness, error) {
-	f, err := os.Open(path)
+	b, err := os.ReadFile(path)
 	if err != nil {
 		return lob.LineOfBusiness{}, fmt.Errorf("opening config: %w", err)
 	}
-	defer f.Close()
-	return Load(f)
+	return Load(bytes.NewReader(b))
 }
 
 // MotorPersonal returns the embedded personal motor preset.

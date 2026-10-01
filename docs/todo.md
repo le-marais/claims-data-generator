@@ -28,29 +28,13 @@ high-severity is open.
 
 ## Order
 
-1. **CI-1** - small, and guards every merge from now on.
-2. **RF-13** - gates the second line of business; step (1) is due before the
-   parameters the model findings will add.
-3. **RF-14** - gates the same work, and compounds with every feature added.
+1. **RF-13** - gates the second line of business; step (1) is due before the
+   parameters that work will add.
+2. **RF-14** - gates the same work, and compounds with every feature added.
 
 The sequence across this file and `docs/review.md` lives in `docs/roadmap.md`.
 
-## 1. CI-1 (low) - no CI and no dependency scanning
-
-Merges the old R-13 and I2.
-
-- Where: repo root. There is no `.github/workflows` and no evidence of
-  `govulncheck`. `AGENTS.md` documents `go test` and `go vet` as the gate, which
-  runs only when someone remembers and does not catch known-vulnerable
-  dependencies.
-- Moved up on 2026-10-01: PRs are now sometimes merged by an agent on the
-  maintainer's instruction, so an automatic test run on every PR is a cheap
-  safety net, not only a precondition for opening the tool up.
-- Action: add a minimal workflow running `go test ./...`, `go vet ./...` and
-  `govulncheck ./...` on every pull request. Consider `golangci-lint` in the
-  same pass.
-
-## 2. RF-13 (medium) - adding one line-of-business parameter touches five places
+## 1. RF-13 (medium) - adding one line-of-business parameter touches five places
 
 - Where: the domain struct plus validation (`internal/domain/lob/lob.go`), the
   config DTO plus `ToDomain` (`internal/infrastructure/config/config.go`), the
@@ -75,7 +59,7 @@ Merges the old R-13 and I2.
   `NewBookSimulator(book, pricing)` already shows it working - it takes a
   purpose-built `PricingParams` and structurally cannot read claims knobs.
 
-## 3. RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
+## 2. RF-14 (medium) - the claim record and the pipeline-carry context are the same struct
 
 Merges the old F3 and F6, which describe the same problem from the parameter
 side.

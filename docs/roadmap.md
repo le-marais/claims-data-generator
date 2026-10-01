@@ -15,17 +15,14 @@ A living view of where claimsgen is and what comes next. Grounded in `mission.md
 - **Recoveries (salvage and subrogation)** - money coming back on own-damage claims after close, as SALVAGE and SUBROGATION transaction types, with salvage only on total losses; triangles and the realism gate go net of recoveries, and the triangle tab gains a gross/net toggle.
 - **Reopened claims** - a closed claim can reopen once and develop a second episode; claims.csv shows the final close date and the reopen appears in transactions as a case re-raised after a release to zero, with a reopen_probability off switch.
 - **Premium pricing to a target loss ratio** - premium is priced from an independent pricing basis (the insurer's assumed loss cost) divided by a `target_loss_ratio`, and trended with the assumed inflation, so the accident-year loss ratio does not drift just because severities inflate. The pricing basis lives in its own `pricing` block, decoupled from the claims model, and the loss ratio is emergent: the preset starts its assumptions from the claims values, so it lands around the target, and deviating them models underpricing or adverse experience. `adequacy_volatility` adds random per-underwriting-year mispricing around the target, like an underwriting cycle. The realism gate scores loss-ratio drift against the reference companies' spread, and a noise-free test guards against systematic drift.
+- **CI** - every pull request and push to `main` runs gofmt, `go vet`, `go test` on the minimum and current Go releases, `govulncheck` and `golangci-lint`.
 - **Monthly triangles and exposure** - `triangles.csv` carries incremental monthly development triangles by origin month (paid, paid net of recoveries, incurred, reported claim counts) and `exposure.csv` carries premium, exposure units and policy counts on the same axis, with an `--origin-basis` knob for accident or underwriting month. The monthly grid is the single aggregation store: the annual triangles the realism gate and the UI read are a coarsened view of it, and quarterly comes free from the same function.
 
 Only motor personal exists as a line of business today.
 
 ## Near term
 
-The real-claims-data backlog from the mission is complete (claims inflation, nil claims, recoveries, reopened claims). Before the second line of business, a model-realism pass on the findings that most limit a reserving demo, in this order (re-ranked 2026-10-01):
-
-1. **CI-1** (`docs/todo.md`) - an automatic test run on every pull request; small enough to slot in at any point.
-
-The second line of business then folds in MR-12 (separate sum-insured and risk spreads), the per-class switches from MR-8 (liability limit, excess on liability claims) and RF-13.
+The real-claims-data backlog from the mission is complete (claims inflation, nil claims, recoveries, reopened claims), and so is the model-realism pass agreed on 2026-10-01 (MR-13, MR-9, SL-7, MR-7) and CI (CI-1). The next step is the second line of business below, which folds in MR-12 (separate sum-insured and risk spreads), the per-class switches from MR-8 (liability limit, excess on liability claims) and RF-13.
 
 ## Mid term - second line of business
 
