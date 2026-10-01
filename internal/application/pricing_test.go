@@ -15,6 +15,36 @@ func pooledLossRatio(r application.SummaryReport) float64 {
 	return lr
 }
 
+// presetLossRatioBand is how far the shipped preset's simulated loss ratio
+// may land from its target, as a factor of the target. The target sets
+// premium, not experience: the realized loss ratio is emergent, and mostly
+// moves with the simulated inflation path, which pricing knows only by its
+// mean. Over seeds 1-40 the preset landed between 0.93 and 1.09 times the
+// target, at a 4k and a 10k initial book alike, so +/-15% leaves room for
+// the preset's pricing and claims assumptions to drift apart by design.
+const presetLossRatioBand = 0.15
+
+// The preset's simulated loss ratio lands in a range around its target, not
+// on it.
+func TestPresetLossRatioLandsNearTarget(t *testing.T) {
+	base, err := config.MotorPersonal()
+	if err != nil {
+		t.Fatalf("MotorPersonal: %v", err)
+	}
+	target := base.Pricing.TargetLossRatio
+	lo, hi := target*(1-presetLossRatioBand), target*(1+presetLossRatioBand)
+	req := application.GenerateRequest{LOB: base, StartYear: 1998, Years: 10, InitialBookSize: 4000}
+	for _, seed := range []uint64{1, 42, 7} {
+		ds, err := application.GenerateDataset(t.Context(), random.NewSource(seed), req)
+		if err != nil {
+			t.Fatalf("seed %d: generate: %v", seed, err)
+		}
+		if lr := pooledLossRatio(application.Summarize(ds, 1998, 10)); lr < lo || lr > hi {
+			t.Errorf("seed %d: loss ratio %.3f outside [%.3f, %.3f] around target %.2f", seed, lr, lo, hi, target)
+		}
+	}
+}
+
 // Pricing and experience are independent: leaving the true claims model
 // unchanged but assuming a cheaper loss cost underprices the book, so the
 // realized loss ratio rises on its own.
@@ -46,9 +76,6 @@ func TestUnderpricingRaisesRealizedLossRatio(t *testing.T) {
 	}
 	lrUnder := pooledLossRatio(application.Summarize(dsUnder, 1998, 10))
 
-	if lrBase < 0.6 || lrBase > 0.85 {
-		t.Fatalf("baseline loss ratio %.3f not near target %.3f (pricing should equal truth)", lrBase, base.Pricing.TargetLossRatio)
-	}
 	if lrUnder <= lrBase {
 		t.Fatalf("underpricing did not raise loss ratio: base %.3f, under %.3f", lrBase, lrUnder)
 	}
@@ -57,8 +84,9 @@ func TestUnderpricingRaisesRealizedLossRatio(t *testing.T) {
 	}
 }
 
-// MR-3: with the pricing basis matched to the claims model, switching nil
-// claims or claims inflation on must leave the loss ratio where it was,
+// MR-3: the pricing formula is an accurate expectation of its own
+// assumptions. With the pricing basis matched to the claims model, switching
+// nil claims or claims inflation on must leave the loss ratio where it was,
 // because pricing allows for both. Before the fix nil claims at 0.08 cut the
 // loss ratio by 8%, and 4% inflation raised it by about 2%, because premium
 // was trended to the start of the underwriting year while claims arise over

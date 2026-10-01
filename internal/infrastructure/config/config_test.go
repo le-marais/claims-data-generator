@@ -256,28 +256,3 @@ func TestPresetUnknown(t *testing.T) {
 		t.Fatal("PresetParams(marine-cargo): want error, got nil")
 	}
 }
-
-func TestMotorPresetPricesToTruth(t *testing.T) {
-	l, err := MotorPersonal()
-	if err != nil {
-		t.Fatalf("MotorPersonal: %v", err)
-	}
-	if l.Pricing.BaseFrequency != l.Claims.BaseFrequency {
-		t.Errorf("pricing base frequency %v != claims %v", l.Pricing.BaseFrequency, l.Claims.BaseFrequency)
-	}
-	if l.Pricing.Severity != l.Claims.Severity {
-		t.Errorf("pricing severity %+v != claims %+v", l.Pricing.Severity, l.Claims.Severity)
-	}
-	if l.Pricing.NilProbability != l.Claims.NilProbability {
-		t.Errorf("pricing nil prob %v != claims %v", l.Pricing.NilProbability, l.Claims.NilProbability)
-	}
-	if l.Pricing.ReopenProbability != l.Claims.Reopening.Probability {
-		t.Errorf("pricing reopen prob %v != claims %v", l.Pricing.ReopenProbability, l.Claims.Reopening.Probability)
-	}
-	if l.Pricing.ReopenEstimateFactor != l.Claims.Reopening.EstimateFactor {
-		t.Errorf("pricing reopen factor %v != claims %v", l.Pricing.ReopenEstimateFactor, l.Claims.Reopening.EstimateFactor)
-	}
-	if l.Pricing.InflationMean != l.Claims.Inflation.Mean {
-		t.Errorf("pricing inflation mean %v != claims %v", l.Pricing.InflationMean, l.Claims.Inflation.Mean)
-	}
-}

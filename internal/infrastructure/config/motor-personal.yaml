@@ -21,11 +21,13 @@ book:
     - {value: 500, weight: 0.30}
     - {value: 1000, weight: 0.10}
 # Pricing basis: the insurer's assumed loss cost, used only to set premium.
-# Independent of the claims block, which generates the true experience. When
-# these assumptions equal the claims values (as below) the book is priced
-# perfectly and the expected gross loss ratio lands on target_loss_ratio;
-# deviate them to model underpricing or adverse experience. Each policy's
-# assumed cost is trended at inflation_mean to the middle of its cover.
+# Independent of the claims block, which generates the true experience:
+# target_loss_ratio sets premium, and the realized loss ratio is emergent.
+# These assumptions start from the claims values (as below), so the loss
+# ratio lands around target_loss_ratio, moved by claim sampling and the
+# simulated inflation path; deviate them to model underpricing or adverse
+# experience. Each policy's assumed cost is trended at inflation_mean to the
+# middle of its cover.
 pricing:
   target_loss_ratio: 0.72
   base_frequency: 0.12

@@ -42,10 +42,11 @@ type ExcessChoice struct {
 // PricingParams drives premium pricing: the insurer's assumed loss cost,
 // independent of the claims model. Each policy's premium is its assumed
 // expected ultimate loss (ExpectedPolicyLoss) divided by TargetLossRatio.
-// When these assumptions equal the true claims values the book is priced
-// perfectly and the expected loss ratio lands on the target; the realized one
-// still moves with the simulated inflation path and claim sampling. Deviating
-// the assumptions models underpricing or adverse experience.
+// The target sets premium, never experience: the realized loss ratio emerges
+// from the claims model. With these assumptions equal to the true claims
+// values it lands around the target, moved by claim sampling and the
+// simulated inflation path; deviating them models underpricing or adverse
+// experience.
 type PricingParams struct {
 	// TargetLossRatio is the assumed loss ratio premium is priced to.
 	TargetLossRatio float64
