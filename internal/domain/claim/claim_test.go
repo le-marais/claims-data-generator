@@ -385,3 +385,22 @@ func TestLognormalClaimsCentreOnTheirMedian(t *testing.T) {
 		t.Error("no claim exceeded the sum insured; a lognormal severity should be uncapped")
 	}
 }
+
+// MR-8: a section that takes no excess reports and pays every ground-up loss
+// on a policy with an excess, exactly as on a policy without one, on a
+// sum-insured section as on a liability one.
+func TestNoExcessSectionIgnoresThePolicyExcess(t *testing.T) {
+	for _, section := range []int{ownDamage, thirdParty} {
+		p := only(params(), section, 0.3)
+		withExcess := claim.NewClaimSimulator(p).Simulate(random.NewSource(4), fixedBook(5000, 20000, 5000, 1.0))
+		p.Sections[section].NoExcess = true
+		got := claim.NewClaimSimulator(p).Simulate(random.NewSource(4), fixedBook(5000, 20000, 5000, 1.0))
+		want := claim.NewClaimSimulator(p).Simulate(random.NewSource(4), fixedBook(5000, 20000, 0, 1.0))
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("section %d: no_excess claims on a $5,000-excess book differ from the same book at excess 0", section)
+		}
+		if len(withExcess) >= len(got) {
+			t.Errorf("section %d: with the excess %d claims, want fewer than the %d without", section, len(withExcess), len(got))
+		}
+	}
+}

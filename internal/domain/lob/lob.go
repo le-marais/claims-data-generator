@@ -84,6 +84,9 @@ type PricingSectionParams struct {
 	// Limit is the assumed most the policy pays on one claim, in nominal
 	// dollars; 0 is unlimited. See SectionParams.Limit.
 	Limit float64
+	// NoExcess prices the section as taking no excess. See
+	// SectionParams.NoExcess.
+	NoExcess bool
 }
 
 // ClaimParams drives claim event simulation.
@@ -114,7 +117,8 @@ type SectionParams struct {
 	Name string
 	// BaseFrequency is the ground-up occurrence frequency per policy-year at
 	// risk factor 1. With a non-zero excess the realized reported frequency
-	// is lower, because sub-excess claims are discarded rather than reported.
+	// is lower, because sub-excess claims are discarded rather than reported,
+	// unless the section takes no excess (NoExcess).
 	// 0 switches the section off.
 	BaseFrequency float64
 	Severity      SeverityParams
@@ -123,7 +127,11 @@ type SectionParams struct {
 	// inflation does not trend it and erodes it over the years. 0 is
 	// unlimited. A sum-insured severity is already limited by its sum
 	// insured, so it must leave Limit at 0.
-	Limit     float64
+	Limit float64
+	// NoExcess makes the section take no excess off a claim: every ground-up
+	// loss is reported and paid from the first dollar, as liability cover
+	// usually is. The zero value applies the policy's excess.
+	NoExcess  bool
 	ReportLag ReportLagParams
 	CloseLag  CloseLagParams
 	// Recoveries makes the section's claims eligible for salvage and

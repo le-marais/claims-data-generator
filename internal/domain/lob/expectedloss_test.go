@@ -222,3 +222,30 @@ func TestExpectedSectionLossAppliesTheLimit(t *testing.T) {
 		}
 	}
 }
+
+// A section that takes no excess prices as if the policy had none, on every
+// severity kind, and a limit then caps the ground-up loss.
+func TestExpectedSectionLossIgnoresTheExcessWhenSwitchedOff(t *testing.T) {
+	const si, risk, infl, drift = 20000.0, 1.3, 1.1, 1.05
+	for _, sev := range []SeverityParams{
+		{Kind: SumInsuredLognormal, MedianFraction: 0.12, Sigma: 1.0},
+		{Kind: Pareto, Scale: 4000, Alpha: 2.2},
+		{Kind: Lognormal, Median: 2000, Sigma: 0.8},
+	} {
+		for _, limit := range []float64{0, 10000} {
+			if sev.Kind == SumInsuredLognormal && limit > 0 {
+				continue
+			}
+			p := motorPricing()
+			p.Sections[1].Severity, p.Sections[1].Limit = sev, limit
+			atZero := p.ExpectedSectionLoss(1, si, 0, risk, infl, drift)
+			if withExcess := p.ExpectedSectionLoss(1, si, 1000, risk, infl, drift); withExcess >= atZero {
+				t.Fatalf("%s limit %v: excess 1000 prices %v, want below the %v at excess 0", sev.Kind, limit, withExcess, atZero)
+			}
+			p.Sections[1].NoExcess = true
+			if got := p.ExpectedSectionLoss(1, si, 1000, risk, infl, drift); got != atZero {
+				t.Errorf("%s limit %v: no_excess at excess 1000 prices %v, want %v as at excess 0", sev.Kind, limit, got, atZero)
+			}
+		}
+	}
+}

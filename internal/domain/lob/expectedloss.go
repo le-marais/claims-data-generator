@@ -63,7 +63,8 @@ func (p PricingParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflat
 // drifted sumInsured (a total loss). A Pareto or Lognormal severity keeps the
 // claims index. With a Limit L its cost per claim is E[min((X-d)+, L)] =
 // stopLoss(d) - stopLoss(d+L) for excess d; the limit is nominal, so it is not
-// trended. With no limit it is the uncapped stop-loss.
+// trended. With no limit it is the uncapped stop-loss. A section that takes
+// no excess prices at d = 0.
 //
 // Each claim pays its cost unless it is nil, and pays a further
 // ReopenEstimateFactor of that cost if it reopens, nil or not, so the expected
@@ -78,6 +79,9 @@ func (p PricingParams) ExpectedSectionLoss(section int, sumInsured, excess, risk
 	// and zero times an infinite or NaN layer cost is NaN.
 	if sec.BaseFrequency <= 0 {
 		return 0
+	}
+	if sec.NoExcess {
+		excess = 0
 	}
 	payout := 1 - p.NilProbability + p.ReopenProbability*p.ReopenEstimateFactor
 	perClaim := sec.BaseFrequency * riskFactor * payout

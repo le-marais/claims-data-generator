@@ -64,6 +64,7 @@ type PricingSectionParams struct {
 	BaseFrequency float64        `yaml:"base_frequency" json:"base_frequency"`
 	Severity      SeverityParams `yaml:"severity" json:"severity"`
 	Limit         float64        `yaml:"limit" json:"limit"`
+	NoExcess      bool           `yaml:"no_excess" json:"no_excess"`
 }
 
 // ClaimsParams mirrors lob.ClaimParams for YAML/JSON.
@@ -81,6 +82,7 @@ type SectionParams struct {
 	BaseFrequency float64         `yaml:"base_frequency" json:"base_frequency"`
 	Severity      SeverityParams  `yaml:"severity" json:"severity"`
 	Limit         float64         `yaml:"limit" json:"limit"`
+	NoExcess      bool            `yaml:"no_excess" json:"no_excess"`
 	ReportLag     ReportLagParams `yaml:"report_lag" json:"report_lag"`
 	CloseLag      CloseLagParams  `yaml:"close_lag" json:"close_lag"`
 	Recoveries    bool            `yaml:"recoveries" json:"recoveries"`
@@ -261,6 +263,7 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			BaseFrequency: sec.BaseFrequency,
 			Severity:      sec.Severity.toDomain(),
 			Limit:         sec.Limit,
+			NoExcess:      sec.NoExcess,
 		}
 	}
 	sections := make([]lob.SectionParams, len(d.Claims.Sections))
@@ -270,6 +273,7 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			BaseFrequency: sec.BaseFrequency,
 			Severity:      sec.Severity.toDomain(),
 			Limit:         sec.Limit,
+			NoExcess:      sec.NoExcess,
 			ReportLag: lob.ReportLagParams{
 				Median: sec.ReportLag.Median,
 				Sigma:  sec.ReportLag.Sigma,
