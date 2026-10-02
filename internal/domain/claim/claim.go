@@ -298,13 +298,16 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 
 // drawGroundUpLoss draws a loss in start-year dollars from a section's
 // severity: a lognormal fraction of the policy's base-year sum insured, a
-// Pareto amount, or a lognormal amount. Every kind takes one draw.
+// Pareto amount, a lognormal amount, or a spliced lognormal-Pareto amount.
+// Every kind takes one draw.
 func (s *ClaimSimulator) drawGroundUpLoss(src shared.RandomSource, pol policy.Policy, sev lob.SeverityParams) float64 {
 	switch sev.Kind {
 	case lob.Pareto:
 		return src.Pareto(sev.Scale, sev.Alpha)
 	case lob.Lognormal:
 		return src.LogNormal(math.Log(sev.Median), sev.Sigma)
+	case lob.LognormalPareto:
+		return sev.LognormalParetoLoss(src.Uniform())
 	}
 	return s.baseSumInsured(pol) * src.LogNormal(math.Log(sev.MedianFraction), sev.Sigma)
 }

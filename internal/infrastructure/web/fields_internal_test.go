@@ -61,7 +61,7 @@ func TestFormFieldsCoverEveryParameter(t *testing.T) {
 			if f.Kind != "" && (g.Sections == nil || f.Path[0] != "severity") {
 				t.Errorf("form field %s has a severity kind but is not a section severity field", p)
 			}
-			if k := lob.SeverityKind(f.Kind); f.Kind != "" && k != lob.SumInsuredLognormal && k != lob.Pareto && k != lob.Lognormal {
+			if k := lob.SeverityKind(f.Kind); f.Kind != "" && k != lob.SumInsuredLognormal && k != lob.Pareto && k != lob.Lognormal && k != lob.LognormalPareto {
 				t.Errorf("form field %s has unknown severity kind %q", p, f.Kind)
 			}
 			if !params[p] {

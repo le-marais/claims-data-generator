@@ -404,3 +404,29 @@ func TestNoExcessSectionIgnoresThePolicyExcess(t *testing.T) {
 		}
 	}
 }
+
+// A lognormal_pareto section has a body of claims well below its scale, the
+// floor a bare Pareto would put under every claim (MR-8), and its tail share
+// of claims above it.
+func TestLognormalParetoClaimsHaveABody(t *testing.T) {
+	p := only(params(), thirdParty, 0.5)
+	p.Sections[thirdParty].Severity = lob.SeverityParams{Kind: lob.LognormalPareto, Median: 4000, Sigma: 1.0, Scale: 25000, Alpha: 2.0}
+	p.Sections[thirdParty].NoExcess = true
+	claims := claim.NewClaimSimulator(p).Simulate(random.NewSource(9), fixedBook(20000, 20000, 500, 1.0))
+	small, large := 0, 0
+	for _, c := range claims {
+		switch cost := c.Episodes[0].Ultimate.Dollars(); {
+		case cost < 2000:
+			small++
+		case cost > 25000:
+			large++
+		}
+	}
+	share := float64(large) / float64(len(claims))
+	if small < len(claims)/10 {
+		t.Errorf("%d of %d claims below $2,000, want a body of small claims", small, len(claims))
+	}
+	if share < 0.03 || share > 0.045 {
+		t.Errorf("share above the scale = %.4f, want about the 0.037 tail share", share)
+	}
+}

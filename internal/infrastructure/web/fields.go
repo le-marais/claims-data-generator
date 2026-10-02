@@ -32,6 +32,10 @@ var severityFields = []formField{
 	{Path: []string{"severity", "alpha"}, Kind: "pareto", Label: "Severity alpha", Tip: "Pareto tail index; must exceed 1."},
 	{Path: []string{"severity", "median"}, Kind: "lognormal", Label: "Severity median", Tip: "Median ground-up loss in start-year dollars; uncapped by the sum insured."},
 	{Path: []string{"severity", "sigma"}, Kind: "lognormal", Label: "Severity sigma", Tip: "Sigma of the lognormal loss."},
+	{Path: []string{"severity", "median"}, Kind: "lognormal_pareto", Label: "Severity body median", Tip: "Median of the lognormal body in start-year dollars."},
+	{Path: []string{"severity", "sigma"}, Kind: "lognormal_pareto", Label: "Severity body sigma", Tip: "Sigma of the lognormal body."},
+	{Path: []string{"severity", "scale"}, Kind: "lognormal_pareto", Label: "Severity tail threshold", Tip: "Loss in start-year dollars where the Pareto tail takes over from the body; the tail's share keeps the density continuous there."},
+	{Path: []string{"severity", "alpha"}, Kind: "lognormal_pareto", Label: "Severity tail alpha", Tip: "Pareto tail index above the threshold; must exceed 1."},
 }
 
 // formFields is the parameter form's metadata, served at GET /api/fields so
