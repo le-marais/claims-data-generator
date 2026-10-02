@@ -1,198 +1,167 @@
-// Package schedulep reads the Schedule P reference datasets (per-company
-// paid and incurred triangles with earned premium) used to assess the
-// realism of generated data.
+// Package schedulep reads the CAS loss reserving database's Schedule P
+// files: one CSV per line of business, with one row per company, accident
+// year and development lag. Losses are net of reinsurance; premium is direct
+// and net. The reference sets built from them back the realism gate.
 package schedulep
 
 import (
-	"encoding/json"
+	"bytes"
+	"encoding/csv"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"math"
 	"os"
-	"path"
-	"path/filepath"
-	"sort"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
 )
 
-// errNoReferenceFiles lets LoadDir rewrite the location in the message.
-var errNoReferenceFiles = errors.New("no reference files found")
+// numeric are the CAS columns read as numbers.
+var numeric = []string{"GRCODE", "AccidentYear", "DevelopmentLag", "IncurredLosses", "CumPaidLoss", "EarnedPremDIR", "EarnedPremNet"}
 
-type fileJSON struct {
-	ClassID  int          `json:"ClassId"`
-	Paid     triangleJSON `json:"PaidTriangle"`
-	Incurred triangleJSON `json:"IncurredTriangle"`
-	// FutureIncurred is the incurred development reported after the
-	// triangle's valuation date, as incremental amounts per origin year.
-	FutureIncurred []triangleRow `json:"FutureIncurred"`
-	EarnedPremium  []premiumJSON `json:"EarnedPremium"`
+type cell struct {
+	incurred, paid, direct, net float64
 }
 
-type triangleJSON struct {
-	TriangleValues []triangleRow `json:"TriangleValues"`
+type company struct {
+	code  int
+	name  string
+	cells map[[2]int]cell // keyed by accident year and development lag
 }
 
-// triangleRow decodes the [year, [values...]] pair encoding.
-type triangleRow struct {
-	Year   int
-	Values []float64
-}
-
-func (r *triangleRow) UnmarshalJSON(b []byte) error {
-	var raw [2]json.RawMessage
-	if err := json.Unmarshal(b, &raw); err != nil {
-		return err
+// LoadFS reads one CAS Schedule P file from fsys. See parse.
+func LoadFS(fsys fs.FS, name string) ([]triangle.ReferenceSet, error) {
+	b, err := fs.ReadFile(fsys, name)
+	if err != nil {
+		return nil, fmt.Errorf("reading reference file: %w", err)
 	}
-	if err := json.Unmarshal(raw[0], &r.Year); err != nil {
-		return err
-	}
-	return json.Unmarshal(raw[1], &r.Values)
+	return parseNamed(name, b)
 }
 
-// premiumJSON decodes the [year, amount] pair encoding.
-type premiumJSON struct {
-	Year   int
-	Amount float64
-}
-
-func (p *premiumJSON) UnmarshalJSON(b []byte) error {
-	var raw [2]float64
-	if err := json.Unmarshal(b, &raw); err != nil {
-		return err
-	}
-	p.Year = int(raw[0])
-	p.Amount = raw[1]
-	return nil
-}
-
-// LoadFile reads one reference company file from disk, with a bare company
-// name (the file stem).
-func LoadFile(path string) (triangle.ReferenceSet, error) {
+// LoadFile reads one CAS Schedule P file from disk. See parse.
+func LoadFile(path string) ([]triangle.ReferenceSet, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
-		return triangle.ReferenceSet{}, fmt.Errorf("reading reference file: %w", err)
+		return nil, fmt.Errorf("reading reference file: %w", err)
 	}
-	return parse(filepath.Base(path), b)
+	return parseNamed(path, b)
 }
 
-func parse(name string, b []byte) (triangle.ReferenceSet, error) {
-	var f fileJSON
-	if err := json.Unmarshal(b, &f); err != nil {
-		return triangle.ReferenceSet{}, fmt.Errorf("parsing %s: %w", name, err)
-	}
-	ep := make([]float64, 0, len(f.EarnedPremium))
-	sort.Slice(f.EarnedPremium, func(i, j int) bool { return f.EarnedPremium[i].Year < f.EarnedPremium[j].Year })
-	for _, p := range f.EarnedPremium {
-		ep = append(ep, p.Amount)
-	}
-	paid, err := toTriangle(f.Paid)
+func parseNamed(name string, b []byte) ([]triangle.ReferenceSet, error) {
+	refs, err := parse(bytes.NewReader(b))
 	if err != nil {
-		return triangle.ReferenceSet{}, fmt.Errorf("paid triangle: %w", err)
-	}
-	incurred, err := toTriangle(f.Incurred)
-	if err != nil {
-		return triangle.ReferenceSet{}, fmt.Errorf("incurred triangle: %w", err)
-	}
-	developed, err := develop(incurred, f.FutureIncurred)
-	if err != nil {
-		return triangle.ReferenceSet{}, fmt.Errorf("future incurred: %w", err)
-	}
-	return triangle.ReferenceSet{
-		Name:              strings.TrimSuffix(name, ".json"),
-		Paid:              paid,
-		Incurred:          incurred,
-		EarnedPremium:     ep,
-		DevelopedIncurred: developed,
-	}, nil
-}
-
-// develop completes a cumulative triangle with later incremental development,
-// returning a new triangle; the input is not modified. With no later
-// development it returns the zero Triangle, which tells the comparison to
-// fall back to the triangle itself.
-func develop(tri triangle.Triangle, future []triangleRow) (triangle.Triangle, error) {
-	if len(future) == 0 {
-		return triangle.Triangle{}, nil
-	}
-	out := triangle.Triangle{StartYear: tri.StartYear, Cells: make([][]float64, len(tri.Cells))}
-	for i, row := range tri.Cells {
-		out.Cells[i] = append([]float64(nil), row...)
-	}
-	for _, f := range future {
-		i := f.Year - tri.StartYear
-		if i < 0 || i >= len(out.Cells) {
-			return triangle.Triangle{}, fmt.Errorf("origin year %d is not in the triangle", f.Year)
-		}
-		row := out.Cells[i]
-		if len(row) == 0 {
-			return triangle.Triangle{}, fmt.Errorf("origin year %d has no valued development to extend", f.Year)
-		}
-		cum := row[len(row)-1]
-		for _, v := range f.Values {
-			cum += v
-			row = append(row, cum)
-		}
-		out.Cells[i] = row
-	}
-	return out, nil
-}
-
-// LoadFS reads every reference company file in dir of fsys, files sorted by
-// name for determinism. Company names are the bare file stem (for example
-// "10007").
-func LoadFS(fsys fs.FS, dir string) ([]triangle.ReferenceSet, error) {
-	return loadDirFS(fsys, dir)
-}
-
-// LoadDir reads every reference company file in a directory on disk, sorted
-// by file name for determinism, with bare company names.
-func LoadDir(dir string) ([]triangle.ReferenceSet, error) {
-	clean := filepath.Clean(dir)
-	refs, err := loadDirFS(os.DirFS(clean), ".")
-	if errors.Is(err, errNoReferenceFiles) {
-		return nil, fmt.Errorf("%w in %s", errNoReferenceFiles, dir)
-	}
-	return refs, err
-}
-
-func loadDirFS(fsys fs.FS, dir string) ([]triangle.ReferenceSet, error) {
-	names, err := fs.Glob(fsys, path.Join(dir, "*.json"))
-	if err != nil {
-		return nil, err
-	}
-	if len(names) == 0 {
-		return nil, fmt.Errorf("%w in %s", errNoReferenceFiles, dir)
-	}
-	sort.Strings(names)
-	refs := make([]triangle.ReferenceSet, 0, len(names))
-	for _, n := range names {
-		b, err := fs.ReadFile(fsys, n)
-		if err != nil {
-			return nil, fmt.Errorf("reading reference file: %w", err)
-		}
-		ref, err := parse(path.Base(n), b)
-		if err != nil {
-			return nil, err
-		}
-		refs = append(refs, ref)
+		return nil, fmt.Errorf("%s: %w", name, err)
 	}
 	return refs, nil
 }
 
-func toTriangle(t triangleJSON) (triangle.Triangle, error) {
-	rows := t.TriangleValues
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Year < rows[j].Year })
-	tri := triangle.Triangle{Cells: make([][]float64, len(rows))}
-	if len(rows) > 0 {
-		tri.StartYear = rows[0].Year
+// parse reads the rows into one reference set per company that has every
+// development lag of every accident year in the file, so both its triangle at
+// the last accident year's valuation and its later development are known.
+// Companies missing any cell are left out. The sets are sorted by company
+// code.
+func parse(r io.Reader) ([]triangle.ReferenceSet, error) {
+	cr := csv.NewReader(r)
+	header, err := cr.Read()
+	if errors.Is(err, io.EOF) {
+		return nil, errors.New("empty file")
 	}
-	for i, r := range rows {
-		if r.Year != rows[0].Year+i {
-			return triangle.Triangle{}, fmt.Errorf("non-contiguous origin years: expected %d, got %d", rows[0].Year+i, r.Year)
+	if err != nil {
+		return nil, err
+	}
+	col := make(map[string]int, len(header))
+	for i, name := range header {
+		col[name] = i
+	}
+	for _, name := range append([]string{"GRNAME"}, numeric...) {
+		if _, ok := col[name]; !ok {
+			return nil, fmt.Errorf("missing column %s", name)
 		}
-		tri.Cells[i] = r.Values
 	}
-	return tri, nil
+	companies := map[int]*company{}
+	firstYear, lastYear := math.MaxInt, math.MinInt
+	for line := 2; ; line++ {
+		rec, err := cr.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		v := make(map[string]float64, len(numeric))
+		for _, name := range numeric {
+			x, err := strconv.ParseFloat(rec[col[name]], 64)
+			if err != nil {
+				return nil, fmt.Errorf("line %d: %s: %w", line, name, err)
+			}
+			v[name] = x
+		}
+		code, year, lag := int(v["GRCODE"]), int(v["AccidentYear"]), int(v["DevelopmentLag"])
+		co := companies[code]
+		if co == nil {
+			co = &company{code: code, name: strings.TrimSpace(rec[col["GRNAME"]]), cells: map[[2]int]cell{}}
+			companies[code] = co
+		}
+		key := [2]int{year, lag}
+		if _, dup := co.cells[key]; dup {
+			return nil, fmt.Errorf("line %d: duplicate row for company %d, accident year %d, lag %d", line, code, year, lag)
+		}
+		co.cells[key] = cell{incurred: v["IncurredLosses"], paid: v["CumPaidLoss"], direct: v["EarnedPremDIR"], net: v["EarnedPremNet"]}
+		firstYear, lastYear = min(firstYear, year), max(lastYear, year)
+	}
+	if len(companies) == 0 {
+		return nil, errors.New("no rows")
+	}
+	codes := make([]int, 0, len(companies))
+	for code := range companies {
+		codes = append(codes, code)
+	}
+	slices.Sort(codes)
+	years := lastYear - firstYear + 1
+	var refs []triangle.ReferenceSet
+	for _, code := range codes {
+		if ref, ok := companies[code].referenceSet(firstYear, years); ok {
+			refs = append(refs, ref)
+		}
+	}
+	if len(refs) == 0 {
+		return nil, errors.New("no company has every accident year to the last development lag")
+	}
+	return refs, nil
+}
+
+// referenceSet builds the company's paid and incurred triangles valued at the
+// end of the last accident year, its incurred developed to the last lag, and
+// its premium by accident year. ok is false when any cell is missing.
+func (c *company) referenceSet(firstYear, years int) (triangle.ReferenceSet, bool) {
+	ref := triangle.ReferenceSet{
+		Name:              strconv.Itoa(c.code),
+		Company:           c.name,
+		Paid:              triangle.Triangle{StartYear: firstYear, Cells: make([][]float64, years)},
+		Incurred:          triangle.Triangle{StartYear: firstYear, Cells: make([][]float64, years)},
+		DevelopedIncurred: triangle.Triangle{StartYear: firstYear, Cells: make([][]float64, years)},
+		EarnedPremium:     make([]float64, years),
+		DirectPremium:     make([]float64, years),
+	}
+	for i := range years {
+		for lag := 1; lag <= years; lag++ {
+			v, ok := c.cells[[2]int{firstYear + i, lag}]
+			if !ok {
+				return triangle.ReferenceSet{}, false
+			}
+			if lag == 1 {
+				ref.EarnedPremium[i], ref.DirectPremium[i] = v.net, v.direct
+			}
+			ref.DevelopedIncurred.Cells[i] = append(ref.DevelopedIncurred.Cells[i], v.incurred)
+			if lag <= years-i {
+				ref.Paid.Cells[i] = append(ref.Paid.Cells[i], v.paid)
+				ref.Incurred.Cells[i] = append(ref.Incurred.Cells[i], v.incurred)
+			}
+		}
+	}
+	return ref, true
 }

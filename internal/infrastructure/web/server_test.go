@@ -26,7 +26,7 @@ import (
 
 func newTestServer(t *testing.T) *web.Server {
 	t.Helper()
-	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
+	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
 	if err != nil {
 		t.Fatal(err)
 	}

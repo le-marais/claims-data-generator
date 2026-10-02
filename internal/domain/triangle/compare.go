@@ -7,8 +7,10 @@ import (
 	"strings"
 )
 
-// ReferenceSet is one reference company's observed triangles.
+// ReferenceSet is one reference company's observed triangles and premium.
 //
+// Paid and incurred are net of reinsurance, as Schedule P reports them, and
+// EarnedPremium is net premium to match, so the loss ratio is net over net.
 // Incurred is Schedule P total incurred: paid, case, bulk and IBNR reserves.
 // The generated incurred it is compared with is paid plus case plus pure IBNR
 // held at its true value (AnnualSet.TotalIncurred), so unreported claims count
@@ -16,10 +18,18 @@ import (
 // company's IBNR held early and released later pulls its factors below 1,
 // which a perfect IBNR does not, so the incurred check stays a loose bound.
 type ReferenceSet struct {
-	Name          string
-	Paid          Triangle
-	Incurred      Triangle
+	// Name is the company's NAIC group or company code, for example "10007".
+	Name string
+	// Company is the company's name as Schedule P reports it.
+	Company  string
+	Paid     Triangle
+	Incurred Triangle
+	// EarnedPremium is net earned premium by accident year, the loss
+	// ratio's denominator.
 	EarnedPremium []float64
+	// DirectPremium is direct and assumed earned premium by accident year.
+	// Its ratio to EarnedPremium tracks the company's reinsurance.
+	DirectPremium []float64
 	// DevelopedIncurred is Incurred completed with the company's later
 	// reported development, so every origin year is valued at the same, full
 	// age. The loss ratio is scored on it. The zero value means the later

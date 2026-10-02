@@ -15,14 +15,22 @@ import (
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
 )
 
+// personalMotorRefs is the realism gate's reference pool: the private
+// passenger auto companies embedded in the binary.
+func personalMotorRefs(t *testing.T) []triangle.ReferenceSet {
+	t.Helper()
+	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return refs
+}
+
 // TestDefaultPresetIsRealistic is the MVP realism gate: data generated with
 // the shipped motor-personal preset must land inside the bands observed
 // across the Schedule P reference companies.
 func TestDefaultPresetIsRealistic(t *testing.T) {
-	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	refs := personalMotorRefs(t)
 	req := request(t)
 	req.StartYear = 1998
 	req.Years = 10
@@ -52,10 +60,7 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 }
 
 func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
-	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	refs := personalMotorRefs(t)
 	req := request(t)
 	req.Years = 10
 	req.InitialBookSize = 2000
@@ -81,10 +86,7 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 // The reference is a liability line, so the gate must score the scored
 // third-party sections alone: own-damage settlement speed cannot move them.
 func TestRealismScoresOnlyTheScoredSections(t *testing.T) {
-	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	refs := personalMotorRefs(t)
 	report := func(ownDamageMeanDays float64) triangle.Report {
 		req := request(t)
 		req.Years = 10
