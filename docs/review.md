@@ -34,34 +34,7 @@ touching the area.
   `settlement_share`, so the final payment varies by claim; refresh the golden
   hashes and re-check the realism gate.
 
-## 2. MR-8 (low) - injury severity is a bare Pareto, and personal motor's liability takes the excess
-
-- Where: `internal/domain/claim/claim.go`, `drawGroundUpLoss`;
-  `internal/infrastructure/config/motor-personal.yaml`.
-- No third-party injury claim is below the Pareto minimum less the excess:
-  in the personal preset, with scale 6000 and excesses of $0-$1,000, about
-  $5,000-$6,000 after excess in start-year dollars, and the mode sits at that
-  floor; in the commercial preset, which takes no excess on liability, its
-  $9,000 scale. The `lognormal` kind gives property damage a lognormal body,
-  but injury is still a bare Pareto.
-- The personal preset applies the excess to its liability claims, which a US
-  auto liability book would not do. On $1,000-excess policies it discards
-  about 26% of property damage ground-up losses (median 1800, sigma 0.9), so
-  the reported property damage frequency and severity depend on the insured's
-  own-damage excess. The third party is underpaid: in a personal motor run
-  (seed 1, 1998-2000, 150 policies in the first year) claims 3, 28 and 33,
-  all property damage, paid their third parties $500, $300 and $500 less than
-  their losses. The per-section `no_excess` switch exists, and the
-  commercial preset's liability sections use it; switching it on for the
-  personal preset raises its liability frequency and cost, so its third-party
-  frequencies need re-setting and its realism gate re-checking.
-- The body shape shows in the claim-size histogram but barely moves the
-  triangles, so it can wait.
-- Action: set `no_excess: true` on the personal preset's two liability
-  sections and recalibrate them. Later, a lognormal body with a Pareto tail as
-  another severity kind.
-
-## 3. MR-20 (low) - payment and revision timing is not tied to claim events
+## 2. MR-20 (low) - payment and revision timing is not tied to claim events
 
 - Where: `internal/domain/transaction/runoff.go`, `drawInterimPayments` and
   `drawRevisions`; `lob.RunoffParams`.
@@ -70,7 +43,7 @@ touching the area.
   serves every section, so a small repair and a slow injury claim share
   `payments_per_year` and `revisions_per_year`, and nothing ties a revision to
   an event such as a repair estimate arriving.
-- In the 150-policy seed-1 run above: claim 13, a repair of about $500, paid
+- In the 150-policy seed-1 run of MR-19: claim 13, a repair of about $500, paid
   in two instalments over 88 days; claim 28, $5,532 of property damage, had
   four case revisions in three and a half months; claim 33 left its case
   untouched for four and a half months and revised it only on the close date.
@@ -79,7 +52,7 @@ touching the area.
   `SectionParams`, and consider a revision soon after report, when the first
   estimate arrives.
 
-## 4. MR-12 (low) - one setting drives two kinds of variation
+## 3. MR-12 (low) - one setting drives two kinds of variation
 
 - Where: `internal/domain/policy/book.go`, `drawVehicle`.
 - `spread` sets both the sum-insured lognormal sigma and the risk-factor

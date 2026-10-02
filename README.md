@@ -52,7 +52,7 @@ Configure a run in the sidebar and hit Generate - the summary tab shows per-year
 
 | Realism check | Realism check - failing run |
 | --- | --- |
-| Every metric of the default preset falls inside the bands observed across the Schedule P reference companies. | Raising the third-party injury base frequency to 0.1 pushes the ultimate loss ratio outside its band. |
+| Every metric of the default preset falls inside the bands observed across the Schedule P reference companies. | Raising the third-party injury base frequency to 0.1 pushes the ultimate loss ratio and the early paid factors outside their bands. |
 | ![Realism tab passing, every metric inside its reference band](docs/screenshots/ui-realism-pass.png) | ![Realism tab failing, ultimate loss ratio outside its reference band](docs/screenshots/ui-realism-fail.png) |
 
 ## How the simulation works
@@ -131,7 +131,7 @@ flowchart TD
     draws["each policy is a fleet of one, and draws<br/>cover start: uniform over the year, cover end: start + 364 days<br/>sum insured: lognormal, sigma spread, median sum_insured_median<br/>drifting by sum_insured_inflation a year<br/>risk factor: gamma, mean 1, standard deviation spread<br/>excess: weighted pick from excess_choices"]
     fleet["each fleet draws<br/>cover start: uniform over the year, cover end: start + 364 days<br/>excess: weighted pick from excess_choices<br/>vehicles: lognormal, median size.median, sigma size.sigma,<br/>rounded, at least 1<br/>median vehicle sum insured: sum_insured_median, drifting by<br/>sum_insured_inflation a year, × lognormal, sigma sum_insured_sigma<br/>fleet risk factor: gamma, mean 1, standard deviation risk_spread"]
     vehicle["each vehicle is a policy with the fleet's cover dates and excess<br/>sum insured: lognormal, sigma spread, median the fleet's<br/>risk factor: the fleet's × gamma, mean 1, standard deviation spread"]
-    expected["expected loss under the pricing block, section by section<br/>expected cost above the excess, or from the first dollar<br/>on a no_excess section, from the section's assumed severity:<br/>sum_insured_lognormal, capped at the sum insured<br/>lognormal or pareto, capped at the section's limit, if set<br/>× base_frequency × risk factor<br/>× (1 - nil_probability<br/>+ reopen_probability × reopen_estimate_factor)<br/>trended at inflation_mean to the middle of the cover"]
+    expected["expected loss under the pricing block, section by section<br/>expected cost above the excess, or from the first dollar<br/>on a no_excess section, from the section's assumed severity:<br/>sum_insured_lognormal, capped at the sum insured<br/>lognormal, pareto or lognormal_pareto,<br/>capped at the section's limit, if set<br/>× base_frequency × risk factor<br/>× (1 - nil_probability<br/>+ reopen_probability × reopen_estimate_factor)<br/>trended at inflation_mean to the middle of the cover"]
     premium["premium = expected loss / the year's priced loss ratio<br/>kept per section too, for the realism check"]
     size -- "that many" --> fleetSet
     fleetSet -- "no" --> draws --> expected
@@ -156,6 +156,7 @@ flowchart TD
     siLoss["sum_insured_lognormal: base-year sum insured<br/>× lognormal fraction, median median_fraction,<br/>sigma sigma"]
     lognormalLoss["lognormal: median median,<br/>sigma sigma, in start-year dollars"]
     paretoLoss["pareto: minimum scale,<br/>tail index alpha"]
+    splicedLoss["lognormal_pareto: lognormal body, median median,<br/>sigma sigma, below scale; Pareto tail,<br/>index alpha, above it; continuous at scale"]
     index["claims inflation index<br/>each year × inflation.mean × LN(inflation.volatility),<br/>compounded from 1.0, smooth through the year"]
     trended["× the index at the occurrence date"]
     cap["sum_insured_lognormal only: capped at the sum insured,<br/>a total loss"]
@@ -170,16 +171,18 @@ flowchart TD
     kind -- "sum_insured_lognormal" --> siLoss
     kind -- "lognormal" --> lognormalLoss
     kind -- "pareto" --> paretoLoss
+    kind -- "lognormal_pareto" --> splicedLoss
     siLoss --> trended
     lognormalLoss --> trended
     paretoLoss --> trended
+    splicedLoss --> trended
     index --> trended
     trended --> cap --> excess --> pierce
     pierce -- "no" --> dropped
     pierce -- "yes" --> ultimate --> limitCap --> closeDate --> nilFlag
 ```
 
-Losses that do not exceed the excess are never reported, so the reported frequency sits below `base_frequency`. A section with `no_excess: true` takes no excess and pays every loss from the first dollar, as liability cover usually does: the commercial preset's two liability sections. In the presets, report lags are short for own damage and property damage and longer for injury claims, so there are claims incurred but not yet reported to estimate. Own-damage and property-damage claims settle in weeks to months. Injury claims are rarer, heavy-tailed (Pareto) and settle in a slow long-tail regime calibrated to each preset's Schedule P liability reference, so paid losses keep developing at later ages; commercial injury settles more slowly than personal. Property damage is a lognormal in start-year dollars. Injury and property damage are capped at their per-claim limits (`limit`: $100,000 and $50,000 in the personal preset, $1m on both in the commercial preset, as a combined single limit would), which cover a claim's whole life, reopen included. A limit is nominal, a contract term that claims inflation does not trend, so inflation erodes it over the years; a claim settled at its limit settles like a claim of the limit's size. In every section, settlement time lengthens smoothly with claim size. A share of reported claims are nil - they close without any payment at their first close.
+Losses that do not exceed the excess are never reported, so the reported frequency sits below `base_frequency`. A section with `no_excess: true` takes no excess and pays every loss from the first dollar, as liability cover usually does: both presets' two liability sections, so third parties are paid in full. In the presets, report lags are short for own damage and property damage and longer for injury claims, so there are claims incurred but not yet reported to estimate. Own-damage and property-damage claims settle in weeks to months. Injury claims are rarer and heavy-tailed - a lognormal body of small claims under a Pareto tail (`lognormal_pareto`), whose share of claims keeps the density continuous where the tail starts - and settle in a slow long-tail regime calibrated to each preset's Schedule P liability reference, so paid losses keep developing at later ages; commercial injury settles more slowly than personal. Property damage is a lognormal in start-year dollars. Injury and property damage are capped at their per-claim limits (`limit`: $100,000 and $50,000 in the personal preset, $1m on both in the commercial preset, as a combined single limit would), which cover a claim's whole life, reopen included. A limit is nominal, a contract term that claims inflation does not trend, so inflation erodes it over the years; a claim settled at its limit settles like a claim of the limit's size. In every section, settlement time lengthens smoothly with claim size. A share of reported claims are nil - they close without any payment at their first close.
 
 Claims inflation is a stochastic path: each calendar year's factor is a mean level (a per-line-of-business knob) times lognormal noise, compounding from the start year and drawn from its own labelled sub-stream so it stays reproducible and independent of the other stages. The index sits at each year's compounded value in the middle of the year and moves smoothly between years rather than stepping each 1 January.
 
