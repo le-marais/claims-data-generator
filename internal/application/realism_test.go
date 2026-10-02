@@ -23,7 +23,7 @@ import (
 // private passenger auto companies that PersonalMotorCriteria selects.
 func personalMotorRefs(t *testing.T) []triangle.ReferenceSet {
 	t.Helper()
-	all, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
+	all, err := schedulep.LoadFS(refdata.Files, refdata.LineFiles[application.PrivatePassengerAuto])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestRealismScoresTheUnionOfScoredSections(t *testing.T) {
 // MR-15: the gate's pool is the complete companies with steady premium and
 // reinsurance that write at least $5m a year, less reinsurers.
 func TestPersonalMotorPool(t *testing.T) {
-	all, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
+	all, err := schedulep.LoadFS(refdata.Files, refdata.LineFiles[application.PrivatePassengerAuto])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,6 +288,43 @@ func TestPersonalMotorPool(t *testing.T) {
 		"10308": "net premium varies too much (CV 0.519)",         // about $70k a year, shrinking
 		"20430": "too small (mean net premium 2986)",              // cedes a steady 75%, which net premium makes fair
 		"33499": "reinsurer (Dorinco Rein Co)",
+	} {
+		if reasons[name] != want {
+			t.Errorf("company %s: Reason = %q, want %q", name, reasons[name], want)
+		}
+	}
+}
+
+// The commercial auto pool is the complete companies inside Meyers' limits
+// for the line that write at least $1m a year. No reinsurer passes the
+// limits, so none is excluded by name.
+func TestCommercialAutoPool(t *testing.T) {
+	all, err := schedulep.LoadFS(refdata.Files, refdata.LineFiles[application.CommercialAuto])
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := application.CommercialAutoCriteria()
+	var got []string
+	for _, r := range triangle.SelectReferences(all, c) {
+		got = append(got, r.Name)
+	}
+	want := []string{
+		"353", "620", "833", "965", "1066", "1090", "1538", "1767", "2135", "2143",
+		"2712", "3240", "4839", "5185", "6408", "6947", "7080", "8079", "10022", "11126",
+		"12866", "13439", "13501", "13528", "13889", "14044", "14176", "14257", "14370", "18163",
+		"18767", "19020", "20690", "21172", "21270", "23574", "23663", "31550", "40568", "41300",
+		"44130", "44415",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("pool = %v\nwant %v", got, want)
+	}
+	reasons := map[string]string{}
+	for _, r := range all {
+		reasons[r.Name] = c.Reason(r)
+	}
+	for name, want := range map[string]string{
+		"1716":  "too small (mean net premium 913)",
+		"27065": "too small (mean net premium 999)",
 	} {
 		if reasons[name] != want {
 			t.Errorf("company %s: Reason = %q, want %q", name, reasons[name], want)

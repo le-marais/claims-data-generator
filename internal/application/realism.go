@@ -86,6 +86,35 @@ func sectionsOf(ds Dataset, sections []int) ([]policy.Policy, []claim.Claim) {
 	return policies, claims
 }
 
+// Reference line IDs: the Schedule P lines the realism gate scores against.
+const (
+	PrivatePassengerAuto = "private_passenger_auto"
+	CommercialAuto       = "commercial_auto"
+)
+
+// ReferenceLine is a Schedule P line the realism gate scores against: what
+// to call it and the rules that select its reference companies.
+type ReferenceLine struct {
+	ID       string
+	Label    string
+	Criteria triangle.ReferenceCriteria
+}
+
+// ReferenceLines lists the lines the realism gate can score against.
+func ReferenceLines() []ReferenceLine {
+	return []ReferenceLine{
+		{ID: PrivatePassengerAuto, Label: "private passenger auto liability", Criteria: PersonalMotorCriteria()},
+		{ID: CommercialAuto, Label: "commercial auto liability", Criteria: CommercialAutoCriteria()},
+	}
+}
+
+// ReferencePool is a reference line's selected companies, the bands the
+// realism gate scores against.
+type ReferencePool struct {
+	Line ReferenceLine
+	Refs []triangle.ReferenceSet
+}
+
 // PersonalMotorCriteria selects the private passenger auto reference pool
 // (MR-15). The two coefficient-of-variation limits are Meyers' for personal
 // auto (CAS Monograph 1, 2015, table 11): books with steady premium and a
@@ -106,5 +135,19 @@ func PersonalMotorCriteria() triangle.ReferenceCriteria {
 			"35408": "reinsurer (Sirius Amer Ins Co)",
 			"42439": "reinsurer (Toa-Re Ins Co Of Amer)",
 		},
+	}
+}
+
+// CommercialAutoCriteria selects the commercial auto reference pool. The two
+// coefficient-of-variation limits are Meyers' for commercial auto (CAS
+// Monograph 1, 2015, table 11). Commercial auto companies are smaller than
+// personal auto ones: of the 54 inside the limits, a $5m floor keeps 25, too
+// few for steady P5-P95 bands, so the floor is $1m. No reinsurer passes the
+// limits. Of the 137 complete companies, 42 are selected.
+func CommercialAutoCriteria() triangle.ReferenceCriteria {
+	return triangle.ReferenceCriteria{
+		MaxPremiumCV:     0.399,
+		MaxNetToDirectCV: 0.125,
+		MinMeanPremium:   1000,
 	}
 }

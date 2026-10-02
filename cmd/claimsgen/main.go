@@ -136,7 +136,7 @@ func runUI(args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	all, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
+	all, err := schedulep.LoadFS(refdata.Files, refdata.LineFiles[application.PrivatePassengerAuto])
 	if err != nil {
 		fmt.Fprintf(stderr, "claimsgen: reference data: %v\n", err)
 		return 1
