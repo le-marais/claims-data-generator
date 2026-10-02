@@ -511,14 +511,14 @@ function renderRealism(r) {
   const scored = names.length
     ? `Scored on the ${names.join(" and ")} ${names.length > 1 ? "sections" : "section"} alone, their claims against their share of premium: the Schedule P private passenger auto reference is a liability line, and the line of business marks these sections to score against it.`
     : "Scored on the whole book against the Schedule P private passenger auto liability reference.";
-  scope.textContent = `${scored} The loss ratio band uses each company's loss ratio developed to age 10. Generated incurred adds pure IBNR at its true value but no bulk reserve, while Schedule P incurred includes both, so the incurred factors are a loose sanity bound.`;
+  scope.textContent = `${scored} The loss ratio band uses each company's loss ratio developed to age 10. Generated incurred adds pure IBNR at its true value but no bulk reserve, while Schedule P incurred includes both, so the incurred factors are a loose sanity bound. The drift band is each company's drift over the reference median, which leaves out the market cycle the companies share.`;
   panel.append(
     banner,
     scope,
     bandCard("Paid age-to-age factors vs reference P5-P95 (min/max faint)", r.paid_ata || []),
     bandCard("Incurred age-to-age factors vs reference P5-P95 (min/max faint)", r.incurred_ata || []),
     bandCard("Net loss ratio vs Schedule P P5-P95 (min/max faint)", [{ ...r.loss_ratio, label: "Net LR" }]),
-    bandCard("Loss-ratio drift 2nd half / 1st half (flat = 1)", [{ ...r.loss_ratio_drift, label: "Drift" }]),
+    bandCard("Loss-ratio drift 2nd half / 1st half vs reference, relative to its median (flat = 1)", [{ ...r.loss_ratio_drift, label: "Drift" }]),
   );
 }
 

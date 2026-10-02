@@ -216,9 +216,12 @@ func usableRefs(refs []ReferenceSet) []ReferenceSet {
 // loss-ratio drift between the two halves of the accident years. Only ages
 // present in both generated and reference data are checked.
 //
-// The drift band is the reference companies' own drift, like every other
-// band (MR-13). Real books drift a lot - P5-P95 roughly 0.54 to 1.47 on the
-// embedded companies - so this check is a realism bound, not a guard against
+// The drift band is the reference companies' drift relative to the pool's
+// median drift (MR-15). Accident years 1998-2007 span the 2001-2004 hard
+// market, which improved the later accident years of most companies alike,
+// so their raw drifts centre below 1; the generator models no market cycle.
+// Dividing by the median keeps the spread between companies and drops the
+// level they share. The check is a realism bound, not a guard against
 // systematic drift in the model; that guard is a test that switches the
 // model's noise off (TestPresetHasNoSystematicLossRatioDrift).
 //
@@ -254,10 +257,25 @@ func CompareToReference(c Comparison, refs []ReferenceSet) Report {
 			drifts = append(drifts, d)
 		}
 	}
-	driftBand := bandFromValues(drifts)
+	driftBand := bandFromValues(relativeToMedian(drifts))
 	drift, driftOK := lossRatioDrift(c.Incurred, c.EarnedPremium)
 	report.LossRatioDrift = Check{Value: drift, Band: driftBand, Within: !driftOK || driftBand.contains(drift)}
 	return report
+}
+
+// relativeToMedian divides xs by their median, keeping their spread and
+// dropping the level they share. It returns xs unchanged when the median is
+// not positive.
+func relativeToMedian(xs []float64) []float64 {
+	med := Percentile(xs, 50)
+	if math.IsNaN(med) || med <= 0 {
+		return xs
+	}
+	out := make([]float64, len(xs))
+	for i, x := range xs {
+		out[i] = x / med
+	}
+	return out
 }
 
 func checkAges(factors []float64, bands []Band) []AgeCheck {

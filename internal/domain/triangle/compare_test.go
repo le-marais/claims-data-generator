@@ -96,29 +96,32 @@ func TestLossRatioBandUsesDevelopedIncurred(t *testing.T) {
 	}
 }
 
+// driftRef is a reference company whose developed loss ratio is 0.5 over the
+// first five accident years and secondHalf/100 over the last five.
+func driftRef(name string, secondHalf float64) ReferenceSet {
+	cells := make([][]float64, 10)
+	for i := range cells {
+		v := 50.0
+		if i >= 5 {
+			v = secondHalf
+		}
+		cells[i] = []float64{v}
+	}
+	ep := make([]float64, 10)
+	for i := range ep {
+		ep[i] = 100
+	}
+	return ReferenceSet{
+		Name: name, Paid: Triangle{Cells: [][]float64{{1, 2}}},
+		Incurred: Triangle{Cells: [][]float64{{1, 1}}}, DevelopedIncurred: Triangle{Cells: cells},
+		EarnedPremium: ep,
+	}
+}
+
 // MR-13: the drift band is the reference companies' own drift on developed
 // incurred, not a fixed tolerance.
 func TestDriftBandComesFromReferenceDrift(t *testing.T) {
-	ref := func(name string, secondHalf float64) ReferenceSet {
-		cells := make([][]float64, 10)
-		for i := range cells {
-			v := 50.0 // loss ratio 0.5
-			if i >= 5 {
-				v = secondHalf
-			}
-			cells[i] = []float64{v}
-		}
-		ep := make([]float64, 10)
-		for i := range ep {
-			ep[i] = 100
-		}
-		return ReferenceSet{
-			Name: name, Paid: Triangle{Cells: [][]float64{{1, 2}}},
-			Incurred: Triangle{Cells: [][]float64{{1, 1}}}, DevelopedIncurred: Triangle{Cells: cells},
-			EarnedPremium: ep,
-		}
-	}
-	refs := []ReferenceSet{ref("shrinking", 40), ref("flat", 50), ref("growing", 75)}
+	refs := []ReferenceSet{driftRef("shrinking", 40), driftRef("flat", 50), driftRef("growing", 75)}
 	gen, ep := flatTriangle(10, 60, 100)
 	report := CompareToReference(Comparison{Incurred: gen, EarnedPremium: ep}, refs)
 	b := report.LossRatioDrift.Band
@@ -127,5 +130,35 @@ func TestDriftBandComesFromReferenceDrift(t *testing.T) {
 	}
 	if !report.LossRatioDrift.Within {
 		t.Fatalf("flat generated drift %v outside the reference band %+v", report.LossRatioDrift.Value, b)
+	}
+}
+
+// MR-15: the drift band is the reference drifts over their median, so a level
+// the reference companies share, such as a market cycle, does not set it.
+func TestDriftBandIsRelativeToThePoolMedian(t *testing.T) {
+	// Raw drifts 0.8, 0.9 and 1.2, around a median of 0.9.
+	refs := []ReferenceSet{driftRef("improving", 40), driftRef("typical", 45), driftRef("worsening", 60)}
+	flat, ep := flatTriangle(10, 60, 100)
+	report := CompareToReference(Comparison{Incurred: flat, EarnedPremium: ep}, refs)
+	b := report.LossRatioDrift.Band
+	if math.Abs(b.Min-0.8/0.9) > 1e-9 || math.Abs(b.Max-1.2/0.9) > 1e-9 {
+		t.Fatalf("drift band min/max [%v, %v], want the drifts over their median [%v, %v]", b.Min, b.Max, 0.8/0.9, 1.2/0.9)
+	}
+	if !report.LossRatioDrift.Within {
+		t.Fatalf("flat generated drift outside the band %+v", b)
+	}
+	// A drift of 0.85 is inside the raw drifts' P5-P95, [0.81, 1.17], but
+	// below the relative band, [0.90, 1.30].
+	improving := make([][]float64, 10)
+	for i := range improving {
+		v := 60.0
+		if i >= 5 {
+			v = 51
+		}
+		improving[i] = []float64{v}
+	}
+	report = CompareToReference(Comparison{Incurred: Triangle{StartYear: 1998, Cells: improving}, EarnedPremium: ep}, refs)
+	if report.LossRatioDrift.Within {
+		t.Fatalf("generated drift %v inside %+v, want outside the relative band", report.LossRatioDrift.Value, report.LossRatioDrift.Band)
 	}
 }
