@@ -388,8 +388,8 @@ flowchart TD
     section["scored sections together<br/>their claims against<br/>each policy's premium for them"]
     triangles["accident-year triangles, 10 development years<br/>paid net of recoveries,<br/>incurred plus pure IBNR, earned premium"]
     metrics["paid age-to-age factors<br/>incurred age-to-age factors<br/>ultimate loss ratio<br/>loss-ratio drift between the two halves<br/>of the accident years"]
-    references[("96 Schedule P private passenger auto<br/>liability companies, accident years 1998-2007")]
-    bands["P5-P95 band for each metric<br/>across the companies"]
+    references[("45 Schedule P private passenger auto<br/>liability companies, accident years 1998-2007,<br/>steady premium and reinsurance, $5m a year and up")]
+    bands["P5-P95 band for each metric<br/>across the companies,<br/>drift relative to their median"]
     verdict{"every metric<br/>inside its band?"}
     pass(["pass"])
     fail(["fail"])
@@ -399,38 +399,49 @@ flowchart TD
     verdict -- "no" --> fail
 ```
 
-Generated data is checked against 96 hand-curated Schedule P private passenger
-auto reference companies (`data/reference/schedule p/ppauto_pos98-07/`, accident
-years 1998-2007). The reference is Schedule P Part 1B, private passenger auto
-liability/medical. It includes bodily injury and property damage liability,
-personal injury protection, medical payments and uninsured motorist. It excludes
-physical damage, which is Part 1J and has no 10-year history. The preset marks
-its two third-party (liability) sections, `third_party_property` and
-`third_party_injury`, `scored: true`, and the check scores them together: their
-claims against their share of premium. A line of business with no scored section
-is scored as a whole book. Own-damage claims are left out of the score rather
-than slowed to liability settlement speed, and the preset sets their settlement
-as a short-tail class. The preset carries no first-party injury cover (personal
-injury protection, medical payments, uninsured motorist). Part 1B is net of
-reinsurance and includes defence costs; the generated losses are gross of
-reinsurance and exclude defence costs, which the calibration absorbs implicitly.
-The UI's triangle tab still shows the whole book. The companies were curated
-from the full Schedule P extract via `data/reference/gr-code-list.md` and `tools/prune-dec2025.ps1` to
-remove low-volume and degenerate companies. Paid and incurred age-to-age
-development factors, the ultimate loss ratio, and the loss-ratio drift between
-the two halves of the accident years must fall inside the P5-P95 bands
-observed across those companies. The generated triangles run to full
+Generated data is checked against Schedule P private passenger auto reference
+companies from the CAS loss reserving database
+(`data/reference/schedule p/ppauto_pos98-07.csv`, accident years 1998-2007; see
+`data/reference/README.md`). The reference is Schedule P Part 1B, private
+passenger auto liability/medical. It includes bodily injury and property damage
+liability, personal injury protection, medical payments and uninsured motorist.
+It excludes physical damage, which is Part 1J and has no 10-year history. The
+preset marks its two third-party (liability) sections, `third_party_property`
+and `third_party_injury`, `scored: true`, and the check scores them together:
+their claims against their share of premium. A line of business with no scored
+section is scored as a whole book. Own-damage claims are left out of the score
+rather than slowed to liability settlement speed, and the preset sets their
+settlement as a short-tail class. The preset carries no first-party injury
+cover (personal injury protection, medical payments, uninsured motorist). Part
+1B losses are net of reinsurance and include defence costs, and they are scored
+against net earned premium. The generated losses are gross of reinsurance and
+exclude defence costs, which the calibration absorbs implicitly. The UI's
+triangle tab still shows the whole book.
+
+Of the 121 companies with every accident year known to age 10, the check keeps
+the 45 that `application.PersonalMotorCriteria` selects: net premium steady
+across the years (coefficient of variation under 0.45) and a steady reinsurance
+programme (coefficient of variation of the net-to-direct premium ratio under
+0.125), the limits Meyers used to select Schedule P triangles (CAS Monograph 1,
+2015); at least $5m of net premium a year, so claim sampling noise in small
+books does not set the band edges; and no reinsurers. Paid and incurred
+age-to-age development factors, the ultimate loss ratio, and the loss-ratio
+drift between the two halves of the accident years must fall inside the P5-P95
+bands observed across those companies. The generated triangles run to full
 development, so the loss ratio is scored against each company's loss ratio
 developed to age 10 with its later reported development, not its latest
-diagonal. Schedule P incurred includes bulk and IBNR reserves, so the
-generated incurred the check scores adds pure IBNR, the true cost of claims
-that have occurred but are not yet reported. It has no bulk reserve, though,
-and a perfect IBNR does not over-reserve and release the way a real company's
-estimate does, so treat the incurred check as a loose sanity bound. A
-backstop filter drops any company carrying no scorable signal, and the full
-min/max range is shown for context. The paid comparison is net of recoveries, matching how Schedule P
+diagonal. Schedule P incurred includes bulk and IBNR reserves, so the generated
+incurred the check scores adds pure IBNR, the true cost of claims that have
+occurred but are not yet reported. It has no bulk reserve, though, and a perfect
+IBNR does not over-reserve and release the way a real company's estimate does,
+so treat the incurred check as a loose sanity bound. A backstop filter drops any
+company carrying no scorable signal, and the full min/max range is shown for
+context. The paid comparison is net of recoveries, matching how Schedule P
 reports paid losses. This runs as a test gate (`TestDefaultPresetIsRealistic`,
-across several seeds). Real books drift widely, so the drift band is loose; a
+across several seeds). The drift band is each company's drift over the pool's
+median: the accident years span the 2001-2004 hard market, which improved most
+companies' later years alike, and the generator models no market cycle, so the
+band keeps the spread between companies and leaves out the level they share. A
 separate test (`TestPresetHasNoSystematicLossRatioDrift`) switches the model's
 inflation and pricing noise off and requires the loss ratio to stay flat, which
 catches systematic drift such as pricing and claims inflation trending apart.
