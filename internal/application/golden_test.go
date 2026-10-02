@@ -105,7 +105,7 @@ func TestGoldenAnnualTriangles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	liability, err := application.SectionComparison(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections())
+	liability, err := application.SectionComparison(ds, req.StartYear, req.Years, scoredSections(t, "motor-personal", req.LOB))
 	if err != nil {
 		t.Fatal(err)
 	}

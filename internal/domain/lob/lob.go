@@ -131,11 +131,6 @@ type SectionParams struct {
 	// severity: a liability claim settled at its Limit leaves no wreck to
 	// sell.
 	Recoveries bool
-	// Scored marks a section the realism gate scores against the Schedule P
-	// reference. The gate scores the scored sections together, their claims
-	// against their combined premium; with none marked it scores the whole
-	// book.
-	Scored bool
 }
 
 // SeverityKind names a ground-up loss distribution.
@@ -332,18 +327,6 @@ func (l LineOfBusiness) checkPricingSections() error {
 		}
 	}
 	return nil
-}
-
-// ScoredSections are the indices of the sections the realism gate scores, in
-// order, or nil when none is marked and the gate scores the whole book.
-func (c ClaimParams) ScoredSections() []int {
-	var scored []int
-	for i, sec := range c.Sections {
-		if sec.Scored {
-			scored = append(scored, i)
-		}
-	}
-	return scored
 }
 
 func (b BookParams) validate() error {

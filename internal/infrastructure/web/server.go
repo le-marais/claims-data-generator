@@ -45,17 +45,19 @@ const (
 // set says "you cancelled this yourself".
 const statusClientClosedRequest = 499
 
-// Server handles the UI's HTTP API. Apart from the loaded reference sets it
+// Server handles the UI's HTTP API. Apart from the loaded reference pools it
 // is stateless: the latest run lives in the browser, and a download
 // regenerates the run from its seed and parameters, which reproduce it byte
 // for byte. The server writes no files.
 type Server struct {
-	refs []triangle.ReferenceSet
-	mux  *http.ServeMux
+	pools map[string]application.ReferencePool
+	mux   *http.ServeMux
 }
 
-func NewServer(refs []triangle.ReferenceSet) *Server {
-	s := &Server{refs: refs, mux: http.NewServeMux()}
+// NewServer serves the UI, scoring each run against the reference pool of
+// its preset's realism line; pools are keyed by reference line ID.
+func NewServer(pools map[string]application.ReferencePool) *Server {
+	s := &Server{pools: pools, mux: http.NewServeMux()}
 	s.mux.HandleFunc("GET /api/lobs", s.handleLOBs)
 	s.mux.HandleFunc("GET /api/lobs/{id}/preset", s.handlePreset)
 	s.mux.HandleFunc("GET /api/limits", s.handleLimits)
@@ -137,12 +139,16 @@ func (s *Server) handleFields(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, formFields)
 }
 
+// generateRequest is one run. Preset names the registered preset the
+// parameters were edited from, which decides how the run is scored; the
+// parameters alone decide what is generated.
 type generateRequest struct {
 	Seed            string           `json:"seed"`
 	StartYear       int              `json:"start_year"`
 	Years           int              `json:"years"`
 	InitialBookSize int              `json:"initial_book_size"`
 	OriginBasis     string           `json:"origin_basis"`
+	Preset          string           `json:"preset"`
 	Params          config.LOBParams `json:"params"`
 }
 
@@ -213,12 +219,36 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, rerr.status, rerr.msg)
 		return
 	}
-	realism, err := application.EvaluateRealism(res.ds, res.req.StartYear, res.req.Years, res.line.Claims.ScoredSections(), s.refs)
+	realism, err := s.score(res)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, buildResponse(res.req, res.ds, res.ag, realism))
+}
+
+// score scores a run against the reference pool of the preset it names. A
+// run that names no registered preset, whose preset's line has no pool, or
+// whose parameters lack a section the preset scores is not scored, and the
+// view says why.
+func (s *Server) score(res run) (realismJSON, error) {
+	info, ok := config.PresetInfoFor(res.req.Preset)
+	if !ok {
+		return notScored(fmt.Sprintf("no preset %q to score against", res.req.Preset)), nil
+	}
+	pool, ok := s.pools[info.Realism.Line]
+	if !ok {
+		return notScored(fmt.Sprintf("no reference data for %s", info.Realism.Line)), nil
+	}
+	sections, err := info.Realism.SectionIndices(res.line)
+	if err != nil {
+		return notScored(err.Error()), nil
+	}
+	report, err := application.EvaluateRealism(res.ds, res.req.StartYear, res.req.Years, sections, pool.Refs)
+	if err != nil {
+		return realismJSON{}, err
+	}
+	return realismView(report, info.Realism.Sections, pool), nil
 }
 
 // handleDownload runs a request and returns its five CSVs as one zip archive.

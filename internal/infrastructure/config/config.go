@@ -13,6 +13,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
 )
 
@@ -83,7 +84,6 @@ type SectionParams struct {
 	ReportLag     ReportLagParams `yaml:"report_lag" json:"report_lag"`
 	CloseLag      CloseLagParams  `yaml:"close_lag" json:"close_lag"`
 	Recoveries    bool            `yaml:"recoveries" json:"recoveries"`
-	Scored        bool            `yaml:"scored" json:"scored"`
 }
 
 // InflationParams mirrors lob.InflationParams for YAML/JSON.
@@ -175,16 +175,23 @@ func Load(r io.Reader) (lob.LineOfBusiness, error) {
 	return l, nil
 }
 
-// PresetInfo identifies one embedded line of business preset.
+// PresetInfo identifies one embedded line of business preset and how the
+// realism gate scores it. The scoring is evaluation, not simulation, so it
+// lives here rather than in the preset's YAML.
 type PresetInfo struct {
-	ID   string
-	Name string
+	ID      string
+	Name    string
+	Realism application.RealismProfile
 }
+
+// thirdParty are the sections the motor presets score: the Schedule P auto
+// lines are liability only, with no physical damage in them.
+var thirdParty = []string{"third_party_property", "third_party_injury"}
 
 // New presets are registered here and in presetYAML; the UI picks them up
 // with no further changes.
 var presetInfos = []PresetInfo{
-	{ID: "motor-personal", Name: "Motor personal"},
+	{ID: "motor-personal", Name: "Motor personal", Realism: application.RealismProfile{Line: application.PrivatePassengerAuto, Sections: thirdParty}},
 }
 
 var presetYAML = map[string][]byte{
@@ -193,7 +200,21 @@ var presetYAML = map[string][]byte{
 
 // Presets lists the embedded presets in display order.
 func Presets() []PresetInfo {
-	return slices.Clone(presetInfos)
+	out := slices.Clone(presetInfos)
+	for i := range out {
+		out[i].Realism.Sections = slices.Clone(out[i].Realism.Sections)
+	}
+	return out
+}
+
+// PresetInfoFor returns the registered preset with the given ID.
+func PresetInfoFor(id string) (PresetInfo, bool) {
+	for _, p := range Presets() {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return PresetInfo{}, false
 }
 
 // PresetParams returns a preset's raw parameter set, e.g. to prefill an editor.
@@ -261,7 +282,6 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 				RiskLoading:    sec.CloseLag.RiskLoading,
 			},
 			Recoveries: sec.Recoveries,
-			Scored:     sec.Scored,
 		}
 	}
 	return lob.LineOfBusiness{

@@ -5,7 +5,6 @@ import (
 
 	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
-	"github.com/le-marais/claimsgen/internal/infrastructure/config"
 )
 
 type lobInfoJSON struct {
@@ -79,6 +78,12 @@ type binJSON struct {
 }
 
 type realismJSON struct {
+	// Scored is false when the run has nothing to score against; Note then
+	// says why, and the checks are empty.
+	Scored bool   `json:"scored"`
+	Note   string `json:"note,omitempty"`
+	// Reference describes the pool the run is scored against.
+	Reference referenceJSON `json:"reference"`
 	// Sections names the sections the report scores together; empty means
 	// the whole book.
 	Sections       []string       `json:"sections"`
@@ -88,6 +93,15 @@ type realismJSON struct {
 	PaidShares     []ageCheckJSON `json:"paid_shares"`
 	LossRatio      checkJSON      `json:"loss_ratio"`
 	LossRatioDrift checkJSON      `json:"loss_ratio_drift"`
+}
+
+// referenceJSON describes a reference pool: its Schedule P line, how many
+// companies it holds, and the least a company writes a year to be in it, in
+// dollars.
+type referenceJSON struct {
+	Label      string  `json:"label"`
+	Companies  int     `json:"companies"`
+	MinPremium float64 `json:"min_premium"`
 }
 
 type ageCheckJSON struct {
@@ -109,7 +123,7 @@ type checkJSON struct {
 	Within bool    `json:"within"`
 }
 
-func buildResponse(req generateRequest, ds application.Dataset, ag application.Aggregates, realism triangle.Report) generateResponseJSON {
+func buildResponse(req generateRequest, ds application.Dataset, ag application.Aggregates, realism realismJSON) generateResponseJSON {
 	return generateResponseJSON{
 		Run: runInfoJSON{
 			LOB:             req.Params.Name,
@@ -129,7 +143,7 @@ func buildResponse(req generateRequest, ds application.Dataset, ag application.A
 			Incurred: triangleView(ag.Annual.Incurred),
 		},
 		Distributions: distributionsView(application.ComputeDistributions(ds)),
-		Realism:       realismView(realism, scoredSectionNames(req.Params)),
+		Realism:       realism,
 	}
 }
 
@@ -197,20 +211,25 @@ func finite(f float64) float64 {
 	return f
 }
 
-// scoredSectionNames are the names of the sections the realism gate scores,
-// or empty when it scores the whole book.
-func scoredSectionNames(p config.LOBParams) []string {
-	names := []string{}
-	for _, sec := range p.Claims.Sections {
-		if sec.Scored {
-			names = append(names, sec.Name)
-		}
-	}
-	return names
+// notScored is the realism view of a run with nothing to score against.
+func notScored(note string) realismJSON {
+	return realismJSON{Note: note, Sections: []string{}}
 }
 
-func realismView(r triangle.Report, sections []string) realismJSON {
+// realismView is a scored run's realism view. sections names the scored
+// sections, empty for the whole book; the Schedule P figures are in
+// thousands of dollars.
+func realismView(r triangle.Report, sections []string, pool application.ReferencePool) realismJSON {
+	if sections == nil {
+		sections = []string{}
+	}
 	return realismJSON{
+		Scored: true,
+		Reference: referenceJSON{
+			Label:      pool.Line.Label,
+			Companies:  len(pool.Refs),
+			MinPremium: pool.Line.Criteria.MinMeanPremium * 1000,
+		},
 		Sections:    sections,
 		Pass:        r.Pass(),
 		PaidATA:     ageChecksView(r.PaidATA),

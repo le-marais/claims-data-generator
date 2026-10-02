@@ -11,6 +11,7 @@ const fmtInt = new Intl.NumberFormat("en-US");
 const fmtMoney = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 
 let preset = null; // defaults for the selected LoB, as served by the API
+let presetId = null; // the preset those defaults came from, which decides how a run is scored
 
 async function fetchJSON(url, options) {
   const res = await fetch(url, options);
@@ -52,6 +53,7 @@ async function loadFields() {
 
 async function loadPreset(id) {
   preset = await fetchJSON(`/api/lobs/${encodeURIComponent(id)}/preset`);
+  presetId = id;
   buildParamsForm();
 }
 
@@ -198,6 +200,7 @@ async function generate(event) {
       years: Number($("#years").value),
       initial_book_size: Number($("#initial-book-size").value),
       origin_basis: $("#origin-basis").value,
+      preset: presetId,
       params: collectParams(),
     };
     const run = await fetchJSON("/api/generate", {
@@ -501,16 +504,24 @@ function renderRealism(r) {
   const panel = $("#tab-realism");
   panel.replaceChildren();
   const banner = document.createElement("div");
+  if (!r.scored) {
+    banner.className = "banner banner-neutral";
+    banner.textContent = `Not scored - ${r.note}`;
+    panel.append(banner);
+    return;
+  }
   banner.className = `banner ${r.pass ? "banner-pass" : "banner-fail"}`;
   banner.textContent = r.pass
     ? "✓ Pass - every metric inside the Schedule P P5-P95 reference band"
     : "✗ Fail - some metrics fall outside the Schedule P P5-P95 reference band";
   const scope = document.createElement("p");
   scope.className = "empty-note";
+  const ref = r.reference;
+  const pool = `The reference companies are the ${ref.companies} with steady premium and reinsurance that write at least $${ref.min_premium / 1e6}m a year.`;
   const names = (r.sections || []).map((s) => s.replaceAll("_", " "));
   const scored = names.length
-    ? `Scored on the ${names.join(" and ")} ${names.length > 1 ? "sections" : "section"} alone, their claims against their share of premium: the Schedule P private passenger auto reference is a liability line, and the line of business marks these sections to score against it. The reference companies are those with steady premium and reinsurance that write at least $5m a year.`
-    : "Scored on the whole book against the Schedule P private passenger auto liability reference. The reference companies are those with steady premium and reinsurance that write at least $5m a year.";
+    ? `Scored on the ${names.join(" and ")} ${names.length > 1 ? "sections" : "section"} alone, their claims against their share of premium: the Schedule P ${ref.label} reference is a liability line, and the preset scores these sections against it. ${pool}`
+    : `Scored on the whole book against the Schedule P ${ref.label} reference. ${pool}`;
   scope.textContent = `${scored} The loss ratio band uses each company's loss ratio developed to age 10. The incurred factors compare generated paid plus case with Schedule P incurred less its bulk and IBNR reserves. The drift band is each company's drift over the reference median, which leaves out the market cycle the companies share.`;
   panel.append(
     banner,

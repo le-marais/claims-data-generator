@@ -2,7 +2,6 @@ package lob
 
 import (
 	"math"
-	"reflect"
 	"strings"
 	"testing"
 )
@@ -51,7 +50,6 @@ func validMotor() LineOfBusiness {
 					Severity:      SeverityParams{Kind: Pareto, Scale: 5000, Alpha: 2.0},
 					ReportLag:     ReportLagParams{Median: 20, Sigma: 1.5},
 					CloseLag:      CloseLagParams{Shape: 1.0, MeanDays: 900, RiskLoading: 0.5},
-					Scored:        true,
 				},
 			},
 			Inflation: InflationParams{Mean: 1.0, Volatility: 0.0},
@@ -263,12 +261,6 @@ func TestValidateSkipsSwitchedOffBlocks(t *testing.T) {
 			l.Claims.Sections[1] = SectionParams{Name: "third_party"}
 			l.Pricing.Sections[1] = PricingSectionParams{Name: "third_party"}
 		}},
-		{"no section scored", func(l *LineOfBusiness) {
-			l.Claims.Sections[1].Scored = false
-		}},
-		{"two sections scored", func(l *LineOfBusiness) {
-			l.Claims.Sections[0].Scored = true
-		}},
 		{"limited pareto third party", func(l *LineOfBusiness) {
 			l.Claims.Sections[1].Limit = 100000
 			l.Pricing.Sections[1].Limit = 100000
@@ -316,21 +308,6 @@ func TestValidateChecksEnabledBlocks(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), c.field) {
 			t.Errorf("want error naming %q, got %v", c.field, err)
 		}
-	}
-}
-
-func TestScoredSections(t *testing.T) {
-	l := validMotor()
-	if got := l.Claims.ScoredSections(); !reflect.DeepEqual(got, []int{1}) {
-		t.Errorf("ScoredSections() = %v, want [1]", got)
-	}
-	l.Claims.Sections[0].Scored = true
-	if got := l.Claims.ScoredSections(); !reflect.DeepEqual(got, []int{0, 1}) {
-		t.Errorf("ScoredSections() with both scored = %v, want [0 1]", got)
-	}
-	l.Claims.Sections[0].Scored, l.Claims.Sections[1].Scored = false, false
-	if got := l.Claims.ScoredSections(); got != nil {
-		t.Errorf("ScoredSections() with none scored = %v, want nil", got)
 	}
 }
 

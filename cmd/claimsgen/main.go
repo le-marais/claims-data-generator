@@ -136,19 +136,18 @@ func runUI(args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	all, err := schedulep.LoadFS(refdata.Files, refdata.LineFiles[application.PrivatePassengerAuto])
+	pools, err := schedulep.LoadPools(refdata.Files, refdata.LineFiles, application.ReferenceLines())
 	if err != nil {
 		fmt.Fprintf(stderr, "claimsgen: reference data: %v\n", err)
 		return 1
 	}
-	refs := triangle.SelectReferences(all, application.PersonalMotorCriteria())
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port))
 	if err != nil {
 		fmt.Fprintf(stderr, "claimsgen: cannot listen on port %d (%v); try --port\n", *port, err)
 		return 1
 	}
 	fmt.Fprintf(stdout, "claimsgen ui: http://%s\n", ln.Addr())
-	if err := http.Serve(ln, web.NewServer(refs)); err != nil {
+	if err := http.Serve(ln, web.NewServer(pools)); err != nil {
 		fmt.Fprintf(stderr, "claimsgen: %v\n", err)
 		return 1
 	}

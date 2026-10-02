@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -11,10 +12,12 @@ import (
 	refdata "github.com/le-marais/claimsgen/data/reference"
 	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/domain/claim"
+	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/domain/policy"
 	"github.com/le-marais/claimsgen/internal/domain/shared"
 	"github.com/le-marais/claimsgen/internal/domain/transaction"
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
+	"github.com/le-marais/claimsgen/internal/infrastructure/config"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
 )
@@ -28,6 +31,36 @@ func personalMotorRefs(t *testing.T) []triangle.ReferenceSet {
 		t.Fatal(err)
 	}
 	return triangle.SelectReferences(all, application.PersonalMotorCriteria())
+}
+
+// scoredSections resolves the sections a preset's realism profile scores
+// among l's sections.
+func scoredSections(t *testing.T, presetID string, l lob.LineOfBusiness) []int {
+	t.Helper()
+	info, ok := config.PresetInfoFor(presetID)
+	if !ok {
+		t.Fatalf("no preset %q", presetID)
+	}
+	sections, err := info.Realism.SectionIndices(l)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sections
+}
+
+func TestRealismProfileResolvesSections(t *testing.T) {
+	l := request(t).LOB
+	p := application.RealismProfile{Line: application.PrivatePassengerAuto, Sections: []string{"third_party_injury", "own_damage"}}
+	if got, err := p.SectionIndices(l); err != nil || !reflect.DeepEqual(got, []int{thirdPartyInjury, ownDamage}) {
+		t.Errorf("SectionIndices = %v, %v; want [%d %d] in the profile's order", got, err, thirdPartyInjury, ownDamage)
+	}
+	if got, err := (application.RealismProfile{}).SectionIndices(l); err != nil || got != nil {
+		t.Errorf("no sections = %v, %v; want nil for the whole book", got, err)
+	}
+	p.Sections = []string{"hull"}
+	if _, err := p.SectionIndices(l); err == nil || !strings.Contains(err.Error(), `"hull"`) {
+		t.Errorf("unknown section: err = %v, want one naming it", err)
+	}
 }
 
 // TestDefaultPresetIsRealistic is the MVP realism gate: data generated with
@@ -52,7 +85,7 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections(), refs)
+			report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, scoredSections(t, "motor-personal", req.LOB), refs)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -72,7 +105,7 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections(), refs)
+	report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, scoredSections(t, "motor-personal", req.LOB), refs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +136,7 @@ func TestRealismScoresOnlyTheScoredSections(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections(), refs)
+		report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, scoredSections(t, "motor-personal", req.LOB), refs)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -124,7 +157,7 @@ func TestScoredSectionPremiumAndClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	liability, err := application.SectionComparison(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections())
+	liability, err := application.SectionComparison(ds, req.StartYear, req.Years, scoredSections(t, "motor-personal", req.LOB))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,6 +198,7 @@ func TestScoredSectionPremiumAndClaims(t *testing.T) {
 // parallel; the pooling order is fixed, so the result is deterministic.
 func pooledLiabilityDrift(t *testing.T, req application.GenerateRequest, seeds []uint64) float64 {
 	t.Helper()
+	sections := scoredSections(t, "motor-personal", req.LOB)
 	comps := make([]triangle.Comparison, len(seeds))
 	errs := make([]error, len(seeds))
 	var wg sync.WaitGroup
@@ -174,7 +208,7 @@ func pooledLiabilityDrift(t *testing.T, req application.GenerateRequest, seeds [
 			defer wg.Done()
 			ds, err := application.GenerateDataset(t.Context(), random.NewSource(seed), req)
 			if err == nil {
-				comps[i], err = application.SectionComparison(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections())
+				comps[i], err = application.SectionComparison(ds, req.StartYear, req.Years, sections)
 			}
 			errs[i] = err
 		}()

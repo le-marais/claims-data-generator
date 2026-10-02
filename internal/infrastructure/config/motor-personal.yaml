@@ -1,15 +1,16 @@
 # Personal motor insurance preset.
-# The realism reference is Schedule P Part 1B, private passenger auto
+# The preset is calibrated against Schedule P Part 1B, private passenger auto
 # liability (data/reference/schedule p/ppauto_pos98-07.csv, the 45
 # companies application.PersonalMotorCriteria selects). Part 1B covers
 # bodily injury and property damage liability, plus personal injury
 # protection, medical payments and uninsured motorist, which this product
-# does not carry. The two third-party sections, property
-# damage and injury, are scored together against it: their claims against
-# their share of premium, so their combined development triangles fall
-# within the reference's P5-P95 bands. The reference has no physical damage
-# in it, so own damage is not scored; its settlement is set as a short-tail
-# class instead of being bent to liability speed.
+# does not carry. The preset registry (internal/infrastructure/config) scores
+# the two third-party sections, property damage and injury, together against
+# it: their claims against their share of premium, so their combined
+# development triangles fall within the reference's P5-P95 bands. The
+# reference has no physical damage in it, so own damage is not scored; its
+# settlement is set as a short-tail class instead of being bent to liability
+# speed.
 name: motor-personal
 book:
   growth_factor: 1.03
@@ -85,9 +86,7 @@ claims:
   # because its sum insured is its limit.
   #
   # recoveries: true makes the section's claims eligible for salvage and
-  # subrogation. scored: true marks a section the realism gate scores
-  # against the Schedule P reference; every scored section is scored
-  # together.
+  # subrogation.
   sections:
     # Own damage: vehicle damage, sized off the sum insured, reported within
     # days and settled in weeks. Its lags are judgement values, since no
@@ -126,7 +125,6 @@ claims:
         size_reference: 2000
         size_elasticity: 0.2
         risk_loading: 0.3
-      scored: true
     # Third-party bodily injury: rarer, heavy-tailed, reported later (median
     # 20 days, about 3.5% more than a year after the accident, so the reported
     # counts and the incurred develop as late claims are reported) and
@@ -153,7 +151,6 @@ claims:
         size_reference: 10000
         size_elasticity: 0.25
         risk_loading: 0.3
-      scored: true
   # Claims inflation applied by occurrence date to every claim's ground-up
   # loss. Stochastic: each year's factor is `mean` times lognormal noise of
   # sigma `volatility`, compounded from 1.0 in the start year. The index sits
