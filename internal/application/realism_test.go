@@ -15,15 +15,15 @@ import (
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
 )
 
-// personalMotorRefs is the realism gate's reference pool: the private
-// passenger auto companies embedded in the binary.
+// personalMotorRefs is the realism gate's reference pool: the embedded
+// private passenger auto companies that PersonalMotorCriteria selects.
 func personalMotorRefs(t *testing.T) []triangle.ReferenceSet {
 	t.Helper()
-	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
+	all, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return refs
+	return triangle.SelectReferences(all, application.PersonalMotorCriteria())
 }
 
 // TestDefaultPresetIsRealistic is the MVP realism gate: data generated with
@@ -34,11 +34,11 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 	req := request(t)
 	req.StartYear = 1998
 	req.Years = 10
-	// 40k keeps the loss-ratio drift metric's seed-to-seed sampling noise
-	// small enough for the 1.10 drift band: at 10k book size, heavy-tail
-	// claim-sampling noise pushes ~12.5% of seeds outside [0.909, 1.10] even
-	// with no systematic drift; at ~40k the metric stabilizes to about ±0.05.
-	req.InitialBookSize = 40000
+	// 100k keeps claim sampling noise in the late single-origin factors and
+	// in the drift below the spread of the reference pool, which is made of
+	// books of $5m a year and up: at 40k the incurred factor at age 9-10 left
+	// its band on 4 of 60 seeds by luck, at 100k on none of 30.
+	req.InitialBookSize = 100000
 	// Run the gate on several seeds so a calibration that only happens to
 	// pass on one seed is caught here.
 	for _, seed := range []uint64{1, 42, 7} {
@@ -245,6 +245,45 @@ func TestRealismScoresTheUnionOfScoredSections(t *testing.T) {
 	for i, ep := range book.EarnedPremium {
 		if math.Abs(all.EarnedPremium[i]-ep) > 1e-6*ep {
 			t.Fatalf("year %d: sections' earned premium %v, whole book %v", i, all.EarnedPremium[i], ep)
+		}
+	}
+}
+
+// MR-15: the gate's pool is the complete companies with steady premium and
+// reinsurance that write at least $5m a year, less reinsurers.
+func TestPersonalMotorPool(t *testing.T) {
+	all, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := application.PersonalMotorCriteria()
+	var got []string
+	for _, r := range triangle.SelectReferences(all, c) {
+		got = append(got, r.Name)
+	}
+	want := []string{
+		"353", "460", "620", "1066", "1090", "1538", "1716", "1767", "2003", "2143",
+		"2208", "3240", "4839", "5185", "6947", "7080", "8427", "8672", "10007", "10022",
+		"13420", "13501", "13889", "14044", "14176", "14257", "14311", "14443", "15024", "15199",
+		"15997", "18163", "19119", "23574", "25755", "27022", "27065", "29440", "31062", "31550",
+		"34509", "34592", "35173", "37028", "41041",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("pool = %v\nwant %v", got, want)
+	}
+	reasons := map[string]string{}
+	for _, r := range all {
+		reasons[r.Name] = c.Reason(r)
+	}
+	for name, want := range map[string]string{
+		"29297": "net premium varies too much (CV 0.975)",         // fronts: keeps 5% of its direct premium
+		"13641": "net-to-direct ratio varies too much (CV 0.392)", // kept $4k of $14.0m direct in 2007
+		"10308": "net premium varies too much (CV 0.519)",         // about $70k a year, shrinking
+		"20430": "too small (mean net premium 2986)",              // cedes a steady 75%, which net premium makes fair
+		"33499": "reinsurer (Dorinco Rein Co)",
+	} {
+		if reasons[name] != want {
+			t.Errorf("company %s: Reason = %q, want %q", name, reasons[name], want)
 		}
 	}
 }

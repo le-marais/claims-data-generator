@@ -30,7 +30,7 @@ func newTestServer(t *testing.T) *web.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return web.NewServer(refs)
+	return web.NewServer(triangle.SelectReferences(refs, application.PersonalMotorCriteria()))
 }
 
 func do(t *testing.T, srv http.Handler, method, target string, body any) *httptest.ResponseRecorder {

@@ -80,3 +80,26 @@ func sectionsOf(ds Dataset, sections []int) ([]policy.Policy, []claim.Claim) {
 	}
 	return policies, claims
 }
+
+// PersonalMotorCriteria selects the private passenger auto reference pool
+// (MR-15). The two coefficient-of-variation limits are Meyers' for personal
+// auto (CAS Monograph 1, 2015, table 11): books with steady premium and a
+// steady reinsurance programme. The $5m-a-year floor (Schedule P is in
+// thousands) keeps companies whose factors are mostly claim sampling noise
+// from setting the band edges; the gate's generated book earns about
+// $20-45m a year on its scored sections. Reinsurers write assumed business,
+// not a personal auto book. Of the 121 complete companies, 45 are selected.
+func PersonalMotorCriteria() triangle.ReferenceCriteria {
+	return triangle.ReferenceCriteria{
+		MaxPremiumCV:     0.45,
+		MaxNetToDirectCV: 0.125,
+		MinMeanPremium:   5000,
+		Exclude: map[string]string{
+			"10019": "reinsurer (Overseas Partners Us Reins Co)",
+			"23876": "reinsurer (Mapfre Reins Corp)",
+			"33499": "reinsurer (Dorinco Rein Co)",
+			"35408": "reinsurer (Sirius Amer Ins Co)",
+			"42439": "reinsurer (Toa-Re Ins Co Of Amer)",
+		},
+	}
+}

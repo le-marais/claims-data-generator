@@ -136,11 +136,12 @@ func runUI(args []string, stdout, stderr io.Writer) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
+	all, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
 	if err != nil {
 		fmt.Fprintf(stderr, "claimsgen: reference data: %v\n", err)
 		return 1
 	}
+	refs := triangle.SelectReferences(all, application.PersonalMotorCriteria())
 	ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", *port))
 	if err != nil {
 		fmt.Fprintf(stderr, "claimsgen: cannot listen on port %d (%v); try --port\n", *port, err)
