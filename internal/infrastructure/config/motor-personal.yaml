@@ -110,11 +110,10 @@ claims:
     # and settled in weeks to months. Median 1800 and a 60 day mean close are
     # typical small property damage repairs settled in weeks. Scored together
     # with injury. The two third-party frequencies, 0.030 here and 0.009 for
-    # injury, keep the liability cost per policy-year close to the earlier
-    # single third-party section's (about $170) and give about three property
-    # damage claims per injury claim after the excess. limit 50000 is a
-    # common property damage liability limit; it rarely binds at this
-    # severity.
+    # injury, give a liability cost of about $170 per policy-year and about
+    # three property damage claims per injury claim after the excess. limit
+    # 50000 is a common property damage liability limit; it rarely binds at
+    # this severity.
     - name: third_party_property
       base_frequency: 0.030
       severity: {kind: lognormal, median: 1800, sigma: 0.9}

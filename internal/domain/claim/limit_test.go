@@ -125,16 +125,25 @@ func TestReopenNeverPaysBeyondTheLimit(t *testing.T) {
 	p = only(p, thirdParty, 0.15)
 	claims := claim.NewClaimSimulator(p).Simulate(random.NewSource(8), fixedBook(20000, 10000, 300, 1.0))
 	claims = claim.NewReopenSimulator(p).Apply(random.NewSource(8), claims)
-	capped := 0
+	capped, atLimit, atLimitReopened := 0, 0, 0
 	for _, c := range claims {
 		if c.Cost() > limit {
 			t.Fatalf("claim %d pays %v over its life, above the limit %v", c.ID, c.Cost(), limit)
+		}
+		if !c.Nil() && c.Episodes[0].Ultimate == limit {
+			atLimit++
+			if c.Reopened() {
+				atLimitReopened++
+			}
 		}
 		if c.Reopened() && c.Cost() == limit {
 			capped++
 		}
 	}
-	if capped == 0 {
-		t.Fatal("no reopen reached the limit; the cap was never exercised")
+	if capped == 0 || atLimit == 0 {
+		t.Fatalf("fixture did not exercise the cap: %d claims at the limit, %d capped reopens", atLimit, capped)
+	}
+	if atLimitReopened != 0 {
+		t.Fatalf("%d claims settled at the limit reopened with no cover left, want 0", atLimitReopened)
 	}
 }

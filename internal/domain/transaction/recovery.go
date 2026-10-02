@@ -86,10 +86,11 @@ func (s *RecoverySimulator) Apply(src shared.RandomSource, claims []claim.Claim,
 // loss on a sum-insured section whose first episode paid the write-off
 // (MR-7); for a total loss gross paid is the sum insured less excess, so
 // salvage is sized off the vehicle's value. A liability claim settled at its
-// limit also reaches its cover limit, but leaves no wreck to sell. The total recovered stays strictly below the claim's gross
-// paid. A nil claim that never reopens has paid 0 and stays ineligible through
-// the paid check alone; a reopened nil claim that paid in its second episode
-// is subrogation-eligible like any other paying claim.
+// limit also reaches its cover limit, but leaves no wreck to sell. The total
+// recovered stays strictly below the claim's gross paid. A nil claim that
+// never reopens has paid 0 and stays ineligible through the paid check
+// alone; a reopened nil claim that paid in its second episode is
+// subrogation-eligible like any other paying claim.
 func (s *RecoverySimulator) simulateClaim(src shared.RandomSource, c claim.Claim, paid shared.Money) []Transaction {
 	if !s.sections[c.Section].Recoveries || paid <= 0 {
 		return nil

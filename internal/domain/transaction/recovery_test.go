@@ -233,6 +233,8 @@ func TestNoSalvageOnALimitedSection(t *testing.T) {
 		{Kind: lob.Pareto, Scale: 4000, Alpha: 2.2},
 		{Kind: lob.Lognormal, Median: 2000, Sigma: 0.8},
 	} {
+		// Limit documents the section's shape only: the recovery simulator
+		// never reads it, and each claim's CoverLimit below drives the test.
 		p := lob.ClaimParams{
 			Sections:   []lob.SectionParams{{Name: "liability", Severity: sev, Limit: 3000, Recoveries: true}},
 			Recoveries: certain,

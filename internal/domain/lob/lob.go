@@ -458,6 +458,10 @@ func validateLimit(prefix string, limit float64, kind SeverityKind) error {
 	if limit < 0 {
 		return fmt.Errorf("%s.limit: must not be negative, got %v", prefix, limit)
 	}
+	// A limit below one cent rounds to a cover limit of 0, which is unlimited.
+	if limit != 0 && limit < 0.01 {
+		return fmt.Errorf("%s.limit: must be 0 (unlimited) or at least 0.01, got %v", prefix, limit)
+	}
 	if limit != 0 && kind == SumInsuredLognormal {
 		return fmt.Errorf("%s.limit: must be 0 on a sum_insured_lognormal section, whose limit is its sum insured, got %v", prefix, limit)
 	}

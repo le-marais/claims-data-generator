@@ -137,6 +137,8 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"pricing.sections[1].limit", func(l *LineOfBusiness) { l.Pricing.Sections[1].Limit = -1 }},
 		{"pricing.sections[1].limit", func(l *LineOfBusiness) { l.Pricing.Sections[1].Limit = math.NaN() }},
 		{"pricing.sections[0].limit", func(l *LineOfBusiness) { l.Pricing.Sections[0].Limit = 50000 }},
+		{"claims.sections[1].limit: must be 0 (unlimited) or at least 0.01", func(l *LineOfBusiness) { l.Claims.Sections[1].Limit = 0.004 }},
+		{"pricing.sections[1].limit: must be 0 (unlimited) or at least 0.01", func(l *LineOfBusiness) { l.Pricing.Sections[1].Limit = 0.004 }},
 		{"runoff.case_adequacy_mean", func(l *LineOfBusiness) { l.Runoff.CaseAdequacyMean = 0 }},
 		{"runoff.case_adequacy_sigma", func(l *LineOfBusiness) { l.Runoff.CaseAdequacySigma = -1 }},
 		{"runoff.payments_per_year", func(l *LineOfBusiness) { l.Runoff.PaymentsPerYear = -1 }},
