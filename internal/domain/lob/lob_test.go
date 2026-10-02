@@ -42,6 +42,7 @@ func validMotor() LineOfBusiness {
 					Severity:      SeverityParams{Kind: SumInsuredLognormal, MedianFraction: 0.15, Sigma: 1.0},
 					ReportLag:     ReportLagParams{Median: 2, Sigma: 1.0},
 					CloseLag:      CloseLagParams{Shape: 1.5, MeanDays: 60, SizeReference: 3000, SizeElasticity: 0.2, RiskLoading: 0.5},
+					Settlement:    SettlementParams{LumpSumProbability: 0.5, Share: 0.25, Concentration: 4},
 					Recoveries:    true,
 				},
 				{
@@ -50,6 +51,7 @@ func validMotor() LineOfBusiness {
 					Severity:      SeverityParams{Kind: Pareto, Scale: 5000, Alpha: 2.0},
 					ReportLag:     ReportLagParams{Median: 20, Sigma: 1.5},
 					CloseLag:      CloseLagParams{Shape: 1.0, MeanDays: 900, RiskLoading: 0.5},
+					Settlement:    SettlementParams{Share: 0.6, Concentration: 4},
 				},
 			},
 			Inflation: InflationParams{Mean: 1.0, Volatility: 0.0},
@@ -63,8 +65,8 @@ func validMotor() LineOfBusiness {
 			CaseAdequacyMean:  1.0,
 			CaseAdequacySigma: 0.3,
 			PaymentsPerYear:   3,
-			SettlementShare:   0.4,
-			Concentration:     1.0,
+			Concentration:     4,
+			MinPayment:        50,
 			RevisionsPerYear:  4,
 			RevisionSigma:     0.3,
 		},
@@ -173,11 +175,15 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"runoff.case_adequacy_mean", func(l *LineOfBusiness) { l.Runoff.CaseAdequacyMean = 0 }},
 		{"runoff.case_adequacy_sigma", func(l *LineOfBusiness) { l.Runoff.CaseAdequacySigma = -1 }},
 		{"runoff.payments_per_year", func(l *LineOfBusiness) { l.Runoff.PaymentsPerYear = -1 }},
-		{"runoff.settlement_share", func(l *LineOfBusiness) { l.Runoff.SettlementShare = 0 }},
-		{"runoff.settlement_share", func(l *LineOfBusiness) { l.Runoff.SettlementShare = 1.5 }},
 		{"runoff.concentration", func(l *LineOfBusiness) { l.Runoff.Concentration = 0 }},
-		{"runoff.settlement_concentration", func(l *LineOfBusiness) { l.Runoff.SettlementConcentration = -1 }},
-		{"runoff.settlement_share", func(l *LineOfBusiness) { l.Runoff.SettlementConcentration = 4; l.Runoff.SettlementShare = 1 }},
+		{"runoff.min_payment", func(l *LineOfBusiness) { l.Runoff.MinPayment = -1 }},
+		{"claims.sections[0].settlement.lump_sum_probability", func(l *LineOfBusiness) { l.Claims.Sections[0].Settlement.LumpSumProbability = -0.1 }},
+		{"claims.sections[0].settlement.lump_sum_probability", func(l *LineOfBusiness) { l.Claims.Sections[0].Settlement.LumpSumProbability = 1.5 }},
+		{"claims.sections[1].settlement.share", func(l *LineOfBusiness) { l.Claims.Sections[1].Settlement.Share = 0 }},
+		{"claims.sections[1].settlement.share", func(l *LineOfBusiness) { l.Claims.Sections[1].Settlement.Share = 1.5 }},
+		{"claims.sections[1].settlement.share", func(l *LineOfBusiness) { l.Claims.Sections[1].Settlement.Share = 1 }},
+		{"claims.sections[1].settlement.concentration", func(l *LineOfBusiness) { l.Claims.Sections[1].Settlement.Concentration = -1 }},
+		{"claims.sections[1].settlement.share", func(l *LineOfBusiness) { l.Claims.Sections[1].Settlement.Share = math.NaN() }},
 		{"runoff.revisions_per_year", func(l *LineOfBusiness) { l.Runoff.RevisionsPerYear = -1 }},
 		{"runoff.revision_sigma", func(l *LineOfBusiness) { l.Runoff.RevisionSigma = -1 }},
 		{"claims.recoveries.salvage.probability", func(l *LineOfBusiness) { l.Claims.Recoveries.Salvage.Probability = 1.0 }},
@@ -365,5 +371,20 @@ func TestValidateRejectsALimitOnASumInsuredSection(t *testing.T) {
 	want := "claims.sections[0].limit: must be 0 on a sum_insured_lognormal section, whose limit is its sum insured, got 50000"
 	if err := l.Validate(); err == nil || err.Error() != want {
 		t.Errorf("got %v, want %q", err, want)
+	}
+}
+
+// A section that always pays in one lump sum never reads its share, so the
+// share is not required, and a fixed share of 1 is a valid way to pay
+// everything at close.
+func TestSettlementShareIsNotRequiredForAlwaysLumpSum(t *testing.T) {
+	l := validMotor()
+	l.Claims.Sections[1].Settlement = SettlementParams{LumpSumProbability: 1}
+	if err := l.Validate(); err != nil {
+		t.Errorf("lump_sum_probability 1 without a share: %v", err)
+	}
+	l.Claims.Sections[1].Settlement = SettlementParams{Share: 1}
+	if err := l.Validate(); err != nil {
+		t.Errorf("fixed share 1: %v", err)
 	}
 }
