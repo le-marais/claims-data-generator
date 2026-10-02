@@ -180,7 +180,7 @@ func (s *RunoffSimulator) drawInterimPayments(src shared.RandomSource, ultimate 
 		// Degenerate Dirichlet draw (all weights underflowed): settle at close.
 		return nil
 	}
-	pool := ultimate.MulFloat(1 - s.params.SettlementShare).Dollars()
+	pool := ultimate.MulFloat(1 - s.settlementShare(src)).Dollars()
 	events := make([]event, 0, n)
 	paid := shared.Money(0)
 	for _, w := range weights {
@@ -196,6 +196,17 @@ func (s *RunoffSimulator) drawInterimPayments(src shared.RandomSource, ultimate 
 		return nil
 	}
 	return events
+}
+
+// settlementShare is the share of the ultimate an episode with interim
+// payments leaves for its final settlement: SettlementShare, or a Beta draw
+// with that mean when SettlementConcentration is above 0.
+func (s *RunoffSimulator) settlementShare(src shared.RandomSource) float64 {
+	m, k := s.params.SettlementShare, s.params.SettlementConcentration
+	if k == 0 {
+		return m
+	}
+	return src.Beta(m*k, (1-m)*k)
 }
 
 func (s *RunoffSimulator) drawRevisions(src shared.RandomSource, duration int, years float64) []event {

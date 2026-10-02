@@ -113,6 +113,66 @@ func TestRunoffInvariants(t *testing.T) {
 	}
 }
 
+// finalShares returns, for each claim with an interim payment, its final
+// payment as a share of its ultimate. Every test claim has one episode.
+func finalShares(claims []claim.Claim, txs []transaction.Transaction) []float64 {
+	grouped := byClaim(txs)
+	var shares []float64
+	for _, c := range claims {
+		var payments []shared.Money
+		for _, tx := range grouped[c.ID] {
+			if tx.Type == transaction.Payment {
+				payments = append(payments, tx.Amount)
+			}
+		}
+		if len(payments) < 2 {
+			continue
+		}
+		shares = append(shares, payments[len(payments)-1].Dollars()/c.Episodes[0].Ultimate.Dollars())
+	}
+	return shares
+}
+
+func TestSettlementShareIsFixedWithoutConcentration(t *testing.T) {
+	claims := testClaims(500)
+	txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(4), claims)
+	shares := finalShares(claims, txs)
+	if len(shares) < 50 {
+		t.Fatalf("only %d claims have an interim payment, want at least 50", len(shares))
+	}
+	for i, s := range shares {
+		// Interim payments round to the cent each, so allow a few cents.
+		if math.Abs(s-0.4) > 0.001 {
+			t.Fatalf("claim %d: final payment share = %v, want 0.4", i, s)
+		}
+	}
+}
+
+func TestSettlementShareVariesAroundItsMean(t *testing.T) {
+	claims := testClaims(2000)
+	p := params()
+	p.SettlementConcentration = 4
+	txs := transaction.NewRunoffSimulator(p).Simulate(random.NewSource(5), claims)
+	shares := finalShares(claims, txs)
+	if len(shares) < 200 {
+		t.Fatalf("only %d claims have an interim payment, want at least 200", len(shares))
+	}
+	mean, sq := 0.0, 0.0
+	for _, s := range shares {
+		mean += s
+		sq += s * s
+	}
+	mean /= float64(len(shares))
+	sd := math.Sqrt(sq/float64(len(shares)) - mean*mean)
+	if math.Abs(mean-0.4) > 0.03 {
+		t.Errorf("mean final payment share = %.3f, want about 0.4", mean)
+	}
+	// Beta(1.6, 2.4) has a standard deviation of about 0.22.
+	if sd < 0.15 || sd > 0.3 {
+		t.Errorf("final payment share standard deviation = %.3f, want about 0.22", sd)
+	}
+}
+
 func TestEveryPaymentHasMatchingEstimateReduction(t *testing.T) {
 	claims := testClaims(200)
 	sim := transaction.NewRunoffSimulator(params())
