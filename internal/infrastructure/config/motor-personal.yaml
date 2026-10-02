@@ -97,7 +97,9 @@ claims:
       recoveries: true
     # Third-party property damage: the other party's vehicle and property.
     # The most common Schedule P Part 1B claim: reported within days, small,
-    # and settled in weeks to months. Scored together with injury.
+    # and settled in weeks to months. Median 1800 and a 60 day mean close are
+    # typical small property damage repairs settled in weeks. Scored together
+    # with injury.
     - name: third_party_property
       base_frequency: 0.030
       severity: {kind: lognormal, median: 1800, sigma: 0.9}
@@ -112,7 +114,10 @@ claims:
     # Third-party bodily injury: rarer, heavy-tailed, reported later (median
     # 20 days, about 3.5% more than a year after the accident, which gives the
     # reported counts and the incurred some pure IBNR) and settled slowly.
-    # Its lags carry the later-age development of the Schedule P reference.
+    # Its lags carry the later-age development of the Schedule P reference:
+    # close_lag.mean_days 400 was set by calibration so paid and incurred
+    # development at ages 9-10 sit inside the bands across seeds (360-440 all
+    # passed). size_reference 10000 is a typical injury claim's cost.
     # Re-run the realism gate after any change to either third-party section.
     - name: third_party_injury
       base_frequency: 0.009
