@@ -79,8 +79,8 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 }
 
 // The reference is a liability line, so the gate must score the scored
-// third-party section alone: own-damage settlement speed cannot move it.
-func TestRealismScoresOnlyTheScoredSection(t *testing.T) {
+// third-party sections alone: own-damage settlement speed cannot move them.
+func TestRealismScoresOnlyTheScoredSections(t *testing.T) {
 	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
 	if err != nil {
 		t.Fatal(err)
@@ -130,7 +130,7 @@ func TestScoredSectionPremiumAndClaims(t *testing.T) {
 		section[c.ID] = c.Section
 	}
 	for _, tx := range ds.Transactions {
-		if tx.Type == transaction.Payment && section[tx.ClaimID] == thirdParty {
+		if tx.Type == transaction.Payment && (section[tx.ClaimID] == thirdPartyProperty || section[tx.ClaimID] == thirdPartyInjury) {
 			tpPaid += tx.Amount.Dollars()
 		}
 	}
@@ -227,7 +227,7 @@ func TestRealismScoresTheUnionOfScoredSections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	all, err := application.SectionComparison(ds, req.StartYear, req.Years, []int{ownDamage, thirdParty})
+	all, err := application.SectionComparison(ds, req.StartYear, req.Years, []int{ownDamage, thirdPartyProperty, thirdPartyInjury})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -183,8 +183,8 @@ func TestGenerateRoundTrip(t *testing.T) {
 	if resp.Realism.LossRatioDrift.Value <= 0 {
 		t.Fatalf("realism.loss_ratio_drift = %+v", resp.Realism.LossRatioDrift)
 	}
-	if !reflect.DeepEqual(resp.Realism.Sections, []string{"third_party"}) {
-		t.Fatalf("realism.sections = %v, want [third_party]", resp.Realism.Sections)
+	if !reflect.DeepEqual(resp.Realism.Sections, []string{"third_party_property", "third_party_injury"}) {
+		t.Fatalf("realism.sections = %v, want [third_party_property third_party_injury]", resp.Realism.Sections)
 	}
 }
 
