@@ -95,14 +95,15 @@ type ClaimsParams struct {
 
 // SectionParams mirrors lob.SectionParams for YAML/JSON.
 type SectionParams struct {
-	Name          string          `yaml:"name" json:"name"`
-	BaseFrequency float64         `yaml:"base_frequency" json:"base_frequency"`
-	Severity      SeverityParams  `yaml:"severity" json:"severity"`
-	Limit         float64         `yaml:"limit" json:"limit"`
-	NoExcess      bool            `yaml:"no_excess" json:"no_excess"`
-	ReportLag     ReportLagParams `yaml:"report_lag" json:"report_lag"`
-	CloseLag      CloseLagParams  `yaml:"close_lag" json:"close_lag"`
-	Recoveries    bool            `yaml:"recoveries" json:"recoveries"`
+	Name          string           `yaml:"name" json:"name"`
+	BaseFrequency float64          `yaml:"base_frequency" json:"base_frequency"`
+	Severity      SeverityParams   `yaml:"severity" json:"severity"`
+	Limit         float64          `yaml:"limit" json:"limit"`
+	NoExcess      bool             `yaml:"no_excess" json:"no_excess"`
+	ReportLag     ReportLagParams  `yaml:"report_lag" json:"report_lag"`
+	CloseLag      CloseLagParams   `yaml:"close_lag" json:"close_lag"`
+	Settlement    SettlementParams `yaml:"settlement" json:"settlement"`
+	Recoveries    bool             `yaml:"recoveries" json:"recoveries"`
 }
 
 // InflationParams mirrors lob.InflationParams for YAML/JSON.
@@ -160,16 +161,22 @@ type CloseLagParams struct {
 	RiskLoading    float64 `yaml:"risk_loading" json:"risk_loading"`
 }
 
+// SettlementParams mirrors lob.SettlementParams for YAML/JSON.
+type SettlementParams struct {
+	LumpSumProbability float64 `yaml:"lump_sum_probability" json:"lump_sum_probability"`
+	Share              float64 `yaml:"share" json:"share"`
+	Concentration      float64 `yaml:"concentration" json:"concentration"`
+}
+
 // RunoffParams mirrors lob.RunoffParams for YAML/JSON.
 type RunoffParams struct {
-	CaseAdequacyMean        float64 `yaml:"case_adequacy_mean" json:"case_adequacy_mean"`
-	CaseAdequacySigma       float64 `yaml:"case_adequacy_sigma" json:"case_adequacy_sigma"`
-	PaymentsPerYear         float64 `yaml:"payments_per_year" json:"payments_per_year"`
-	SettlementShare         float64 `yaml:"settlement_share" json:"settlement_share"`
-	SettlementConcentration float64 `yaml:"settlement_concentration" json:"settlement_concentration"`
-	Concentration           float64 `yaml:"concentration" json:"concentration"`
-	RevisionsPerYear        float64 `yaml:"revisions_per_year" json:"revisions_per_year"`
-	RevisionSigma           float64 `yaml:"revision_sigma" json:"revision_sigma"`
+	CaseAdequacyMean  float64 `yaml:"case_adequacy_mean" json:"case_adequacy_mean"`
+	CaseAdequacySigma float64 `yaml:"case_adequacy_sigma" json:"case_adequacy_sigma"`
+	PaymentsPerYear   float64 `yaml:"payments_per_year" json:"payments_per_year"`
+	Concentration     float64 `yaml:"concentration" json:"concentration"`
+	MinPayment        float64 `yaml:"min_payment" json:"min_payment"`
+	RevisionsPerYear  float64 `yaml:"revisions_per_year" json:"revisions_per_year"`
+	RevisionSigma     float64 `yaml:"revision_sigma" json:"revision_sigma"`
 }
 
 func decode(r io.Reader) (LOBParams, error) {
@@ -305,6 +312,11 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 				SizeElasticity: sec.CloseLag.SizeElasticity,
 				RiskLoading:    sec.CloseLag.RiskLoading,
 			},
+			Settlement: lob.SettlementParams{
+				LumpSumProbability: sec.Settlement.LumpSumProbability,
+				Share:              sec.Settlement.Share,
+				Concentration:      sec.Settlement.Concentration,
+			},
 			Recoveries: sec.Recoveries,
 		}
 	}
@@ -352,14 +364,13 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			},
 		},
 		Runoff: lob.RunoffParams{
-			CaseAdequacyMean:        d.Runoff.CaseAdequacyMean,
-			CaseAdequacySigma:       d.Runoff.CaseAdequacySigma,
-			PaymentsPerYear:         d.Runoff.PaymentsPerYear,
-			SettlementShare:         d.Runoff.SettlementShare,
-			SettlementConcentration: d.Runoff.SettlementConcentration,
-			Concentration:           d.Runoff.Concentration,
-			RevisionsPerYear:        d.Runoff.RevisionsPerYear,
-			RevisionSigma:           d.Runoff.RevisionSigma,
+			CaseAdequacyMean:  d.Runoff.CaseAdequacyMean,
+			CaseAdequacySigma: d.Runoff.CaseAdequacySigma,
+			PaymentsPerYear:   d.Runoff.PaymentsPerYear,
+			Concentration:     d.Runoff.Concentration,
+			MinPayment:        d.Runoff.MinPayment,
+			RevisionsPerYear:  d.Runoff.RevisionsPerYear,
+			RevisionSigma:     d.Runoff.RevisionSigma,
 		},
 	}
 }

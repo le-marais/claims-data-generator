@@ -43,12 +43,14 @@ claims:
       severity: {kind: sum_insured_lognormal, median_fraction: 0.15, sigma: 1.0}
       report_lag: {median: 2, sigma: 1.0}
       close_lag: {shape: 1.5, mean_days: 60, size_reference: 3000, size_elasticity: 0.2, risk_loading: 0.5}
+      settlement: {lump_sum_probability: 0.5, share: 0.25, concentration: 4}
       recoveries: true
     - name: third_party
       base_frequency: 0.0225
       severity: {kind: pareto, scale: 5000, alpha: 2.0}
       report_lag: {median: 20, sigma: 1.5}
       close_lag: {shape: 1.0, mean_days: 900, risk_loading: 0.5}
+      settlement: {share: 0.6, concentration: 4}
   inflation:
     mean: 1.04
     volatility: 0.02
@@ -76,8 +78,8 @@ runoff:
   case_adequacy_mean: 1.0
   case_adequacy_sigma: 0.3
   payments_per_year: 3
-  settlement_share: 0.4
-  concentration: 1.0
+  concentration: 4
+  min_payment: 50
   revisions_per_year: 4
   revision_sigma: 0.3
 `
@@ -105,8 +107,11 @@ func TestLoadValidYAML(t *testing.T) {
 	if od := l.Claims.Sections[0]; od.CloseLag.SizeElasticity != 0.2 || !od.Recoveries {
 		t.Errorf("own-damage section = %+v, want size elasticity 0.2 and recoveries", od)
 	}
-	if l.Runoff.SettlementShare != 0.4 {
-		t.Errorf("SettlementShare = %v, want 0.4", l.Runoff.SettlementShare)
+	if st := l.Claims.Sections[0].Settlement; st != (lob.SettlementParams{LumpSumProbability: 0.5, Share: 0.25, Concentration: 4}) {
+		t.Errorf("own-damage settlement = %+v, want lump sum 0.5, share 0.25, concentration 4", st)
+	}
+	if l.Runoff.MinPayment != 50 {
+		t.Errorf("MinPayment = %v, want 50", l.Runoff.MinPayment)
 	}
 	if l.Claims.Inflation.Mean != 1.04 {
 		t.Errorf("inflation mean = %v, want 1.04", l.Claims.Inflation.Mean)
