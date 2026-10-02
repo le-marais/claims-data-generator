@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
 )
 
@@ -48,7 +49,6 @@ claims:
       severity: {kind: pareto, scale: 5000, alpha: 2.0}
       report_lag: {median: 20, sigma: 1.5}
       close_lag: {shape: 1.0, mean_days: 900, risk_loading: 0.5}
-      scored: true
   inflation:
     mean: 1.04
     volatility: 0.02
@@ -99,8 +99,8 @@ func TestLoadValidYAML(t *testing.T) {
 	if len(l.Claims.Sections) != 2 {
 		t.Fatalf("claims sections = %d, want 2", len(l.Claims.Sections))
 	}
-	if tp := l.Claims.Sections[1]; tp.Severity.Kind != lob.Pareto || tp.Severity.Alpha != 2.0 || !tp.Scored || tp.Recoveries {
-		t.Errorf("third-party section = %+v, want a scored Pareto with alpha 2.0 and no recoveries", tp)
+	if tp := l.Claims.Sections[1]; tp.Severity.Kind != lob.Pareto || tp.Severity.Alpha != 2.0 || tp.Recoveries {
+		t.Errorf("third-party section = %+v, want a Pareto with alpha 2.0 and no recoveries", tp)
 	}
 	if od := l.Claims.Sections[0]; od.CloseLag.SizeElasticity != 0.2 || !od.Recoveries {
 		t.Errorf("own-damage section = %+v, want size elasticity 0.2 and recoveries", od)
@@ -222,10 +222,48 @@ func TestMotorPersonalPresetIsValid(t *testing.T) {
 }
 
 func TestPresets(t *testing.T) {
-	got := Presets()
-	want := []PresetInfo{{ID: "motor-personal", Name: "Motor personal"}}
+	var got []string
+	for _, p := range Presets() {
+		got = append(got, p.ID+" "+p.Name)
+	}
+	want := []string{"motor-personal Motor personal", "motor-commercial Motor commercial"}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("Presets() = %+v, want %+v", got, want)
+		t.Fatalf("Presets() = %v, want %v", got, want)
+	}
+}
+
+// Every preset is scored against a known reference line, on sections it has.
+func TestPresetsHaveRealismProfiles(t *testing.T) {
+	lines := map[string]bool{}
+	for _, l := range application.ReferenceLines() {
+		lines[l.ID] = true
+	}
+	for _, p := range Presets() {
+		if !lines[p.Realism.Line] {
+			t.Errorf("%s: realism line %q is not a reference line", p.ID, p.Realism.Line)
+		}
+		l, err := Preset(p.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Realism.SectionIndices(l); err != nil {
+			t.Errorf("%s: %v", p.ID, err)
+		}
+		info, ok := PresetInfoFor(p.ID)
+		if !ok || !reflect.DeepEqual(info, p) {
+			t.Errorf("PresetInfoFor(%s) = %+v, %v; want %+v", p.ID, info, ok, p)
+		}
+	}
+	if _, ok := PresetInfoFor("marine-cargo"); ok {
+		t.Error("PresetInfoFor(marine-cargo) found a preset")
+	}
+}
+
+// Presets hands out copies, so a caller cannot change the registry.
+func TestPresetsReturnsACopy(t *testing.T) {
+	Presets()[0].Realism.Sections[0] = "changed"
+	if got := Presets()[0].Realism.Sections[0]; got == "changed" {
+		t.Fatal("changing a returned preset changed the registry")
 	}
 }
 

@@ -4,11 +4,11 @@ A local CLI app that generates realistic, fully synthetic insurance claims data 
 
 One run produces five linked CSV datasets for a class of business:
 
-- **policies.csv** - the book of policies per calendar year: cover dates, sum insured, excess, risk factor, premium. It includes a warm-up underwriting year before the window, whose policies are in force when it opens
+- **policies.csv** - the book of policies per calendar year: fleet, cover dates, sum insured, excess, risk factor, premium. On a fleet book each policy is one vehicle on a fleet. It includes a warm-up underwriting year before the window, whose policies are in force when it opens
 - **claims.csv** - claim events with occurrence, report and close dates plus the initial case estimate
 - **transactions.csv** - each claim's case estimate movements, payments, and recoveries (salvage and subrogation) over its lifetime
 - **triangles.csv** - incremental monthly development triangles by origin month: paid, paid net of recoveries, incurred, and reported claim counts
-- **exposure.csv** - exposure by origin month: premium, exposure units in policy-years, and a policy count that is an in-force count on the accident basis (so it does not sum to the book's policy count) and an inception count on the underwriting basis (so it does, apart from the warm-up year, which incepts before the window)
+- **exposure.csv** - exposure by origin month: premium, exposure units in policy-years (vehicle-years on a fleet book), and a policy count that is an in-force count on the accident basis (so it does not sum to the book's policy count) and an inception count on the underwriting basis (so it does, apart from the warm-up year, which incepts before the window)
 
 ## Quickstart
 
@@ -17,16 +17,17 @@ go build ./cmd/claimsgen
 ./claimsgen generate
 ```
 
-That generates a personal motor book (10 calendar years from 1998, 20,000 policies in year one) into `./output/` using the embedded preset. Options:
+That generates a personal motor book (10 calendar years from 1998, 20,000 policies in year one) into `./output/` using the embedded `motor-personal` preset. Two presets are embedded: `motor-personal`, a personal motor book, and `motor-commercial`, a commercial motor book of fleets. Options:
 
 ```
 claimsgen generate \
-  --config my-lob.yaml \      # line of business parameters (default: embedded motor-personal preset)
+  --preset motor-commercial \ # embedded line of business (default motor-personal)
+  --config my-lob.yaml \      # or a line of business YAML instead of a preset
   --seed 42 \                 # master random seed (same seed + config = byte-identical output)
   --out ./output \            # output directory
   --start-year 1998 \         # first calendar year of the book
   --years 10 \                # number of calendar years
-  --initial-book-size 20000 \ # policies written in the first year
+  --initial-book-size 20000 \ # policies written in the first year, or fleets on a fleet book
   --origin-basis accident     # monthly origin: accident or underwriting
 ```
 
@@ -36,7 +37,7 @@ claimsgen generate \
 ./claimsgen ui
 ```
 
-Serves a local web UI on `http://127.0.0.1:8080` (`--port` to change). It offers the same run flags as the CLI apart from the output directory (including an origin basis select for `--origin-basis`) plus every line of business parameter (prefilled from the preset, editable, with a group per section of cover, a Pricing group holding the insurer's assumed loss cost and target loss ratio, a Recoveries group for the salvage and subrogation probabilities, mean shares, and lags, and a reopen probability and reopen estimate factor for reopened claims), and on Generate shows the result: per-year summary stats (including a Recovered column and a Reopened column), paid and incurred development triangles with age-to-age factors and a Paid (gross) / Paid (net) / Incurred toggle, severity and lag distributions, and the run's position inside the Schedule P realism bands. Download CSVs saves the run's five CSVs, byte-identical to the CLI's, as one zip: the server keeps nothing between requests and regenerates the run from its seed and parameters. The Schedule P reference data is embedded in the binary.
+Serves a local web UI on `http://127.0.0.1:8080` (`--port` to change). It offers the same run flags as the CLI apart from the output directory (including an origin basis select for `--origin-basis`) plus every line of business parameter (prefilled from the preset, editable, with a group per section of cover, a Pricing group holding the insurer's assumed loss cost and target loss ratio, a Recoveries group for the salvage and subrogation probabilities, mean shares, and lags, and a reopen probability and reopen estimate factor for reopened claims), and on Generate shows the result: per-year summary stats (including a Recovered column and a Reopened column), paid and incurred development triangles with age-to-age factors and a Paid (gross) / Paid (net) / Incurred toggle, severity and lag distributions, and the run's position inside the realism bands of the preset's Schedule P line. Download CSVs saves the run's five CSVs, byte-identical to the CLI's, as one zip: the server keeps nothing between requests and regenerates the run from its seed and parameters. The Schedule P reference data is embedded in the binary.
 
 A run reports its elapsed time and can be cancelled while it is going; the previous run's results stay on screen, dimmed and labelled, until the new ones arrive. The UI caps run size - years, initial book size, and the projected policy count once the growth factor has compounded - so a mistyped parameter is rejected rather than run. The CLI has no such caps.
 
@@ -66,7 +67,7 @@ flowchart TD
     yaml[/"line-of-business YAML<br/>book, pricing, claims, runoff"/]
     seed(["seed"])
     subgraph sim["Simulation: seven stages, in order"]
-        s1["1 - Policy book<br/>cover dates, sum insured, excess,<br/>risk factor, premium"]
+        s1["1 - Policy book<br/>fleets, cover dates, sum insured, excess,<br/>risk factor, premium"]
         s2["2 - Claims inflation path<br/>one random factor per calendar year"]
         s3["3 - Claim events<br/>occurrence, report and close dates,<br/>true cost"]
         s4["4 - Reopening<br/>an optional second episode"]
@@ -105,7 +106,7 @@ Premium and claims come from two separate models. The `pricing` block is what th
 %%{init: {"flowchart": {"wrappingWidth": 480}}}%%
 flowchart LR
     subgraph assumed["pricing block: what the insurer assumes"]
-        assumptions["each section's base_frequency, severity and limit,<br/>nil_probability, reopen_probability,<br/>reopen_estimate_factor, inflation_mean"]
+        assumptions["each section's base_frequency, severity, limit and no_excess,<br/>nil_probability, reopen_probability,<br/>reopen_estimate_factor, inflation_mean"]
     end
     subgraph actual["claims and runoff blocks: what happens"]
         truth["true frequency and severity,<br/>the simulated inflation path,<br/>nil claims, reopens"]
@@ -124,20 +125,26 @@ The book is written one underwriting year at a time, and every policy is priced 
 ```mermaid
 %%{init: {"flowchart": {"wrappingWidth": 480}}}%%
 flowchart TD
-    size["each underwriting year: the number of policies<br/>warm-up year before the window: initial_book_size / growth_factor<br/>first window year: initial_book_size<br/>later years: previous × growth_factor × LN(size_volatility)"]
+    size["each underwriting year: the number of fleets<br/>warm-up year before the window: initial_book_size / growth_factor<br/>first window year: initial_book_size<br/>later years: previous × growth_factor × LN(size_volatility)"]
     priced["the year's priced loss ratio<br/>target_loss_ratio × LN(adequacy_volatility)"]
-    draws["each policy draws<br/>cover start: uniform over the year, cover end: start + 364 days<br/>sum insured: lognormal, sigma spread, median sum_insured_median<br/>drifting by sum_insured_inflation a year<br/>risk factor: gamma, mean 1, standard deviation spread<br/>excess: weighted pick from excess_choices"]
-    expected["expected loss under the pricing block, section by section<br/>expected cost above the excess, from the section's assumed severity:<br/>sum_insured_lognormal, capped at the sum insured<br/>lognormal or pareto, capped at the section's limit, if set<br/>× base_frequency × risk factor<br/>× (1 - nil_probability<br/>+ reopen_probability × reopen_estimate_factor)<br/>trended at inflation_mean to the middle of the cover"]
+    fleetSet{"fleet block<br/>set?"}
+    draws["each policy is a fleet of one, and draws<br/>cover start: uniform over the year, cover end: start + 364 days<br/>sum insured: lognormal, sigma spread, median sum_insured_median<br/>drifting by sum_insured_inflation a year<br/>risk factor: gamma, mean 1, standard deviation spread<br/>excess: weighted pick from excess_choices"]
+    fleet["each fleet draws<br/>cover start: uniform over the year, cover end: start + 364 days<br/>excess: weighted pick from excess_choices<br/>vehicles: lognormal, median size.median, sigma size.sigma,<br/>rounded, at least 1<br/>median vehicle sum insured: sum_insured_median, drifting by<br/>sum_insured_inflation a year, × lognormal, sigma sum_insured_sigma<br/>fleet risk factor: gamma, mean 1, standard deviation risk_spread"]
+    vehicle["each vehicle is a policy with the fleet's cover dates and excess<br/>sum insured: lognormal, sigma spread, median the fleet's<br/>risk factor: the fleet's × gamma, mean 1, standard deviation spread"]
+    expected["expected loss under the pricing block, section by section<br/>expected cost above the excess, or from the first dollar<br/>on a no_excess section, from the section's assumed severity:<br/>sum_insured_lognormal, capped at the sum insured<br/>lognormal or pareto, capped at the section's limit, if set<br/>× base_frequency × risk factor<br/>× (1 - nil_probability<br/>+ reopen_probability × reopen_estimate_factor)<br/>trended at inflation_mean to the middle of the cover"]
     premium["premium = expected loss / the year's priced loss ratio<br/>kept per section too, for the realism check"]
-    size -- "that many policies" --> draws --> expected --> premium
+    size -- "that many" --> fleetSet
+    fleetSet -- "no" --> draws --> expected
+    fleetSet -- "yes" --> fleet -- "that many vehicles" --> vehicle --> expected
+    expected --> premium
     priced --> premium
 ```
 
-Each year's book size is the previous year's size times a growth factor times random noise, so the book trends upward but can shrink in individual years. The book starts with a warm-up underwriting year before the window, so the first accident year has a full book in force instead of one ramping up from nothing; only its claims that occur inside the window are kept. Premium is the insurer's assumed loss cost divided by `target_loss_ratio`, independent of the claims model that generates experience. `adequacy_volatility` makes each underwriting year's rates miss the target by a random factor, as in an underwriting cycle. The target sets premium, not experience: the realized loss ratio lands around the target rather than on it, moved by claim sampling, the simulated inflation path, and any gap between the pricing and claims assumptions.
+Each year's book size is the previous year's size times a growth factor times random noise, so the book trends upward but can shrink in individual years. The size counts fleets: without a `fleet` block (the personal preset) each fleet is one policy, and with one (the commercial preset) a fleet is one contract, written first, and each of its vehicles is then a policy drawn around the fleet's values. A fleet sets the level of its vehicles' sums insured and risk, and `spread` is what is left between the vehicles of one fleet; the fleet risk factor makes its vehicles' claim frequencies move together. The book starts with a warm-up underwriting year before the window, so the first accident year has a full book in force instead of one ramping up from nothing; only its claims that occur inside the window are kept. Premium is the insurer's assumed loss cost divided by `target_loss_ratio`, independent of the claims model that generates experience. `adequacy_volatility` makes each underwriting year's rates miss the target by a random factor, as in an underwriting cycle. The target sets premium, not experience: the realized loss ratio lands around the target rather than on it, moved by claim sampling, the simulated inflation path, and any gap between the pricing and claims assumptions.
 
 ### Claim events
 
-Each section of each policy produces its claims independently, from its own block of `claims.sections`. The preset has three sections: `own_damage`, the insured vehicle, `third_party_property`, damage to other people's vehicles and property, and `third_party_injury`, bodily injury to others. The severity draw below fixes the claim's true ultimate cost; no later stage changes it, though a reopen adds a separate second amount.
+Each section of each policy produces its claims independently, from its own block of `claims.sections`. Both presets have three sections: `own_damage`, the insured vehicle, `third_party_property`, damage to other people's vehicles and property, and `third_party_injury`, bodily injury to others. The severity draw below fixes the claim's true ultimate cost; no later stage changes it, though a reopen adds a separate second amount.
 
 ```mermaid
 %%{init: {"flowchart": {"wrappingWidth": 480}}}%%
@@ -152,6 +159,7 @@ flowchart TD
     index["claims inflation index<br/>each year × inflation.mean × LN(inflation.volatility),<br/>compounded from 1.0, smooth through the year"]
     trended["× the index at the occurrence date"]
     cap["sum_insured_lognormal only: capped at the sum insured,<br/>a total loss"]
+    excess["the excess: the policy's,<br/>or 0 on a no_excess section"]
     pierce{"loss above<br/>the excess?"}
     dropped(["never reported"])
     ultimate["ultimate = loss - excess<br/>the claim's true cost"]
@@ -166,12 +174,12 @@ flowchart TD
     lognormalLoss --> trended
     paretoLoss --> trended
     index --> trended
-    trended --> cap --> pierce
+    trended --> cap --> excess --> pierce
     pierce -- "no" --> dropped
     pierce -- "yes" --> ultimate --> limitCap --> closeDate --> nilFlag
 ```
 
-Losses that do not exceed the excess are never reported, so the reported frequency sits below `base_frequency`. In the preset, report lags are short for own damage and property damage and longer for injury claims, so there are claims incurred but not yet reported to estimate. Own-damage and property-damage claims settle in weeks to months. Injury claims are rarer, heavy-tailed (Pareto) and settle in a slow long-tail regime calibrated to the Schedule P liability reference, so paid losses keep developing at later ages. Property damage is a lognormal in start-year dollars. Injury and property damage are capped at their per-claim limits (`limit`: $100,000 and $50,000 in the preset), which cover a claim's whole life, reopen included. A limit is nominal, a contract term that claims inflation does not trend, so inflation erodes it over the years; a claim settled at its limit settles like a claim of the limit's size. In every section, settlement time lengthens smoothly with claim size. A share of reported claims are nil - they close without any payment at their first close.
+Losses that do not exceed the excess are never reported, so the reported frequency sits below `base_frequency`. A section with `no_excess: true` takes no excess and pays every loss from the first dollar, as liability cover usually does: the commercial preset's two liability sections. In the presets, report lags are short for own damage and property damage and longer for injury claims, so there are claims incurred but not yet reported to estimate. Own-damage and property-damage claims settle in weeks to months. Injury claims are rarer, heavy-tailed (Pareto) and settle in a slow long-tail regime calibrated to each preset's Schedule P liability reference, so paid losses keep developing at later ages; commercial injury settles more slowly than personal. Property damage is a lognormal in start-year dollars. Injury and property damage are capped at their per-claim limits (`limit`: $100,000 and $50,000 in the personal preset, $1m on both in the commercial preset, as a combined single limit would), which cover a claim's whole life, reopen included. A limit is nominal, a contract term that claims inflation does not trend, so inflation erodes it over the years; a claim settled at its limit settles like a claim of the limit's size. In every section, settlement time lengthens smoothly with claim size. A share of reported claims are nil - they close without any payment at their first close.
 
 Claims inflation is a stochastic path: each calendar year's factor is a mean level (a per-line-of-business knob) times lognormal noise, compounding from the start year and drawn from its own labelled sub-stream so it stays reproducible and independent of the other stages. The index sits at each year's compounded value in the middle of the year and moves smoothly between years rather than stepping each 1 January.
 
@@ -279,7 +287,7 @@ Every independent decision is drawn from its own labelled sub-stream keyed by th
 flowchart LR
     seed(["seed"])
     book["book"]
-    bookStreams["book-size<br/>pricing-adequacy<br/>policy-1, policy-2, ..."]
+    bookStreams["book-size<br/>pricing-adequacy<br/>policy-1, policy-2, ...<br/>fleet-1, ..., on a fleet book"]
     inflation["inflation"]
     claims["claims"]
     claimStreams["claims-policy-1, ..."]
@@ -366,7 +374,7 @@ same way at the end of the window.
 
 ## Parameters per line of business
 
-All behavior is driven by a YAML file mapped to the `LineOfBusiness` domain object - see `internal/infrastructure/config/motor-personal.yaml` for the annotated motor preset. The top-level blocks are `book`, `pricing`, `claims`, and `runoff` - `pricing` holds the insurer's assumed loss cost, kept separate from the `claims` block that generates the true experience. Both list the line's sections of cover under `sections`, by the same names in the same order: each claims section sets its own frequency, severity, per-claim `limit`, report lag, close lag and recovery eligibility, and any may be marked `scored: true` for the realism check. A new short-tail class is a YAML file for the CLI (`generate --config my-lob.yaml` is pure YAML, no code changes); surfacing it as a UI preset also needs the YAML embedded and registered in the preset registry in `internal/infrastructure/config/config.go`. See `docs/roadmap.md` for the second-line-of-business plan.
+All behavior is driven by a YAML file mapped to the `LineOfBusiness` domain object - see `internal/infrastructure/config/motor-personal.yaml` and `motor-commercial.yaml` beside it for the annotated presets. The top-level blocks are `book`, `pricing`, `claims`, and `runoff` - `pricing` holds the insurer's assumed loss cost, kept separate from the `claims` block that generates the true experience. Both list the line's sections of cover under `sections`, by the same names in the same order: each claims section sets its own frequency, severity, per-claim `limit`, whether it takes the excess (`no_excess`), report lag, close lag and recovery eligibility. The YAML holds simulation parameters only. How a preset is scored for realism - its Schedule P line and the sections scored against it - is its realism profile, registered beside it in the preset registry in `internal/infrastructure/config/config.go`. A new short-tail class is a YAML file for the CLI (`generate --config my-lob.yaml` is pure YAML, no code changes); surfacing it as a UI preset also needs the YAML embedded and registered, with its realism profile, in the preset registry.
 
 ## Assumptions and known simplifications
 
@@ -377,7 +385,8 @@ The model deliberately trades some realism for a clean, reproducible engine. The
 - **Nil claims draw severity and probability independently of claim size**; real withdrawn or nil claims skew small.
 - **No seasonality, catastrophe, or event clustering.** Occurrences are uniform within each cover period and claims are independent across policies (the only cross-policy link is the shared inflation path).
 - **Each year's book is an independent cohort** - no policy renews, so per-policy claim histories never correlate across years.
-- **The preset's pricing assumptions start from the claims parameters.** The shipped `pricing` block uses the same values as the `claims` block, so the book carries no systematic mispricing and its loss ratio lands around `target_loss_ratio`: across seeds 1-40 its whole-book ultimate loss ratio, gross of recoveries as pricing is, fell between 0.94 and 1.08 times the target, mostly from the simulated inflation path; net of recoveries, the basis the realism tab scores, it was about 0.83-0.96 times the target. A small `adequacy_volatility` (0.03) scatters each underwriting year's pricing around the target. Real cycles are larger and persist across years, which this independent per-year noise does not model. Set the `pricing` block away from the claims values to model underpricing, overpricing, or adverse experience. One small built-in gap: the reopen uplift ignores the cap that holds a reopen within the cover left, on own damage or a limited section, so claims near their limit are slightly overpriced.
+- **A fleet is fixed for its policy year.** Its vehicles share the fleet's cover dates, excess and the level of their values and risk, and no vehicle joins or leaves mid-term.
+- **The presets' pricing assumptions start from the claims parameters.** Each shipped `pricing` block uses the same values as its `claims` block, so the book carries no systematic mispricing and its loss ratio lands around `target_loss_ratio`: across seeds 1-40 the personal preset's whole-book ultimate loss ratio, gross of recoveries as pricing is, fell between 0.94 and 1.08 times the target, and the commercial preset's between 0.91 and 1.10, mostly from the simulated inflation path; for the personal preset net of recoveries, the basis the realism tab scores, it was about 0.83-0.96 times the target. A small `adequacy_volatility` (0.03) scatters each underwriting year's pricing around the target. Real cycles are larger and persist across years, which this independent per-year noise does not model. Set the `pricing` block away from the claims values to model underpricing, overpricing, or adverse experience. One small built-in gap: the reopen uplift ignores the cap that holds a reopen within the cover left, on own damage or a limited section, so claims near their limit are slightly overpriced.
 
 ## Realism
 
@@ -385,70 +394,87 @@ The model deliberately trades some realism for a clean, reproducible engine. The
 %%{init: {"flowchart": {"wrappingWidth": 480}}}%%
 flowchart TD
     dataset["generated dataset"]
+    profile[/"the preset's realism profile<br/>its Schedule P line and scored sections"/]
     section["scored sections together<br/>their claims against<br/>each policy's premium for them"]
     triangles["accident-year triangles, 10 development years<br/>paid net of recoveries,<br/>incurred: paid plus case, earned premium"]
     metrics["paid age-to-age factors<br/>incurred age-to-age factors<br/>paid to date as a share of paid at age 10<br/>ultimate loss ratio<br/>loss-ratio drift between the two halves<br/>of the accident years"]
-    references[("45 Schedule P private passenger auto<br/>liability companies, accident years 1998-2007,<br/>steady premium and reinsurance, $5m a year and up")]
+    references[("the line's Schedule P companies, accident years 1998-2007,<br/>steady premium and reinsurance<br/>private passenger auto: 45, $5m a year and up<br/>commercial auto: 42, $1m a year and up")]
     bands["P5-P95 band for each metric<br/>across the companies,<br/>drift relative to their median"]
     verdict{"every metric<br/>inside its band?"}
     pass(["pass"])
     fail(["fail"])
     dataset --> section --> triangles --> metrics --> verdict
+    profile --> section
+    profile --> references
     references --> bands --> verdict
     verdict -- "yes" --> pass
     verdict -- "no" --> fail
 ```
 
-Generated data is checked against Schedule P private passenger auto reference
-companies from the CAS loss reserving database
-(`data/reference/schedule p/ppauto_pos98-07.csv`, accident years 1998-2007; see
-`data/reference/README.md`). The reference is Schedule P Part 1B, private
-passenger auto liability/medical. It includes bodily injury and property damage
-liability, personal injury protection, medical payments and uninsured motorist.
-It excludes physical damage, which is Part 1J and has no 10-year history. The
-preset marks its two third-party (liability) sections, `third_party_property`
-and `third_party_injury`, `scored: true`, and the check scores them together:
-their claims against their share of premium. A line of business with no scored
-section is scored as a whole book. Own-damage claims are left out of the score
-rather than slowed to liability settlement speed, and the preset sets their
-settlement as a short-tail class. The preset carries no first-party injury
-cover (personal injury protection, medical payments, uninsured motorist). Part
-1B losses are net of reinsurance and include defence costs, and they are scored
-against net earned premium. The generated losses are gross of reinsurance and
-exclude defence costs, which the calibration absorbs implicitly. The UI's
-triangle tab still shows the whole book.
+Generated data is checked against Schedule P reference companies from the CAS
+loss reserving database (accident years 1998-2007; see
+`data/reference/README.md`), on the line each preset's realism profile names:
 
-Of the 121 companies with every accident year known to age 10, the check keeps
-the 45 that `application.PersonalMotorCriteria` selects: net premium steady
-across the years (coefficient of variation under 0.45) and a steady reinsurance
-programme (coefficient of variation of the net-to-direct premium ratio under
-0.125), the limits Meyers used to select Schedule P triangles (CAS Monograph 1,
-2015); at least $5m of net premium a year, so claim sampling noise in small
-books does not set the band edges; and no reinsurers. Paid and incurred
-age-to-age development factors, paid to date at each age as a share of paid at
-age 10, the ultimate loss ratio, and the loss-ratio drift between the two halves
-of the accident years must fall inside the P5-P95 bands observed across those
-companies. The paid shares score the pattern the factors compound to, so a book
-at the same edge of every factor band still fails; both sides take them on the
-fully developed square. Schedule P values every company at age 10, so the check
-drops generated development after age 10 rather than folding it into the last
-age, and completes each company's triangles to age 10 with its later reported
-development: every accident year is compared at the same age on both sides, and
-the loss ratio is not scored on immature recent years. Incurred development is
-scored on each company's case incurred, Schedule P incurred less its bulk and
-IBNR reserves (Part 2 less Part 4), against the generated paid plus case:
-neither side counts claims not yet reported, and a company's bulk reserve, held
-early and released later, does not move the factors. A backstop filter drops any
-company carrying no scorable signal, and the full min/max range is shown for
-context. The paid comparison is net of recoveries, matching how Schedule P
-reports paid losses. This runs as a test gate (`TestDefaultPresetIsRealistic`,
-across several seeds). The drift band is each company's drift over the pool's
-median: the accident years span the 2001-2004 hard market, which improved most
-companies' later years alike, and the generator models no market cycle, so the
-band keeps the spread between companies and leaves out the level they share. A
-separate test (`TestPresetHasNoSystematicLossRatioDrift`) switches the model's
-inflation and pricing noise off and requires the loss ratio to stay flat, which
-catches systematic drift such as pricing and claims inflation trending apart.
+- `motor-personal` against Schedule P Part 1B, private passenger auto
+  liability/medical (`data/reference/schedule p/ppauto_pos98-07.csv`). It
+  includes bodily injury and property damage liability, personal injury
+  protection, medical payments and uninsured motorist; the preset carries no
+  first-party injury cover.
+- `motor-commercial` against Schedule P Part 1C, commercial auto/truck
+  liability/medical (`data/reference/schedule p/comauto_pos_98-07.csv`).
+
+Both lines exclude physical damage, which is Part 1J and has no 10-year
+history. Each profile scores its preset's two third-party (liability)
+sections, `third_party_property` and `third_party_injury`, together: their
+claims against their share of premium. A profile with no sections scores the
+whole book. Own-damage claims are left out of the score rather than slowed to
+liability settlement speed, and the presets set their settlement as a
+short-tail class. The profiles live in the preset registry, not in the YAML,
+which holds simulation parameters only; a UI run is scored by the preset it was
+edited from, and is reported as not scored when its parameters no longer have
+a scored section. Schedule P losses are net of reinsurance and include defence
+costs, and they are scored against net earned premium. The generated losses
+are gross of reinsurance and exclude defence costs, which the calibration
+absorbs implicitly. The UI's triangle tab still shows the whole book.
+
+Each line's pool is the companies with every accident year known to age 10
+that its criteria select: net premium steady across the years and a steady
+reinsurance programme (coefficients of variation of net premium and of the
+net-to-direct premium ratio under Meyers' limits for the line, CAS Monograph
+1, 2015: 0.45 and 0.125 for personal auto, 0.399 and 0.125 for commercial
+auto), at least a size floor of net premium a year, so claim sampling noise in
+small books does not set the band edges, and no reinsurers. Of 121 private
+passenger auto companies, `application.PersonalMotorCriteria` keeps 45 at $5m a
+year and up. Commercial auto companies are smaller: of 137,
+`application.CommercialAutoCriteria` keeps 42 at $1m a year and up, where a $5m
+floor would keep 25, too few for steady P5-P95 bands. No commercial auto
+reinsurer passes the limits.
+
+Paid and incurred age-to-age development factors, paid to date at each age as a
+share of paid at age 10, the ultimate loss ratio, and the loss-ratio drift
+between the two halves of the accident years must fall inside the P5-P95 bands
+observed across those companies. The paid shares score the pattern the factors
+compound to, so a book at the same edge of every factor band still fails; both
+sides take them on the fully developed square. Schedule P values every company
+at age 10, so the check drops generated development after age 10 rather than
+folding it into the last age, and completes each company's triangles to age 10
+with its later reported development: every accident year is compared at the same
+age on both sides, and the loss ratio is not scored on immature recent years.
+Incurred development is scored on each company's case incurred, Schedule P
+incurred less its bulk and IBNR reserves (Part 2 less Part 4), against the
+generated paid plus case: neither side counts claims not yet reported, and a
+company's bulk reserve, held early and released later, does not move the
+factors. A backstop filter drops any company carrying no scorable signal, and
+the full min/max range is shown for context. The paid comparison is net of
+recoveries, matching how Schedule P reports paid losses. This runs as a test
+gate (`TestPresetsAreRealistic`, for every preset across several seeds). The
+drift band is each company's drift over the pool's median: the accident years
+span the 2001-2004 hard market, which improved most companies' later years
+alike, and the generator models no market cycle, so the band keeps the spread
+between companies and leaves out the level they share. A separate test
+(`TestPresetHasNoSystematicLossRatioDrift`) switches the model's inflation and
+pricing noise off and requires the loss ratio to stay flat, which catches
+systematic drift such as pricing and claims inflation trending apart.
 
 ## Development
 

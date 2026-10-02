@@ -13,11 +13,15 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
 )
 
 //go:embed motor-personal.yaml
 var motorPersonalYAML []byte
+
+//go:embed motor-commercial.yaml
+var motorCommercialYAML []byte
 
 // LOBParams mirrors the domain structs so the domain stays free of yaml tags.
 // These exported types also serve as the JSON shape of the web API.
@@ -38,6 +42,20 @@ type BookParams struct {
 	SumInsuredMedian    float64              `yaml:"sum_insured_median" json:"sum_insured_median"`
 	SumInsuredInflation float64              `yaml:"sum_insured_inflation" json:"sum_insured_inflation"`
 	ExcessChoices       []ExcessChoiceParams `yaml:"excess_choices" json:"excess_choices"`
+	Fleet               FleetParams          `yaml:"fleet" json:"fleet"`
+}
+
+// FleetParams mirrors lob.FleetParams for YAML/JSON.
+type FleetParams struct {
+	Size            FleetSizeParams `yaml:"size" json:"size"`
+	SumInsuredSigma float64         `yaml:"sum_insured_sigma" json:"sum_insured_sigma"`
+	RiskSpread      float64         `yaml:"risk_spread" json:"risk_spread"`
+}
+
+// FleetSizeParams mirrors lob.FleetSizeParams for YAML/JSON.
+type FleetSizeParams struct {
+	Median float64 `yaml:"median" json:"median"`
+	Sigma  float64 `yaml:"sigma" json:"sigma"`
 }
 
 // ExcessChoiceParams mirrors lob.ExcessChoice for YAML/JSON.
@@ -63,6 +81,7 @@ type PricingSectionParams struct {
 	BaseFrequency float64        `yaml:"base_frequency" json:"base_frequency"`
 	Severity      SeverityParams `yaml:"severity" json:"severity"`
 	Limit         float64        `yaml:"limit" json:"limit"`
+	NoExcess      bool           `yaml:"no_excess" json:"no_excess"`
 }
 
 // ClaimsParams mirrors lob.ClaimParams for YAML/JSON.
@@ -80,10 +99,10 @@ type SectionParams struct {
 	BaseFrequency float64         `yaml:"base_frequency" json:"base_frequency"`
 	Severity      SeverityParams  `yaml:"severity" json:"severity"`
 	Limit         float64         `yaml:"limit" json:"limit"`
+	NoExcess      bool            `yaml:"no_excess" json:"no_excess"`
 	ReportLag     ReportLagParams `yaml:"report_lag" json:"report_lag"`
 	CloseLag      CloseLagParams  `yaml:"close_lag" json:"close_lag"`
 	Recoveries    bool            `yaml:"recoveries" json:"recoveries"`
-	Scored        bool            `yaml:"scored" json:"scored"`
 }
 
 // InflationParams mirrors lob.InflationParams for YAML/JSON.
@@ -175,25 +194,48 @@ func Load(r io.Reader) (lob.LineOfBusiness, error) {
 	return l, nil
 }
 
-// PresetInfo identifies one embedded line of business preset.
+// PresetInfo identifies one embedded line of business preset and how the
+// realism gate scores it. The scoring is evaluation, not simulation, so it
+// lives here rather than in the preset's YAML.
 type PresetInfo struct {
-	ID   string
-	Name string
+	ID      string
+	Name    string
+	Realism application.RealismProfile
 }
+
+// thirdParty are the sections the motor presets score: the Schedule P auto
+// lines are liability only, with no physical damage in them.
+var thirdParty = []string{"third_party_property", "third_party_injury"}
 
 // New presets are registered here and in presetYAML; the UI picks them up
 // with no further changes.
 var presetInfos = []PresetInfo{
-	{ID: "motor-personal", Name: "Motor personal"},
+	{ID: "motor-personal", Name: "Motor personal", Realism: application.RealismProfile{Line: application.PrivatePassengerAuto, Sections: thirdParty}},
+	{ID: "motor-commercial", Name: "Motor commercial", Realism: application.RealismProfile{Line: application.CommercialAuto, Sections: thirdParty}},
 }
 
 var presetYAML = map[string][]byte{
-	"motor-personal": motorPersonalYAML,
+	"motor-personal":   motorPersonalYAML,
+	"motor-commercial": motorCommercialYAML,
 }
 
 // Presets lists the embedded presets in display order.
 func Presets() []PresetInfo {
-	return slices.Clone(presetInfos)
+	out := slices.Clone(presetInfos)
+	for i := range out {
+		out[i].Realism.Sections = slices.Clone(out[i].Realism.Sections)
+	}
+	return out
+}
+
+// PresetInfoFor returns the registered preset with the given ID.
+func PresetInfoFor(id string) (PresetInfo, bool) {
+	for _, p := range Presets() {
+		if p.ID == id {
+			return p, true
+		}
+	}
+	return PresetInfo{}, false
 }
 
 // PresetParams returns a preset's raw parameter set, e.g. to prefill an editor.
@@ -240,6 +282,7 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			BaseFrequency: sec.BaseFrequency,
 			Severity:      sec.Severity.toDomain(),
 			Limit:         sec.Limit,
+			NoExcess:      sec.NoExcess,
 		}
 	}
 	sections := make([]lob.SectionParams, len(d.Claims.Sections))
@@ -249,6 +292,7 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			BaseFrequency: sec.BaseFrequency,
 			Severity:      sec.Severity.toDomain(),
 			Limit:         sec.Limit,
+			NoExcess:      sec.NoExcess,
 			ReportLag: lob.ReportLagParams{
 				Median: sec.ReportLag.Median,
 				Sigma:  sec.ReportLag.Sigma,
@@ -261,7 +305,6 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 				RiskLoading:    sec.CloseLag.RiskLoading,
 			},
 			Recoveries: sec.Recoveries,
-			Scored:     sec.Scored,
 		}
 	}
 	return lob.LineOfBusiness{
@@ -273,6 +316,11 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			SumInsuredMedian:    d.Book.SumInsuredMedian,
 			SumInsuredInflation: d.Book.SumInsuredInflation,
 			ExcessChoices:       excesses,
+			Fleet: lob.FleetParams{
+				Size:            lob.FleetSizeParams{Median: d.Book.Fleet.Size.Median, Sigma: d.Book.Fleet.Size.Sigma},
+				SumInsuredSigma: d.Book.Fleet.SumInsuredSigma,
+				RiskSpread:      d.Book.Fleet.RiskSpread,
+			},
 		},
 		Pricing: lob.PricingParams{
 			TargetLossRatio:      d.Pricing.TargetLossRatio,

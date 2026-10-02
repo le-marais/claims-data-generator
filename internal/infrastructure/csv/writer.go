@@ -49,11 +49,11 @@ func writeDataset(open opener, ds application.Dataset) error {
 	// fmt.Sprintf is safe. If a free-text column is ever added, switch to
 	// encoding/csv.
 	if err := writeFile(open, "policies.csv",
-		"policy_id,cover_start,cover_end,sum_insured,excess,risk_factor,premium",
+		"policy_id,fleet_id,cover_start,cover_end,sum_insured,excess,risk_factor,premium",
 		len(ds.Policies), func(i int) string {
 			p := ds.Policies[i]
-			return fmt.Sprintf("%d,%s,%s,%s,%s,%s,%s",
-				p.ID, p.CoverStart, p.CoverEnd, p.SumInsured, p.Excess,
+			return fmt.Sprintf("%d,%d,%s,%s,%s,%s,%s,%s",
+				p.ID, p.FleetID, p.CoverStart, p.CoverEnd, p.SumInsured, p.Excess,
 				FormatRiskFactor(p.RiskFactor), p.Premium)
 		}); err != nil {
 		return err

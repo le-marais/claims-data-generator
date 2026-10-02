@@ -43,11 +43,15 @@ var formFields = []fieldGroup{
 	{
 		Label: "Book",
 		Fields: []formField{
-			{Path: []string{"book", "growth_factor"}, Label: "Growth factor", Tip: "Year-on-year trend in policy count."},
+			{Path: []string{"book", "growth_factor"}, Label: "Growth factor", Tip: "Year-on-year trend in the number of fleets written, which without fleets is the policy count."},
 			{Path: []string{"book", "size_volatility"}, Label: "Size volatility", Tip: "Sigma of the mean-1 lognormal noise on book size."},
-			{Path: []string{"book", "spread"}, Label: "Spread", Tip: "Heterogeneity: sigma of sum insured and sd of the risk factor."},
-			{Path: []string{"book", "sum_insured_median"}, Label: "Sum insured median", Tip: "Year-1 median sum insured in dollars."},
+			{Path: []string{"book", "spread"}, Label: "Spread", Tip: "Heterogeneity: sigma of sum insured and sd of the risk factor; with fleets, between the vehicles of one fleet."},
+			{Path: []string{"book", "sum_insured_median"}, Label: "Sum insured median", Tip: "Year-1 median sum insured of a vehicle in dollars."},
 			{Path: []string{"book", "sum_insured_inflation"}, Label: "Sum insured inflation", Tip: "Annual multiplicative drift of the median."},
+			{Path: []string{"book", "fleet", "size", "median"}, Label: "Fleet size median", Tip: "Median vehicles on a fleet; each vehicle is a policy. 0 switches fleets off, every policy then its own fleet of one."},
+			{Path: []string{"book", "fleet", "size", "sigma"}, Label: "Fleet size sigma", Tip: "Sigma of the lognormal fleet size, rounded to whole vehicles and at least 1."},
+			{Path: []string{"book", "fleet", "sum_insured_sigma"}, Label: "Fleet sum insured sigma", Tip: "Lognormal sigma of a fleet's median vehicle sum insured around the book's median: how far fleets' vehicle values differ."},
+			{Path: []string{"book", "fleet", "risk_spread"}, Label: "Fleet risk spread", Tip: "Sd of the mean-one gamma fleet risk factor that scales every vehicle's risk factor; 0 gives every fleet 1."},
 		},
 	},
 	{

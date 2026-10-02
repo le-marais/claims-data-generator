@@ -26,7 +26,7 @@ Claim events are driven by exposure and policy details, report and settlement la
 
 Every claim runs to closure - there is no valuation date - so the fully developed data supports out-of-sample testing of reserving methods. The same seed and parameters always produce byte-identical output.
 
-The engine is parameterized per line of business. Personal motor ships as the embedded preset; a new class is a YAML file. Shipped presets are standard classes that match the CAS Schedule P lines, so each can be calibrated against its own reference.
+The engine is parameterized per line of business. Personal motor and commercial motor ship as embedded presets; a new class is a YAML file. Shipped presets are standard classes that match the CAS Schedule P lines, so each can be calibrated against its own reference.
 
 It runs as a CLI (`claimsgen generate`) or as a local browser UI (`claimsgen ui`) that also shows summary stats, triangles, distributions and a realism check.
 
@@ -38,10 +38,10 @@ It runs as a CLI (`claimsgen generate`) or as a local browser UI (`claimsgen ui`
 
 ## Success
 
-A user can generate a realistic personal motor dataset on their own machine and feed it into a reserving model, study or demonstration without manual fixes.
+A user can generate a realistic personal or commercial motor dataset on their own machine and feed it into a reserving model, study or demonstration without manual fixes.
 
-Realism is measured against Schedule P: the third-party (liability) sections of the shipped preset must sit inside the P5-P95 bands of the private passenger auto liability reference companies.
+Realism is measured against Schedule P: the third-party (liability) sections of each shipped preset must sit inside the P5-P95 bands of its line's reference companies, private passenger auto liability for personal motor and commercial auto liability for commercial motor.
 
 ## Next
 
-More lines of business, starting with commercial auto, each a standard class matching a CAS Schedule P line. Whether the engine extends to the long-tail lines among them is a later question. See `docs/roadmap.md` for status and sequencing.
+More lines of business, each a standard class matching a CAS Schedule P line. Personal and commercial motor are the two auto lines; whether the engine extends to the long-tail lines is a later question. See `docs/roadmap.md` for status and sequencing.

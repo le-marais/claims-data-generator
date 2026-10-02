@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -26,11 +27,11 @@ import (
 
 func newTestServer(t *testing.T) *web.Server {
 	t.Helper()
-	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
+	pools, err := schedulep.LoadPools(refdata.Files, refdata.LineFiles, application.ReferenceLines())
 	if err != nil {
 		t.Fatal(err)
 	}
-	return web.NewServer(triangle.SelectReferences(refs, application.PersonalMotorCriteria()))
+	return web.NewServer(pools)
 }
 
 func do(t *testing.T, srv http.Handler, method, target string, body any) *httptest.ResponseRecorder {
@@ -64,8 +65,12 @@ func TestLOBList(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &lobs); err != nil {
 		t.Fatal(err)
 	}
-	if len(lobs) != 1 || lobs[0].ID != "motor-personal" || lobs[0].Name != "Motor personal" {
-		t.Fatalf("lobs = %+v", lobs)
+	want := []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}{{"motor-personal", "Motor personal"}, {"motor-commercial", "Motor commercial"}}
+	if !reflect.DeepEqual(lobs, want) {
+		t.Fatalf("lobs = %+v, want %+v", lobs, want)
 	}
 }
 
@@ -108,7 +113,94 @@ func generateBody(t *testing.T) map[string]any {
 		"start_year":        1998,
 		"years":             2,
 		"initial_book_size": 300,
+		"preset":            "motor-personal",
 		"params":            params,
+	}
+}
+
+// realismOf posts a run and returns its realism view.
+func realismOf(t *testing.T, body map[string]any) (r struct {
+	Scored    bool     `json:"scored"`
+	Note      string   `json:"note"`
+	Pass      bool     `json:"pass"`
+	Sections  []string `json:"sections"`
+	Reference struct {
+		Label      string  `json:"label"`
+		Companies  int     `json:"companies"`
+		MinPremium float64 `json:"min_premium"`
+	} `json:"reference"`
+	PaidATA []struct {
+		Age int `json:"age"`
+	} `json:"paid_ata"`
+}) {
+	t.Helper()
+	rec := do(t, newTestServer(t), "POST", "/api/generate", body)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Realism json.RawMessage `json:"realism"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(resp.Realism, &r); err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// A run is scored against the reference pool of the preset it names.
+func TestGenerateScoresAgainstThePresetPool(t *testing.T) {
+	r := realismOf(t, generateBody(t))
+	if !r.Scored || r.Note != "" {
+		t.Fatalf("scored = %v, note = %q; want scored with no note", r.Scored, r.Note)
+	}
+	if r.Reference.Label != "private passenger auto liability" || r.Reference.Companies != 45 || r.Reference.MinPremium != 5e6 {
+		t.Fatalf("reference = %+v, want the 45 private passenger auto companies of $5m a year and up", r.Reference)
+	}
+}
+
+// A commercial motor run is scored against the commercial auto pool.
+func TestGenerateScoresCommercialAgainstItsPool(t *testing.T) {
+	body := generateBody(t)
+	params, err := config.PresetParams("motor-commercial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body["preset"], body["params"], body["initial_book_size"] = "motor-commercial", params, 100
+	r := realismOf(t, body)
+	if !r.Scored || r.Reference.Label != "commercial auto liability" || r.Reference.Companies != 42 || r.Reference.MinPremium != 1e6 {
+		t.Fatalf("realism = %+v, want scored against the 42 commercial auto companies of $1m a year and up", r)
+	}
+}
+
+// A run that names no preset, or whose parameters lack a section its preset
+// scores, has nothing to score against, and says so.
+func TestGenerateWithoutAReferenceIsNotScored(t *testing.T) {
+	noPreset := generateBody(t)
+	delete(noPreset, "preset")
+	renamed := generateBody(t)
+	params := renamed["params"].(config.LOBParams)
+	params.Claims.Sections = slices.Clone(params.Claims.Sections)
+	params.Pricing.Sections = slices.Clone(params.Pricing.Sections)
+	params.Claims.Sections[2].Name = "bodily_injury"
+	params.Pricing.Sections[2].Name = "bodily_injury"
+	renamed["params"] = params
+	for name, c := range map[string]struct {
+		body map[string]any
+		note string
+	}{
+		"no preset":       {noPreset, "no preset"},
+		"missing section": {renamed, "third_party_injury"},
+	} {
+		r := realismOf(t, c.body)
+		if r.Scored || r.Pass || len(r.PaidATA) != 0 {
+			t.Errorf("%s: scored = %v, pass = %v, %d paid checks; want an unscored run", name, r.Scored, r.Pass, len(r.PaidATA))
+		}
+		if !strings.Contains(r.Note, c.note) {
+			t.Errorf("%s: note = %q, want it to mention %q", name, r.Note, c.note)
+		}
 	}
 }
 

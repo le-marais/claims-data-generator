@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -11,53 +12,116 @@ import (
 	refdata "github.com/le-marais/claimsgen/data/reference"
 	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/domain/claim"
+	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/domain/policy"
 	"github.com/le-marais/claimsgen/internal/domain/shared"
 	"github.com/le-marais/claimsgen/internal/domain/transaction"
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
+	"github.com/le-marais/claimsgen/internal/infrastructure/config"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
 )
 
-// personalMotorRefs is the realism gate's reference pool: the embedded
+// personalMotorRefs is the motor preset's reference pool: the embedded
 // private passenger auto companies that PersonalMotorCriteria selects.
 func personalMotorRefs(t *testing.T) []triangle.ReferenceSet {
 	t.Helper()
-	all, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
+	return referencePools(t)[application.PrivatePassengerAuto].Refs
+}
+
+// scoredSections resolves the sections a preset's realism profile scores
+// among l's sections.
+func scoredSections(t *testing.T, presetID string, l lob.LineOfBusiness) []int {
+	t.Helper()
+	info, ok := config.PresetInfoFor(presetID)
+	if !ok {
+		t.Fatalf("no preset %q", presetID)
+	}
+	sections, err := info.Realism.SectionIndices(l)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return triangle.SelectReferences(all, application.PersonalMotorCriteria())
+	return sections
 }
 
-// TestDefaultPresetIsRealistic is the MVP realism gate: data generated with
-// the shipped motor-personal preset must land inside the bands observed
-// across the Schedule P reference companies.
-func TestDefaultPresetIsRealistic(t *testing.T) {
-	refs := personalMotorRefs(t)
-	req := request(t)
-	req.StartYear = 1998
-	req.Years = 10
-	// 100k keeps claim sampling noise in the late single-origin factors and
-	// in the drift below the spread of the reference pool, which is made of
-	// books of $5m a year and up: at 40k the incurred factor at age 9-10 left
-	// its band on 4 of 60 seeds by luck, at 100k on none of 30.
-	req.InitialBookSize = 100000
-	// Run the gate on several seeds so a calibration that only happens to
-	// pass on one seed is caught here.
-	for _, seed := range []uint64{1, 42, 7} {
-		seed := seed
-		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
-			ds, err := application.GenerateDataset(t.Context(), random.NewSource(seed), req)
-			if err != nil {
-				t.Fatal(err)
+func TestRealismProfileResolvesSections(t *testing.T) {
+	l := request(t).LOB
+	p := application.RealismProfile{Line: application.PrivatePassengerAuto, Sections: []string{"third_party_injury", "own_damage"}}
+	if got, err := p.SectionIndices(l); err != nil || !reflect.DeepEqual(got, []int{thirdPartyInjury, ownDamage}) {
+		t.Errorf("SectionIndices = %v, %v; want [%d %d] in the profile's order", got, err, thirdPartyInjury, ownDamage)
+	}
+	if got, err := (application.RealismProfile{}).SectionIndices(l); err != nil || got != nil {
+		t.Errorf("no sections = %v, %v; want nil for the whole book", got, err)
+	}
+	p.Sections = []string{"hull"}
+	if _, err := p.SectionIndices(l); err == nil || !strings.Contains(err.Error(), `"hull"`) {
+		t.Errorf("unknown section: err = %v, want one naming it", err)
+	}
+}
+
+// referencePools loads every reference line's selected companies.
+func referencePools(t *testing.T) map[string]application.ReferencePool {
+	t.Helper()
+	pools, err := schedulep.LoadPools(refdata.Files, refdata.LineFiles, application.ReferenceLines())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pools
+}
+
+// presetRequest is a 1998-2007 run of a registered preset.
+func presetRequest(t *testing.T, id string, initialBookSize int) application.GenerateRequest {
+	t.Helper()
+	l, err := config.Preset(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return application.GenerateRequest{LOB: l, StartYear: 1998, Years: 10, InitialBookSize: initialBookSize}
+}
+
+// gateBookSize is each preset's initial book in the realism gate, big enough
+// that claim sampling noise in the late single-origin factors and in the
+// drift stays below the spread of its reference pool. A preset with no entry
+// fails the gate, so a new preset has to choose one.
+var gateBookSize = map[string]int{
+	// Motor's pool is made of books of $5m a year and up: at 40k policies the
+	// incurred factor at age 9-10 left its band on 4 of 60 seeds by luck, at
+	// 100k on none of 30.
+	"motor-personal": 100000,
+	// 30k fleets is about 125k vehicles a year; every seed of 1-30 passes.
+	"motor-commercial": 30000,
+}
+
+// TestPresetsAreRealistic is the realism gate: data generated with each
+// shipped preset must land inside the bands observed across the Schedule P
+// reference companies of its realism profile's line. It runs on several seeds
+// so a calibration that only happens to pass on one is caught here.
+func TestPresetsAreRealistic(t *testing.T) {
+	pools := referencePools(t)
+	for _, p := range config.Presets() {
+		t.Run(p.ID, func(t *testing.T) {
+			t.Parallel()
+			book, ok := gateBookSize[p.ID]
+			if !ok {
+				t.Fatalf("no gate book size for preset %s", p.ID)
 			}
-			report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections(), refs)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !report.Pass() {
-				t.Errorf("generated data outside Schedule P bands:\n%s", report)
+			req := presetRequest(t, p.ID, book)
+			sections := scoredSections(t, p.ID, req.LOB)
+			refs := pools[p.Realism.Line].Refs
+			for _, seed := range []uint64{1, 42, 7} {
+				t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) {
+					ds, err := application.GenerateDataset(t.Context(), random.NewSource(seed), req)
+					if err != nil {
+						t.Fatal(err)
+					}
+					report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, sections, refs)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if !report.Pass() {
+						t.Errorf("generated data outside Schedule P bands:\n%s", report)
+					}
+				})
 			}
 		})
 	}
@@ -72,7 +136,7 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections(), refs)
+	report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, scoredSections(t, "motor-personal", req.LOB), refs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +167,7 @@ func TestRealismScoresOnlyTheScoredSections(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections(), refs)
+		report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, scoredSections(t, "motor-personal", req.LOB), refs)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -124,7 +188,7 @@ func TestScoredSectionPremiumAndClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	liability, err := application.SectionComparison(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections())
+	liability, err := application.SectionComparison(ds, req.StartYear, req.Years, scoredSections(t, "motor-personal", req.LOB))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,12 +223,13 @@ func TestScoredSectionPremiumAndClaims(t *testing.T) {
 	}
 }
 
-// pooledLiabilityDrift is the liability section's loss-ratio drift - the
+// pooledLiabilityDrift is the scored sections' loss-ratio drift - the
 // second-half accident years' loss ratio over the first half's - pooled over
 // seeds, so claim-sampling noise averages out. The seeds generate in
 // parallel; the pooling order is fixed, so the result is deterministic.
-func pooledLiabilityDrift(t *testing.T, req application.GenerateRequest, seeds []uint64) float64 {
+func pooledLiabilityDrift(t *testing.T, presetID string, req application.GenerateRequest, seeds []uint64) float64 {
 	t.Helper()
+	sections := scoredSections(t, presetID, req.LOB)
 	comps := make([]triangle.Comparison, len(seeds))
 	errs := make([]error, len(seeds))
 	var wg sync.WaitGroup
@@ -174,7 +239,7 @@ func pooledLiabilityDrift(t *testing.T, req application.GenerateRequest, seeds [
 			defer wg.Done()
 			ds, err := application.GenerateDataset(t.Context(), random.NewSource(seed), req)
 			if err == nil {
-				comps[i], err = application.SectionComparison(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections())
+				comps[i], err = application.SectionComparison(ds, req.StartYear, req.Years, sections)
 			}
 			errs[i] = err
 		}()
@@ -198,33 +263,48 @@ func pooledLiabilityDrift(t *testing.T, req application.GenerateRequest, seeds [
 	return (inc2 / ep2) / (inc1 / ep1)
 }
 
-// systematicDriftTolerance bounds the preset's loss-ratio drift once the
+// systematicDriftTolerance bounds a preset's loss-ratio drift once the
 // randomness pricing cannot know about is switched off. What remains is claim
-// sampling: at a 40k book one seed's drift has a standard deviation of about
-// 0.025 (mean 1.005 over 30 seeds), about 0.008 pooled over ten seeds, so
-// +/-3.5% is over four standard deviations. Pricing that trends 1% a year apart from claims drifts by about
+// sampling: over seeds 1-30 one seed's drift has a standard deviation of about
+// 0.03 for motor at 40k policies and for commercial motor at 18k fleets,
+// about 0.01 pooled over ten seeds, so +/-3.5% is over three standard
+// deviations. Pricing that trends 1% a year apart from claims drifts by about
 // 5% over the window.
 const systematicDriftTolerance = 0.035
 
+// driftBookSize is each preset's initial book in the drift guard, sized so
+// one seed's sampling noise is about the same for every preset.
+var driftBookSize = map[string]int{
+	"motor-personal":   40000,
+	"motor-commercial": 18000,
+}
+
 // MR-13: the realism report scores drift against the reference companies'
 // wide spread, so this test is the guard against systematic drift: with the
-// inflation path and pricing adequacy noise off, the model's loss ratio must
+// inflation path and pricing adequacy noise off, a preset's loss ratio must
 // not trend across the window. The second half checks that the guard can
 // fail: pricing that trends 2% a year below claims must trip it.
 func TestPresetHasNoSystematicLossRatioDrift(t *testing.T) {
-	req := request(t)
-	req.StartYear, req.Years, req.InitialBookSize = 1998, 10, 40000
-	req.LOB.Claims.Inflation.Volatility = 0
-	req.LOB.Pricing.AdequacyVolatility = 0
+	for _, p := range config.Presets() {
+		t.Run(p.ID, func(t *testing.T) {
+			book, ok := driftBookSize[p.ID]
+			if !ok {
+				t.Fatalf("no drift guard book size for preset %s", p.ID)
+			}
+			req := presetRequest(t, p.ID, book)
+			req.LOB.Claims.Inflation.Volatility = 0
+			req.LOB.Pricing.AdequacyVolatility = 0
 
-	if d := pooledLiabilityDrift(t, req, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}); math.Abs(d-1) > systematicDriftTolerance {
-		t.Errorf("noise-free loss-ratio drift %.4f, want within %.3f of 1", d, systematicDriftTolerance)
-	}
+			if d := pooledLiabilityDrift(t, p.ID, req, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}); math.Abs(d-1) > systematicDriftTolerance {
+				t.Errorf("noise-free loss-ratio drift %.4f, want within %.3f of 1", d, systematicDriftTolerance)
+			}
 
-	lagging := req
-	lagging.LOB.Pricing.InflationMean = req.LOB.Claims.Inflation.Mean - 0.02
-	if d := pooledLiabilityDrift(t, lagging, []uint64{1, 2, 3}); math.Abs(d-1) <= systematicDriftTolerance {
-		t.Errorf("pricing trending 2%% a year below claims gave drift %.4f, want outside %.3f of 1", d, systematicDriftTolerance)
+			lagging := req
+			lagging.LOB.Pricing.InflationMean = req.LOB.Claims.Inflation.Mean - 0.02
+			if d := pooledLiabilityDrift(t, p.ID, lagging, []uint64{1, 2, 3}); math.Abs(d-1) <= systematicDriftTolerance {
+				t.Errorf("pricing trending 2%% a year below claims gave drift %.4f, want outside %.3f of 1", d, systematicDriftTolerance)
+			}
+		})
 	}
 }
 
@@ -259,7 +339,7 @@ func TestRealismScoresTheUnionOfScoredSections(t *testing.T) {
 // MR-15: the gate's pool is the complete companies with steady premium and
 // reinsurance that write at least $5m a year, less reinsurers.
 func TestPersonalMotorPool(t *testing.T) {
-	all, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
+	all, err := schedulep.LoadFS(refdata.Files, refdata.LineFiles[application.PrivatePassengerAuto])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,6 +368,43 @@ func TestPersonalMotorPool(t *testing.T) {
 		"10308": "net premium varies too much (CV 0.519)",         // about $70k a year, shrinking
 		"20430": "too small (mean net premium 2986)",              // cedes a steady 75%, which net premium makes fair
 		"33499": "reinsurer (Dorinco Rein Co)",
+	} {
+		if reasons[name] != want {
+			t.Errorf("company %s: Reason = %q, want %q", name, reasons[name], want)
+		}
+	}
+}
+
+// The commercial auto pool is the complete companies inside Meyers' limits
+// for the line that write at least $1m a year. No reinsurer passes the
+// limits, so none is excluded by name.
+func TestCommercialAutoPool(t *testing.T) {
+	all, err := schedulep.LoadFS(refdata.Files, refdata.LineFiles[application.CommercialAuto])
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := application.CommercialAutoCriteria()
+	var got []string
+	for _, r := range triangle.SelectReferences(all, c) {
+		got = append(got, r.Name)
+	}
+	want := []string{
+		"353", "620", "833", "965", "1066", "1090", "1538", "1767", "2135", "2143",
+		"2712", "3240", "4839", "5185", "6408", "6947", "7080", "8079", "10022", "11126",
+		"12866", "13439", "13501", "13528", "13889", "14044", "14176", "14257", "14370", "18163",
+		"18767", "19020", "20690", "21172", "21270", "23574", "23663", "31550", "40568", "41300",
+		"44130", "44415",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("pool = %v\nwant %v", got, want)
+	}
+	reasons := map[string]string{}
+	for _, r := range all {
+		reasons[r.Name] = c.Reason(r)
+	}
+	for name, want := range map[string]string{
+		"1716":  "too small (mean net premium 913)",
+		"27065": "too small (mean net premium 999)",
 	} {
 		if reasons[name] != want {
 			t.Errorf("company %s: Reason = %q, want %q", name, reasons[name], want)

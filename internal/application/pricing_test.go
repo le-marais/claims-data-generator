@@ -16,34 +16,45 @@ func pooledLossRatio(r application.SummaryReport) float64 {
 	return lr
 }
 
-// presetLossRatioBand is how far the shipped preset's simulated loss ratio
-// may land from its target, as a factor of the target. The target sets
-// premium, not experience: the realized loss ratio is emergent. It moves
-// mostly with the simulated inflation path, which pricing knows only by its
-// mean, and with each underwriting year's adequacy noise. Over seeds 1-40,
-// at a 40k initial book, the preset landed between 0.94 and 1.08 times the
-// target, and the spread barely narrows with book size. +/-15% leaves room
-// for the preset's pricing and claims assumptions to drift apart by design.
+// presetLossRatioBand is how far a shipped preset's simulated loss ratio may
+// land from its target, as a factor of the target. The target sets premium,
+// not experience: the realized loss ratio is emergent. It moves mostly with
+// the simulated inflation path, which pricing knows only by its mean, and
+// with each underwriting year's adequacy noise. Over seeds 1-40 the motor
+// preset at a 40k initial book landed between 0.94 and 1.08 times the target,
+// and the commercial motor preset at 15k fleets between 0.91 and 1.10; the
+// spread barely narrows with book size. +/-15% leaves room for a preset's
+// pricing and claims assumptions to drift apart by design.
 const presetLossRatioBand = 0.15
 
-// The preset's simulated loss ratio lands in a range around its target, not
+// lossRatioBookSize is each preset's initial book in the loss-ratio test.
+var lossRatioBookSize = map[string]int{
+	"motor-personal":   4000,
+	"motor-commercial": 1500,
+}
+
+// Each preset's simulated loss ratio lands in a range around its target, not
 // on it.
 func TestPresetLossRatioLandsNearTarget(t *testing.T) {
-	base, err := config.MotorPersonal()
-	if err != nil {
-		t.Fatalf("MotorPersonal: %v", err)
-	}
-	target := base.Pricing.TargetLossRatio
-	lo, hi := target*(1-presetLossRatioBand), target*(1+presetLossRatioBand)
-	req := application.GenerateRequest{LOB: base, StartYear: 1998, Years: 10, InitialBookSize: 4000}
-	for _, seed := range []uint64{1, 42, 7} {
-		ds, err := application.GenerateDataset(t.Context(), random.NewSource(seed), req)
-		if err != nil {
-			t.Fatalf("seed %d: generate: %v", seed, err)
-		}
-		if lr := pooledLossRatio(application.Summarize(ds, 1998, 10)); lr < lo || lr > hi {
-			t.Errorf("seed %d: loss ratio %.3f outside [%.3f, %.3f] around target %.2f", seed, lr, lo, hi, target)
-		}
+	for _, p := range config.Presets() {
+		t.Run(p.ID, func(t *testing.T) {
+			book, ok := lossRatioBookSize[p.ID]
+			if !ok {
+				t.Fatalf("no loss-ratio test book size for preset %s", p.ID)
+			}
+			req := presetRequest(t, p.ID, book)
+			target := req.LOB.Pricing.TargetLossRatio
+			lo, hi := target*(1-presetLossRatioBand), target*(1+presetLossRatioBand)
+			for _, seed := range []uint64{1, 42, 7} {
+				ds, err := application.GenerateDataset(t.Context(), random.NewSource(seed), req)
+				if err != nil {
+					t.Fatalf("seed %d: generate: %v", seed, err)
+				}
+				if lr := pooledLossRatio(application.Summarize(ds, 1998, 10)); lr < lo || lr > hi {
+					t.Errorf("seed %d: loss ratio %.3f outside [%.3f, %.3f] around target %.2f", seed, lr, lo, hi, target)
+				}
+			}
+		})
 	}
 }
 

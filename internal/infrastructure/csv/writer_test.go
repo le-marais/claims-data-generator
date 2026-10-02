@@ -46,7 +46,7 @@ func TestWriteDatasetProducesThreeLinkedCSVs(t *testing.T) {
 	}
 
 	policies := readLines(t, filepath.Join(dir, "policies.csv"))
-	if policies[0] != "policy_id,cover_start,cover_end,sum_insured,excess,risk_factor,premium" {
+	if policies[0] != "policy_id,fleet_id,cover_start,cover_end,sum_insured,excess,risk_factor,premium" {
 		t.Errorf("policies header = %q", policies[0])
 	}
 	if len(policies)-1 != len(ds.Policies) {
@@ -72,7 +72,7 @@ func TestWriteDatasetProducesThreeLinkedCSVs(t *testing.T) {
 	// Spot-check first data rows match the in-memory dataset.
 	p := ds.Policies[0]
 	wantPolicy := strings.Join([]string{
-		"1", p.CoverStart.String(), p.CoverEnd.String(), p.SumInsured.String(),
+		"1", "1", p.CoverStart.String(), p.CoverEnd.String(), p.SumInsured.String(),
 		p.Excess.String(), formatRisk(t, p.RiskFactor), p.Premium.String(),
 	}, ",")
 	if policies[1] != wantPolicy {

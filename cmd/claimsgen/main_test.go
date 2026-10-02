@@ -140,6 +140,76 @@ func TestGenerateInvalidConfigNamesField(t *testing.T) {
 	}
 }
 
+// --preset motor-personal is the default, byte for byte.
+func TestGeneratePresetMatchesTheDefault(t *testing.T) {
+	outA := filepath.Join(t.TempDir(), "a")
+	outB := filepath.Join(t.TempDir(), "b")
+	var buf bytes.Buffer
+	if code := run([]string{"generate", "--out", outA, "--years", "2", "--initial-book-size", "100"}, &buf, &buf); code != 0 {
+		t.Fatalf("default run failed: %s", buf.String())
+	}
+	if code := run([]string{"generate", "--out", outB, "--years", "2", "--initial-book-size", "100", "--preset", "motor-personal"}, &buf, &buf); code != 0 {
+		t.Fatalf("preset run failed: %s", buf.String())
+	}
+	for _, name := range []string{"policies.csv", "claims.csv", "transactions.csv", "triangles.csv", "exposure.csv"} {
+		a, _ := os.ReadFile(filepath.Join(outA, name))
+		b, _ := os.ReadFile(filepath.Join(outB, name))
+		if !bytes.Equal(a, b) {
+			t.Errorf("%s differs between the default and --preset motor-personal", name)
+		}
+	}
+}
+
+// The commercial preset writes a fleet book: some vehicles share a fleet.
+func TestGenerateCommercialPresetWritesFleets(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "output")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"generate", "--out", out, "--years", "2", "--initial-book-size", "50", "--preset", "motor-commercial"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit code = %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.HasPrefix(stdout.String(), "motor-commercial:") {
+		t.Errorf("stdout %q should name the preset", stdout.String())
+	}
+	policies, err := os.ReadFile(filepath.Join(out, "policies.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fleets := map[string]int{}
+	for _, row := range strings.Split(strings.TrimSpace(string(policies)), "\n")[1:] {
+		fleets[strings.Split(row, ",")[1]]++
+	}
+	shared := 0
+	for _, n := range fleets {
+		if n > 1 {
+			shared++
+		}
+	}
+	if shared == 0 {
+		t.Fatalf("no fleet_id is shared by two policies among %d fleets", len(fleets))
+	}
+}
+
+func TestGenerateRejectsPresetWithConfig(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	path := filepath.Join("..", "..", "internal", "infrastructure", "config", "motor-personal.yaml")
+	if code := run([]string{"generate", "--preset", "motor-personal", "--config", path}, &stdout, &stderr); code == 0 {
+		t.Fatal("expected nonzero exit for --preset with --config")
+	}
+	if !strings.Contains(stderr.String(), "--preset") || !strings.Contains(stderr.String(), "--config") {
+		t.Errorf("stderr %q should name both flags", stderr.String())
+	}
+}
+
+func TestGenerateRejectsAnUnknownPreset(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"generate", "--preset", "marine-cargo"}, &stdout, &stderr); code == 0 {
+		t.Fatal("expected nonzero exit for an unknown preset")
+	}
+	if !strings.Contains(stderr.String(), "marine-cargo") {
+		t.Errorf("stderr %q should name the preset", stderr.String())
+	}
+}
+
 func TestUnknownCommandFails(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"frobnicate"}, &stdout, &stderr); code == 0 {

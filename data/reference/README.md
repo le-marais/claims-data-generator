@@ -25,6 +25,9 @@ direct and assumed, ceded and net earned premium, repeated on every lag. Lags
 after the 2007 valuation come from later annual statements, so every accident
 year is known to lag 10. `Single` is 1 for a single company and 0 for a group.
 
-Only the private passenger auto file is embedded (`refdata.go`). The realism
-gate scores against the companies `application.PersonalMotorCriteria` selects
-from it. The other five lines are kept for future lines of business.
+The private passenger auto and commercial auto files are embedded
+(`refdata.go`). The realism gate scores the personal motor preset against the
+companies `application.PersonalMotorCriteria` selects from the first, and the
+commercial motor preset against those `application.CommercialAutoCriteria`
+selects from the second. The other four lines are kept for future lines of
+business.

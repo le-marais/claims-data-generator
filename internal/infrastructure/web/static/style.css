@@ -210,6 +210,7 @@ summary { cursor: pointer; }
   background: color-mix(in srgb, var(--status-critical) 12%, var(--surface-1));
   border: 1px solid var(--status-critical);
 }
+.banner-neutral { background: var(--surface-1); border: 1px solid var(--muted); }
 
 /* triangle heatmap */
 .toggle { display: flex; gap: 4px; margin-bottom: 12px; }

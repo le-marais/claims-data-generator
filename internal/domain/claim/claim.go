@@ -32,9 +32,9 @@ type Claim struct {
 	// business's sections.
 	Section int
 	// CoverLimit is the most the policy pays on the claim over its whole
-	// life, reopen included: sum insured minus excess for a sum-insured
-	// severity, the section's limit for a limited one, zero (unlimited)
-	// otherwise.
+	// life, reopen included: sum insured minus the excess the section takes
+	// for a sum-insured severity, the section's limit for a limited one, zero
+	// (unlimited) otherwise.
 	CoverLimit shared.Money
 	// RiskFactor is the policy's risk factor, kept for the reopen pass's
 	// close-lag draw, which runs after the claim stage has let go of the
@@ -228,6 +228,7 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 
 // simulateClaim draws one claim in the given section; ok is false when the
 // ground-up loss does not exceed the excess, making the claim unreportable.
+// A section that takes no excess reports every loss.
 // The severity draw is the first episode's true cost (Ultimate); the case
 // estimate is a separate, later view of it. Every claim takes the same draws
 // in the same order, reportable or not.
@@ -243,14 +244,18 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	// sum insured, representing a total loss; a Pareto or lognormal loss is
 	// uncapped, though the cost after excess is capped at the section's limit.
 	loss := s.drawGroundUpLoss(src, pol, sec.Severity) * s.inflation.For(occurrence)
+	excess := pol.Excess
+	if sec.NoExcess {
+		excess = 0
+	}
 	coverLimit := shared.Money(0) // unlimited
 	if sec.Severity.Kind == lob.SumInsuredLognormal {
 		if cap := pol.SumInsured.Dollars(); loss > cap {
 			loss = cap
 		}
-		coverLimit = pol.SumInsured - pol.Excess
+		coverLimit = pol.SumInsured - excess
 	}
-	cost := loss - pol.Excess.Dollars()
+	cost := loss - excess.Dollars()
 	if cost <= 0 {
 		return Claim{}, false
 	}

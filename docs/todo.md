@@ -32,7 +32,5 @@ Before any non-loopback deployment: add authentication; stop treating an absent
 `Origin` header as trusted for state-changing requests; use an `http.Server`
 with timeouts; return generic error messages while logging detail server-side;
 and bound concurrent runs, since every generate and download request is a full
-run. Design these in when the second-line-of-business plumbing is touched,
-rather than retrofitting after exposure. The UI's run-size caps are sized for a
-mistyped form, not for an attacker: revisit them here rather than assuming they
-carry over.
+run. The UI's run-size caps are sized for a mistyped form, not for an
+attacker: revisit them here rather than assuming they carry over.

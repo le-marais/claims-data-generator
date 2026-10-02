@@ -7,6 +7,7 @@ import (
 	"testing/fstest"
 
 	refdata "github.com/le-marais/claimsgen/data/reference"
+	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
 )
@@ -157,7 +158,7 @@ func TestLoadKnownCompany(t *testing.T) {
 }
 
 func TestLoadFSEmbeddedMatchesDisk(t *testing.T) {
-	embedded, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
+	embedded, err := schedulep.LoadFS(refdata.Files, refdata.LineFiles[application.PrivatePassengerAuto])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,5 +168,33 @@ func TestLoadFSEmbeddedMatchesDisk(t *testing.T) {
 	}
 	if !reflect.DeepEqual(embedded, disk) {
 		t.Fatal("embedded reference sets differ from disk")
+	}
+}
+
+// Every reference line has an embedded file, and LoadPools selects each
+// line's companies with the line's own criteria.
+func TestLoadPools(t *testing.T) {
+	lines := application.ReferenceLines()
+	pools, err := schedulep.LoadPools(refdata.Files, refdata.LineFiles, lines)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pools) != len(lines) {
+		t.Fatalf("pools = %d, want one per line (%d)", len(pools), len(lines))
+	}
+	for id, want := range map[string]int{application.PrivatePassengerAuto: 45, application.CommercialAuto: 42} {
+		if got := len(pools[id].Refs); got != want {
+			t.Errorf("%s pool = %d companies, want %d", id, got, want)
+		}
+		if pools[id].Line.ID != id {
+			t.Errorf("%s pool carries line %q", id, pools[id].Line.ID)
+		}
+	}
+}
+
+func TestLoadPoolsRejectsALineWithoutAFile(t *testing.T) {
+	lines := []application.ReferenceLine{{ID: "marine_cargo"}}
+	if _, err := schedulep.LoadPools(refdata.Files, refdata.LineFiles, lines); err == nil || !strings.Contains(err.Error(), "marine_cargo") {
+		t.Fatalf("err = %v, want one naming the line", err)
 	}
 }
