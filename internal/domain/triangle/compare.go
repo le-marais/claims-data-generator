@@ -54,8 +54,8 @@ func (r ReferenceSet) developedIncurred() Triangle {
 type Comparison struct {
 	Paid Triangle
 	// Incurred is reported incurred, paid plus case, the counterpart of the
-	// reference's CaseIncurred. At full development it is the ultimate, so
-	// the loss ratio reads it too.
+	// reference's CaseIncurred. Its value at the last age is the loss ratio's
+	// numerator, as the reference's developed incurred is.
 	Incurred      Triangle
 	EarnedPremium []float64
 }
@@ -241,8 +241,8 @@ func usableRefs(refs []ReferenceSet) []ReferenceSet {
 // between the two halves of the accident years. Only ages present in both
 // generated and reference data are checked.
 //
-// The paid shares are taken on fully developed squares on both sides: the
-// generated triangles run to full development, and each company's paid is
+// The paid shares are taken on full squares on both sides: every generated
+// accident year is valued to the last age, and each company's paid is
 // completed with its later development (MR-17).
 //
 // The drift band is the reference companies' drift relative to the pool's
@@ -254,8 +254,8 @@ func usableRefs(refs []ReferenceSet) []ReferenceSet {
 // systematic drift in the model; that guard is a test that switches the
 // model's noise off (TestPresetHasNoSystematicLossRatioDrift).
 //
-// The generated triangles run to full development, so the loss ratio is
-// scored against each company's developed incurred rather than its latest
+// Every generated accident year is valued to the last age, so the loss ratio
+// is scored against each company's developed incurred rather than its latest
 // diagonal, whose recent accident years are still immature (MR-4).
 func CompareToReference(c Comparison, refs []ReferenceSet) Report {
 	refs = usableRefs(refs)

@@ -6,9 +6,13 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	refdata "github.com/le-marais/claimsgen/data/reference"
 	"github.com/le-marais/claimsgen/internal/application"
+	"github.com/le-marais/claimsgen/internal/domain/claim"
+	"github.com/le-marais/claimsgen/internal/domain/policy"
+	"github.com/le-marais/claimsgen/internal/domain/shared"
 	"github.com/le-marais/claimsgen/internal/domain/transaction"
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
@@ -288,5 +292,36 @@ func TestPersonalMotorPool(t *testing.T) {
 		if reasons[name] != want {
 			t.Errorf("company %s: Reason = %q, want %q", name, reasons[name], want)
 		}
+	}
+}
+
+// MR-18: Schedule P values every company at age 10, so the gate drops
+// generated development after age 10 rather than folding it into the last
+// age, which on a long-tail line would compare an ultimate with a reference
+// short of it.
+func TestSectionComparisonStopsAtAgeTen(t *testing.T) {
+	ds := application.Dataset{
+		Policies: []policy.Policy{{
+			ID: 1, CoverStart: shared.NewDate(1998, time.January, 1), CoverEnd: shared.NewDate(1998, time.December, 31),
+			Premium: shared.FromDollars(1000),
+		}},
+		Claims: []claim.Claim{{
+			ID: 1, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1),
+			Episodes: []claim.Episode{{
+				Open: shared.NewDate(1998, time.April, 1), Close: shared.NewDate(2009, time.June, 1), Ultimate: shared.FromDollars(500),
+			}},
+		}},
+		Transactions: []transaction.Transaction{
+			{ID: 1, ClaimID: 1, Type: transaction.Payment, Date: shared.NewDate(1998, time.May, 1), Amount: shared.FromDollars(300)},
+			// Development year 12.
+			{ID: 2, ClaimID: 1, Type: transaction.Payment, Date: shared.NewDate(2009, time.June, 1), Amount: shared.FromDollars(200)},
+		},
+	}
+	c, err := application.SectionComparison(ds, 1998, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Paid.Cells[0]; len(got) != 10 || got[9] != 300 {
+		t.Fatalf("paid 1998 = %v, want ten ages ending at the 300 paid by age 10", got)
 	}
 }

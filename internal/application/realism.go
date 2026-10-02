@@ -35,7 +35,11 @@ func EvaluateRealism(ds Dataset, startYear, years int, sections []int, refs []tr
 //
 // The triangles are the monthly grid coarsened to annual, like every other
 // aggregate view. Schedule P is an accident-year presentation, so the
-// comparison is always on the accident basis.
+// comparison is always on the accident basis. It values every company at age
+// 10, so development after age 10 is dropped rather than folded into the last
+// age as the UI's triangles do (MR-18): the last factors, the paid shares and
+// the loss ratio then compare the same age on both sides, on a long-tail line
+// as on a short one.
 func SectionComparison(ds Dataset, startYear, years int, sections []int) (triangle.Comparison, error) {
 	if years < 1 {
 		return triangle.Comparison{}, fmt.Errorf("years: must be at least 1, got %d", years)
@@ -48,10 +52,10 @@ func SectionComparison(ds Dataset, startYear, years int, sections []int) (triang
 	if err != nil {
 		return triangle.Comparison{}, err
 	}
-	annual := grid.AnnualTriangles(developmentYears)
+	annual := grid.Coarsen(triangle.Annual, developmentYears, false)
 	return triangle.Comparison{
-		Paid:          annual.NetPaid,
-		Incurred:      annual.Incurred,
+		Paid:          annual.Cumulative(triangle.MeasurePaidNet),
+		Incurred:      annual.Cumulative(triangle.MeasureIncurred),
 		EarnedPremium: triangle.EarnedPremiumByYear(policies, startYear, years),
 	}, nil
 }

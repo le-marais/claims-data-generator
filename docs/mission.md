@@ -26,7 +26,7 @@ Claim events are driven by exposure and policy details, report and settlement la
 
 Every claim runs to closure - there is no valuation date - so the fully developed data supports out-of-sample testing of reserving methods. The same seed and parameters always produce byte-identical output.
 
-The engine is parameterized per line of business. Personal motor ships as the embedded preset; a new short-tail class is a YAML file.
+The engine is parameterized per line of business. Personal motor ships as the embedded preset; a new class is a YAML file. Shipped presets are standard classes that match the CAS Schedule P lines, so each can be calibrated against its own reference.
 
 It runs as a CLI (`claimsgen generate`) or as a local browser UI (`claimsgen ui`) that also shows summary stats, triangles, distributions and a realism check.
 
@@ -44,4 +44,4 @@ Realism is measured against Schedule P: the third-party (liability) sections of 
 
 ## Next
 
-More short-tail lines of business, starting with commercial property. Whether the engine extends to long-tail classes is a later question. See `docs/roadmap.md` for status and sequencing.
+More lines of business, starting with commercial auto, each a standard class matching a CAS Schedule P line. Whether the engine extends to the long-tail lines among them is a later question. See `docs/roadmap.md` for status and sequencing.

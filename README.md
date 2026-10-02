@@ -430,9 +430,11 @@ age 10, the ultimate loss ratio, and the loss-ratio drift between the two halves
 of the accident years must fall inside the P5-P95 bands observed across those
 companies. The paid shares score the pattern the factors compound to, so a book
 at the same edge of every factor band still fails; both sides take them on the
-fully developed square. The generated triangles run to full development, so the
-loss ratio is scored against each company's loss ratio developed to age 10 with
-its later reported development, not its latest diagonal. Incurred development is
+fully developed square. Schedule P values every company at age 10, so the check
+drops generated development after age 10 rather than folding it into the last
+age, and completes each company's triangles to age 10 with its later reported
+development: every accident year is compared at the same age on both sides, and
+the loss ratio is not scored on immature recent years. Incurred development is
 scored on each company's case incurred, Schedule P incurred less its bulk and
 IBNR reserves (Part 2 less Part 4), against the generated paid plus case:
 neither side counts claims not yet reported, and a company's bulk reserve, held
