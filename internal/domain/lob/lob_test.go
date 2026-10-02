@@ -176,6 +176,8 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"runoff.settlement_share", func(l *LineOfBusiness) { l.Runoff.SettlementShare = 0 }},
 		{"runoff.settlement_share", func(l *LineOfBusiness) { l.Runoff.SettlementShare = 1.5 }},
 		{"runoff.concentration", func(l *LineOfBusiness) { l.Runoff.Concentration = 0 }},
+		{"runoff.settlement_concentration", func(l *LineOfBusiness) { l.Runoff.SettlementConcentration = -1 }},
+		{"runoff.settlement_share", func(l *LineOfBusiness) { l.Runoff.SettlementConcentration = 4; l.Runoff.SettlementShare = 1 }},
 		{"runoff.revisions_per_year", func(l *LineOfBusiness) { l.Runoff.RevisionsPerYear = -1 }},
 		{"runoff.revision_sigma", func(l *LineOfBusiness) { l.Runoff.RevisionSigma = -1 }},
 		{"claims.recoveries.salvage.probability", func(l *LineOfBusiness) { l.Claims.Recoveries.Salvage.Probability = 1.0 }},

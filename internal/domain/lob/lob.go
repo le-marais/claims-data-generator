@@ -326,9 +326,13 @@ type RunoffParams struct {
 	// PaymentsPerYear is the Poisson intensity of interim payments over the
 	// claim's open duration.
 	PaymentsPerYear float64
-	// SettlementShare is the fraction of ultimate reserved for the final
-	// settlement payment at close.
+	// SettlementShare is the mean fraction of ultimate an episode with
+	// interim payments reserves for its final settlement payment at close.
 	SettlementShare float64
+	// SettlementConcentration is the Beta concentration of each such
+	// episode's settlement share, drawn around SettlementShare; higher keeps
+	// the share closer to it. 0 fixes the share at SettlementShare.
+	SettlementConcentration float64
 	// Concentration is the Dirichlet concentration splitting the remainder
 	// across interim payments.
 	Concentration float64
@@ -788,6 +792,7 @@ func (r RunoffParams) validate() error {
 		namedFloat{"runoff.case_adequacy_sigma", r.CaseAdequacySigma},
 		namedFloat{"runoff.payments_per_year", r.PaymentsPerYear},
 		namedFloat{"runoff.settlement_share", r.SettlementShare},
+		namedFloat{"runoff.settlement_concentration", r.SettlementConcentration},
 		namedFloat{"runoff.concentration", r.Concentration},
 		namedFloat{"runoff.revisions_per_year", r.RevisionsPerYear},
 		namedFloat{"runoff.revision_sigma", r.RevisionSigma},
@@ -805,6 +810,12 @@ func (r RunoffParams) validate() error {
 	}
 	if r.SettlementShare <= 0 || r.SettlementShare > 1 {
 		return fmt.Errorf("runoff.settlement_share: must be in (0, 1], got %v", r.SettlementShare)
+	}
+	if r.SettlementConcentration < 0 {
+		return fmt.Errorf("runoff.settlement_concentration: must not be negative, got %v", r.SettlementConcentration)
+	}
+	if r.SettlementConcentration > 0 && r.SettlementShare == 1 {
+		return fmt.Errorf("runoff.settlement_share: must be below 1 when settlement_concentration is above 0, got %v", r.SettlementShare)
 	}
 	if r.Concentration <= 0 {
 		return fmt.Errorf("runoff.concentration: must be positive, got %v", r.Concentration)
