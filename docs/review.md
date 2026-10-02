@@ -23,17 +23,21 @@ touching the area.
   class's other schema changes.
 - Action: split it into two parameters.
 
-## 2. MR-8 (low) - third-party severity is a bare Pareto
+## 2. MR-8 (low) - injury severity is a bare Pareto, and liability takes the excess
 
-- Where: `internal/domain/claim/claim.go`, `drawGroundUpLoss`.
-- No third-party injury claim is below about $3,050 after excess, the mode sits
-  at the Pareto minimum, there is no policy limit, and the excess is applied to
-  liability claims, which a US auto liability book would not do. The `lognormal`
-  kind gives property damage a lognormal body, but injury is still a bare
-  Pareto.
-- The limit and the excess switch are per-section settings, so they belong on
-  `SectionParams` with the second line of business. The body shape shows in
-  the claim-size histogram but barely moves the triangles, so it can wait.
-- Action: with the second line of business, an optional per-section limit and
-  a per-section switch for applying the excess. Later, a lognormal body with a
-  Pareto tail as another severity kind.
+- Where: `internal/domain/claim/claim.go`, `drawGroundUpLoss` and
+  `simulateClaim`.
+- No third-party injury claim is below the Pareto minimum less the excess:
+  with scale 6000 and excesses of $0-$1,000, about $5,000-$6,000 after excess
+  in start-year dollars, and the mode sits at that floor. The `lognormal` kind
+  gives property damage a lognormal body, but injury is still a bare Pareto.
+- The excess is applied to liability claims, which a US auto liability book
+  would not do. On $1,000-excess policies it discards about 26% of property
+  damage ground-up losses (median 1800, sigma 0.9), so the reported property
+  damage frequency and severity depend on the insured's own-damage excess.
+- The excess switch is a per-section setting, so it belongs on
+  `SectionParams`, beside `limit`. The body shape shows in the claim-size
+  histogram but barely moves the triangles, so it can wait.
+- Action: with the second line of business, a per-section switch for applying
+  the excess. Later, a lognormal body with a Pareto tail as another severity
+  kind.

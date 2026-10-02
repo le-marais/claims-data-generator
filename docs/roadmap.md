@@ -4,7 +4,7 @@ Where claimsgen is heading, in recommended order. It lists outstanding direction
 
 ## Near term
 
-The next step is the second line of business below, which folds in MR-12 (separate sum-insured and risk spreads) and the per-class switches from MR-8 (liability limit, excess on liability claims).
+The next step is the second line of business below, which folds in MR-12 (separate sum-insured and risk spreads) and the per-class excess switch from MR-8 (excess on liability claims).
 
 ## Mid term - second line of business
 

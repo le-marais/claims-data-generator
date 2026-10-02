@@ -63,7 +63,7 @@ The CLI writes the three dataset CSVs and, from `Aggregates`, `triangles.csv` an
 
 `LineOfBusiness{Name, Book, Pricing, Claims, Runoff}` is the whole parameter set; nothing else configures the engine. `Validate` names an offending field by its YAML path, screens NaN and infinity before the range checks, and skips the fields of a switched-off feature, so a YAML author never has to invent parameters for something they turned off.
 
-A line of business is a list of sections of cover, `ClaimParams.Sections`. Each `SectionParams` carries its own base frequency, severity (`sum_insured_lognormal`, capped at the sum insured, or the uncapped `lognormal` in start-year dollars and `pareto`), report lag, close lag, recovery eligibility, and whether the realism gate scores it (`Scored`; `ClaimParams.ScoredSections` lists the scored ones). Inflation, nil claims, reopening and the recovery parameters are shared across sections.
+A line of business is a list of sections of cover, `ClaimParams.Sections`. Each `SectionParams` carries its own base frequency, severity (`sum_insured_lognormal`, capped at the sum insured, or the uncapped `lognormal` in start-year dollars and `pareto`), an optional per-claim `Limit` in nominal dollars that caps a claim's cost and becomes its `CoverLimit`, report lag, close lag, recovery eligibility, and whether the realism gate scores it (`Scored`; `ClaimParams.ScoredSections` lists the scored ones). Inflation, nil claims, reopening and the recovery parameters are shared across sections.
 
 `PricingParams` is the insurer's assumed loss cost, kept apart from `ClaimParams`, the true process. Its `Sections` give each claims section's assumed frequency and severity, by the same names in the same order. `ExpectedSectionLoss` prices one section of a policy in closed form from the assumptions alone, and premium is the sum over the target loss ratio. The loss ratio emerges from sampling and from any gap between the two models; nothing forces it.
 
@@ -79,7 +79,7 @@ A `Claim`'s life is a list of `Episode`s, each with open and close dates, its tr
 
 ### `transaction` - the ledger
 
-`CaseEstimator.Apply` sets each episode's opening case around its true cost. `RunoffSimulator.Simulate` turns each claim into `ESTIMATE` and `PAYMENT` rows one episode at a time: the case moves to the episode's opening case, then interim payments and revisions in date order, then a final settlement and a release of the case to zero. `RecoverySimulator.Apply` adds `SALVAGE` and `SUBROGATION` rows after the final close of paid claims in sections with recoveries, salvage only on total losses.
+`CaseEstimator.Apply` sets each episode's opening case around its true cost. `RunoffSimulator.Simulate` turns each claim into `ESTIMATE` and `PAYMENT` rows one episode at a time: the case moves to the episode's opening case, then interim payments and revisions in date order, then a final settlement and a release of the case to zero. `RecoverySimulator.Apply` adds `SALVAGE` and `SUBROGATION` rows after the final close of paid claims in sections with recoveries, salvage only on total losses on a sum-insured section.
 
 The ledger is each claim's event stream, and every measure folds from it: outstanding case is the running sum of `ESTIMATE` rows, gross paid the sum of `PAYMENT` rows, and net paid subtracts the recoveries.
 
@@ -114,7 +114,7 @@ The CLI dispatches `generate` (load the preset or a `--config` YAML, generate, w
 
 - **Determinism.** The same seed and parameters produce byte-identical CSVs. `internal/application/golden_test.go` pins hashes of the dataset CSVs, the aggregate CSVs, and the annual triangles the realism gate scores.
 - **Ultimate-first.** A claim's true cost is fixed before its ledger is drawn: the case-estimate and runoff parameters move reserves and timing, never the amount paid.
-- **The ledger folds cleanly.** Each payment releases its own case, outstanding case is never negative, and every episode ends with the case at exactly zero. Gross paid equals the claim's true cost, and a sum-insured section never pays beyond the sum insured less the excess. `internal/application/invariants_test.go` checks the ledger as a state machine.
+- **The ledger folds cleanly.** Each payment releases its own case, outstanding case is never negative, and every episode ends with the case at exactly zero. Gross paid equals the claim's true cost, and no claim pays beyond its `CoverLimit`: the sum insured less the excess on a sum-insured section, the section's `Limit` on a limited one. `internal/application/invariants_test.go` checks the ledger as a state machine.
 - **Recoveries stay below gross paid,** by at least a cent, and are the only rows dated after a claim's final close.
 - **Every claim closes.** There is no valuation date.
 - **Realism.** `TestDefaultPresetIsRealistic` keeps the preset's scored third-party sections (property damage and injury) inside the Schedule P P5-P95 bands across several seeds, and `TestPresetHasNoSystematicLossRatioDrift` switches the inflation and pricing noise off and requires a flat loss ratio.

@@ -68,7 +68,8 @@ claims:
   # severity kinds: sum_insured_lognormal is a lognormal fraction of the sum
   # insured in start-year dollars, capped at the sum insured (a total loss);
   # lognormal is a lognormal loss in start-year dollars with median and
-  # sigma and no cap; pareto is a Pareto loss in dollars with no cap.
+  # sigma; pareto is a Pareto loss in dollars. Neither has a cap of its own:
+  # a section's limit (below) caps what the policy pays.
   #
   # report_lag is the lognormal occurrence-to-report lag in days. close_lag
   # is the gamma report-to-close lag: a claim costing size_reference in
