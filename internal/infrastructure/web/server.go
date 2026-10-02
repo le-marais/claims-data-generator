@@ -233,6 +233,9 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 // whose parameters lack a section the preset scores is not scored, and the
 // view says why.
 func (s *Server) score(res run) (realismJSON, error) {
+	if res.req.Preset == "" {
+		return notScored("the run names no preset to score against"), nil
+	}
 	info, ok := config.PresetInfoFor(res.req.Preset)
 	if !ok {
 		return notScored(fmt.Sprintf("no preset %q to score against", res.req.Preset)), nil

@@ -520,7 +520,7 @@ function renderRealism(r) {
   const pool = `The reference companies are the ${ref.companies} with steady premium and reinsurance that write at least $${ref.min_premium / 1e6}m a year.`;
   const names = (r.sections || []).map((s) => s.replaceAll("_", " "));
   const scored = names.length
-    ? `Scored on the ${names.join(" and ")} ${names.length > 1 ? "sections" : "section"} alone, their claims against their share of premium: the Schedule P ${ref.label} reference is a liability line, and the preset scores these sections against it. ${pool}`
+    ? `Scored on the ${names.join(" and ")} ${names.length > 1 ? "sections" : "section"} alone, their claims against their share of premium: the Schedule P ${ref.label} reference has no physical damage in it, so the preset scores these sections against it. ${pool}`
     : `Scored on the whole book against the Schedule P ${ref.label} reference. ${pool}`;
   scope.textContent = `${scored} The loss ratio band uses each company's loss ratio developed to age 10. The incurred factors compare generated paid plus case with Schedule P incurred less its bulk and IBNR reserves. The drift band is each company's drift over the reference median, which leaves out the market cycle the companies share.`;
   panel.append(
