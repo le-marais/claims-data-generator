@@ -121,8 +121,10 @@ type SectionParams struct {
 	// subrogation. Salvage further needs a total loss, which only a
 	// sum-insured severity can reach.
 	Recoveries bool
-	// Scored marks the section the realism gate scores against the Schedule
-	// P reference, at most one. With none marked it scores the whole book.
+	// Scored marks a section the realism gate scores against the Schedule P
+	// reference. The gate scores the scored sections together, their claims
+	// against their combined premium; with none marked it scores the whole
+	// book.
 	Scored bool
 }
 
@@ -312,15 +314,16 @@ func (l LineOfBusiness) checkPricingSections() error {
 	return nil
 }
 
-// ScoredSection is the index of the section the realism gate scores, or -1
-// when none is marked and the gate scores the whole book.
-func (c ClaimParams) ScoredSection() int {
+// ScoredSections are the indices of the sections the realism gate scores, in
+// order, or nil when none is marked and the gate scores the whole book.
+func (c ClaimParams) ScoredSections() []int {
+	var scored []int
 	for i, sec := range c.Sections {
 		if sec.Scored {
-			return i
+			scored = append(scored, i)
 		}
 	}
-	return -1
+	return scored
 }
 
 func (b BookParams) validate() error {
@@ -431,7 +434,7 @@ func (c ClaimParams) validate() error {
 		return fmt.Errorf("claims.sections: must not be empty")
 	}
 	names := map[string]bool{}
-	scored, active := 0, 0
+	active := 0
 	for i, sec := range c.Sections {
 		prefix := fmt.Sprintf("claims.sections[%d]", i)
 		if sec.Name == "" {
@@ -444,15 +447,9 @@ func (c ClaimParams) validate() error {
 		if err := sec.validate(prefix); err != nil {
 			return err
 		}
-		if sec.Scored {
-			scored++
-		}
 		if sec.BaseFrequency > 0 {
 			active++
 		}
-	}
-	if scored > 1 {
-		return fmt.Errorf("claims.sections: at most one section may be scored, got %d", scored)
 	}
 	if active == 0 {
 		return fmt.Errorf("claims.sections: at least one section must have a positive base_frequency")

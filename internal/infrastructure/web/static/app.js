@@ -507,8 +507,9 @@ function renderRealism(r) {
     : "✗ Fail - some metrics fall outside the Schedule P P5-P95 reference band";
   const scope = document.createElement("p");
   scope.className = "empty-note";
-  const scored = r.section
-    ? `Scored on the ${r.section.replaceAll("_", " ")} section alone, its claims against its share of premium: the Schedule P private passenger auto reference is a liability line, and the line of business marks this section to score against it.`
+  const names = (r.sections || []).map((s) => s.replaceAll("_", " "));
+  const scored = names.length
+    ? `Scored on the ${names.join(" and ")} ${names.length > 1 ? "sections" : "section"} alone, their claims against their share of premium: the Schedule P private passenger auto reference is a liability line, and the line of business marks these sections to score against it.`
     : "Scored on the whole book against the Schedule P private passenger auto liability reference.";
   scope.textContent = `${scored} The loss ratio band uses each company's loss ratio developed to age 10. Generated incurred adds pure IBNR at its true value but no bulk reserve, while Schedule P incurred includes both, so the incurred factors are a loose sanity bound.`;
   panel.append(

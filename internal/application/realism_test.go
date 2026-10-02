@@ -40,7 +40,7 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSection(), refs)
+			report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections(), refs)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -63,7 +63,7 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSection(), refs)
+	report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections(), refs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestRealismScoresOnlyTheScoredSection(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSection(), refs)
+		report, err := application.EvaluateRealism(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections(), refs)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -115,7 +115,7 @@ func TestScoredSectionPremiumAndClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	liability, err := application.SectionComparison(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSection())
+	liability, err := application.SectionComparison(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func pooledLiabilityDrift(t *testing.T, req application.GenerateRequest, seeds [
 			defer wg.Done()
 			ds, err := application.GenerateDataset(t.Context(), random.NewSource(seed), req)
 			if err == nil {
-				comps[i], err = application.SectionComparison(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSection())
+				comps[i], err = application.SectionComparison(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections())
 			}
 			errs[i] = err
 		}()
@@ -216,5 +216,33 @@ func TestPresetHasNoSystematicLossRatioDrift(t *testing.T) {
 	lagging.LOB.Pricing.InflationMean = req.LOB.Claims.Inflation.Mean - 0.02
 	if d := pooledLiabilityDrift(t, lagging, []uint64{1, 2, 3}); math.Abs(d-1) <= systematicDriftTolerance {
 		t.Errorf("pricing trending 2%% a year below claims gave drift %.4f, want outside %.3f of 1", d, systematicDriftTolerance)
+	}
+}
+
+// Scoring several sections scores their union: their claims against their
+// combined premium. Scoring every section is the whole book.
+func TestRealismScoresTheUnionOfScoredSections(t *testing.T) {
+	req := request(t)
+	ds, err := application.GenerateDataset(t.Context(), random.NewSource(8), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := application.SectionComparison(ds, req.StartYear, req.Years, []int{ownDamage, thirdParty})
+	if err != nil {
+		t.Fatal(err)
+	}
+	book, err := application.SectionComparison(ds, req.StartYear, req.Years, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(all.Paid, book.Paid) || !reflect.DeepEqual(all.Incurred, book.Incurred) {
+		t.Fatal("scoring every section should give the whole book's triangles")
+	}
+	// A policy's premium is rounded to the cent apart from its section
+	// premiums, so the sum of sections can differ from it by a cent or two.
+	for i, ep := range book.EarnedPremium {
+		if math.Abs(all.EarnedPremium[i]-ep) > 1e-6*ep {
+			t.Fatalf("year %d: sections' earned premium %v, whole book %v", i, all.EarnedPremium[i], ep)
+		}
 	}
 }

@@ -146,7 +146,8 @@ func TestGenerateRoundTrip(t *testing.T) {
 			} `json:"severity"`
 		} `json:"distributions"`
 		Realism struct {
-			PaidATA []struct {
+			Sections []string `json:"sections"`
+			PaidATA  []struct {
 				Age    int     `json:"age"`
 				Value  float64 `json:"value"`
 				Min    float64 `json:"min"`
@@ -181,6 +182,9 @@ func TestGenerateRoundTrip(t *testing.T) {
 	}
 	if resp.Realism.LossRatioDrift.Value <= 0 {
 		t.Fatalf("realism.loss_ratio_drift = %+v", resp.Realism.LossRatioDrift)
+	}
+	if !reflect.DeepEqual(resp.Realism.Sections, []string{"third_party"}) {
+		t.Fatalf("realism.sections = %v, want [third_party]", resp.Realism.Sections)
 	}
 }
 

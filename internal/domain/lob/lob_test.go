@@ -2,6 +2,7 @@ package lob
 
 import (
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -104,7 +105,6 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"pricing.reopen_estimate_factor", func(l *LineOfBusiness) { l.Pricing.ReopenEstimateFactor = 0 }},
 		{"pricing.inflation_mean", func(l *LineOfBusiness) { l.Pricing.InflationMean = 0 }},
 		{"claims.sections", func(l *LineOfBusiness) { l.Claims.Sections, l.Pricing.Sections = nil, nil }},
-		{"claims.sections", func(l *LineOfBusiness) { l.Claims.Sections[0].Scored = true }},
 		{"claims.sections", func(l *LineOfBusiness) {
 			l.Claims.Sections[0].BaseFrequency, l.Claims.Sections[1].BaseFrequency = 0, 0
 		}},
@@ -248,6 +248,9 @@ func TestValidateSkipsSwitchedOffBlocks(t *testing.T) {
 		{"no section scored", func(l *LineOfBusiness) {
 			l.Claims.Sections[1].Scored = false
 		}},
+		{"two sections scored", func(l *LineOfBusiness) {
+			l.Claims.Sections[0].Scored = true
+		}},
 	}
 	for _, c := range cases {
 		l := validMotor()
@@ -288,13 +291,17 @@ func TestValidateChecksEnabledBlocks(t *testing.T) {
 	}
 }
 
-func TestScoredSection(t *testing.T) {
+func TestScoredSections(t *testing.T) {
 	l := validMotor()
-	if got := l.Claims.ScoredSection(); got != 1 {
-		t.Errorf("ScoredSection() = %d, want 1", got)
+	if got := l.Claims.ScoredSections(); !reflect.DeepEqual(got, []int{1}) {
+		t.Errorf("ScoredSections() = %v, want [1]", got)
 	}
-	l.Claims.Sections[1].Scored = false
-	if got := l.Claims.ScoredSection(); got != -1 {
-		t.Errorf("ScoredSection() with none scored = %d, want -1", got)
+	l.Claims.Sections[0].Scored = true
+	if got := l.Claims.ScoredSections(); !reflect.DeepEqual(got, []int{0, 1}) {
+		t.Errorf("ScoredSections() with both scored = %v, want [0 1]", got)
+	}
+	l.Claims.Sections[0].Scored, l.Claims.Sections[1].Scored = false, false
+	if got := l.Claims.ScoredSections(); got != nil {
+		t.Errorf("ScoredSections() with none scored = %v, want nil", got)
 	}
 }
