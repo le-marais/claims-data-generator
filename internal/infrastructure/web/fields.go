@@ -30,6 +30,8 @@ var severityFields = []formField{
 	{Path: []string{"severity", "sigma"}, Kind: "sum_insured_lognormal", Label: "Severity sigma", Tip: "Sigma of the lognormal loss fraction."},
 	{Path: []string{"severity", "scale"}, Kind: "pareto", Label: "Severity scale", Tip: "Pareto scale (minimum loss) in start-year dollars."},
 	{Path: []string{"severity", "alpha"}, Kind: "pareto", Label: "Severity alpha", Tip: "Pareto tail index; must exceed 1."},
+	{Path: []string{"severity", "median"}, Kind: "lognormal", Label: "Severity median", Tip: "Median ground-up loss in start-year dollars; uncapped by the sum insured."},
+	{Path: []string{"severity", "sigma"}, Kind: "lognormal", Label: "Severity sigma", Tip: "Sigma of the lognormal loss."},
 }
 
 // formFields is the parameter form's metadata, served at GET /api/fields so

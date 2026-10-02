@@ -239,7 +239,7 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 
 	// Losses are drawn in start-year dollars and trended by the claims index
 	// at the occurrence date. A sum-insured loss is then capped at the drifted
-	// sum insured, representing a total loss; a Pareto loss is uncapped.
+	// sum insured, representing a total loss; a Pareto or lognormal loss is uncapped.
 	loss := s.drawGroundUpLoss(src, pol, sec.Severity) * s.inflation.For(occurrence)
 	coverLimit := shared.Money(0) // unlimited
 	if sec.Severity.Kind == lob.SumInsuredLognormal {
@@ -281,11 +281,14 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 }
 
 // drawGroundUpLoss draws a loss in start-year dollars from a section's
-// severity: a lognormal fraction of the policy's base-year sum insured, or a
-// Pareto amount. Either kind takes one draw.
+// severity: a lognormal fraction of the policy's base-year sum insured, a
+// Pareto amount, or a lognormal amount. Every kind takes one draw.
 func (s *ClaimSimulator) drawGroundUpLoss(src shared.RandomSource, pol policy.Policy, sev lob.SeverityParams) float64 {
-	if sev.Kind == lob.Pareto {
+	switch sev.Kind {
+	case lob.Pareto:
 		return src.Pareto(sev.Scale, sev.Alpha)
+	case lob.Lognormal:
+		return src.LogNormal(math.Log(sev.Median), sev.Sigma)
 	}
 	return s.baseSumInsured(pol) * src.LogNormal(math.Log(sev.MedianFraction), sev.Sigma)
 }

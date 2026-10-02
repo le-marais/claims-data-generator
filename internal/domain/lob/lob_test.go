@@ -85,6 +85,12 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		mutate func(*LineOfBusiness)
 	}{
 		{"name", func(l *LineOfBusiness) { l.Name = "" }},
+		{"claims.sections[1].severity.median", func(l *LineOfBusiness) {
+			l.Claims.Sections[1].Severity = SeverityParams{Kind: Lognormal, Sigma: 0.8}
+		}},
+		{"claims.sections[1].severity.sigma", func(l *LineOfBusiness) {
+			l.Claims.Sections[1].Severity = SeverityParams{Kind: Lognormal, Median: 2000}
+		}},
 		{"book.growth_factor", func(l *LineOfBusiness) { l.Book.GrowthFactor = 0 }},
 		{"book.size_volatility", func(l *LineOfBusiness) { l.Book.SizeVolatility = -0.1 }},
 		{"book.spread", func(l *LineOfBusiness) { l.Book.Spread = 0 }},
@@ -113,7 +119,7 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 			l.Claims.Sections[1].Name, l.Pricing.Sections[1].Name = "own_damage", "own_damage"
 		}},
 		{"claims.sections[0].base_frequency", func(l *LineOfBusiness) { l.Claims.Sections[0].BaseFrequency = -0.1 }},
-		{"claims.sections[0].severity.kind", func(l *LineOfBusiness) { l.Claims.Sections[0].Severity.Kind = "lognormal" }},
+		{"claims.sections[0].severity.kind", func(l *LineOfBusiness) { l.Claims.Sections[0].Severity.Kind = "weibull" }},
 		{"claims.sections[0].severity.median_fraction", func(l *LineOfBusiness) { l.Claims.Sections[0].Severity.MedianFraction = 0 }},
 		{"claims.sections[0].severity.sigma", func(l *LineOfBusiness) { l.Claims.Sections[0].Severity.Sigma = 0 }},
 		{"claims.sections[1].severity.scale", func(l *LineOfBusiness) { l.Claims.Sections[1].Severity.Scale = 0 }},
@@ -228,6 +234,10 @@ func TestValidateSkipsSwitchedOffBlocks(t *testing.T) {
 		name   string
 		mutate func(*LineOfBusiness)
 	}{
+		{"lognormal third party", func(l *LineOfBusiness) {
+			l.Claims.Sections[1].Severity = SeverityParams{Kind: Lognormal, Median: 2000, Sigma: 0.8}
+			l.Pricing.Sections[1].Severity = SeverityParams{Kind: Lognormal, Median: 2000, Sigma: 0.8}
+		}},
 		{"salvage off", func(l *LineOfBusiness) {
 			l.Claims.Recoveries.Salvage = RecoveryTypeParams{}
 		}},

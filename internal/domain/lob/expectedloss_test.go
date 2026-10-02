@@ -171,3 +171,19 @@ func TestExpectedPolicyLossAllowsForNilClaims(t *testing.T) {
 		t.Fatalf("with nil claims: got %v, want %v", with, want)
 	}
 }
+
+// A lognormal section prices the uncapped stop-loss of a dollar lognormal,
+// trended by the assumed claims index, ignoring the sum insured.
+func TestExpectedSectionLossPricesADollarLognormal(t *testing.T) {
+	p := motorPricing()
+	p.Sections[1].Severity = SeverityParams{Kind: Lognormal, Median: 2000, Sigma: 0.8}
+	payout := 1 - p.NilProbability + p.ReopenProbability*p.ReopenEstimateFactor
+	want := p.Sections[1].BaseFrequency * 1.3 * payout * stopLossLognormal(1.1*2000, 0.8, 300)
+	got := p.ExpectedSectionLoss(1, 20000, 300, 1.3, 1.1, 1.05)
+	if math.Abs(got-want) > 1e-9*want {
+		t.Fatalf("lognormal section loss = %v, want %v", got, want)
+	}
+	if other := p.ExpectedSectionLoss(1, 5000, 300, 1.3, 1.1, 1.05); other != got {
+		t.Fatalf("lognormal section moved with the sum insured: %v vs %v", other, got)
+	}
+}

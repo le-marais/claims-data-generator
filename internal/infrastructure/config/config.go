@@ -119,6 +119,7 @@ type SeverityParams struct {
 	Kind           string  `yaml:"kind" json:"kind"`
 	MedianFraction float64 `yaml:"median_fraction" json:"median_fraction"`
 	Sigma          float64 `yaml:"sigma" json:"sigma"`
+	Median         float64 `yaml:"median" json:"median"`
 	Scale          float64 `yaml:"scale" json:"scale"`
 	Alpha          float64 `yaml:"alpha" json:"alpha"`
 }
@@ -314,6 +315,7 @@ func (s SeverityParams) toDomain() lob.SeverityParams {
 		Kind:           lob.SeverityKind(s.Kind),
 		MedianFraction: s.MedianFraction,
 		Sigma:          s.Sigma,
+		Median:         s.Median,
 		Scale:          s.Scale,
 		Alpha:          s.Alpha,
 	}

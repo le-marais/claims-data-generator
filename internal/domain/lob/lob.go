@@ -139,6 +139,10 @@ const (
 	// Pareto is a Pareto loss in start-year dollars with no cap, for
 	// liability.
 	Pareto SeverityKind = "pareto"
+	// Lognormal is a lognormal loss in start-year dollars with no cap, for
+	// claims sized independently of the insured's own cover, such as
+	// third-party property damage.
+	Lognormal SeverityKind = "lognormal"
 )
 
 // SeverityParams is a section's ground-up loss distribution. Kind selects
@@ -146,9 +150,13 @@ const (
 type SeverityParams struct {
 	Kind SeverityKind
 	// MedianFraction and Sigma parameterize SumInsuredLognormal: the median
-	// loss as a fraction of sum insured, and the lognormal sigma.
+	// loss as a fraction of sum insured, and the lognormal sigma. Sigma is
+	// shared with Lognormal.
 	MedianFraction float64
 	Sigma          float64
+	// Median and Sigma parameterize Lognormal: the median loss in start-year
+	// dollars, and the lognormal sigma.
+	Median float64
 	// Scale and Alpha parameterize Pareto: the minimum loss in dollars, and
 	// the tail index, which must exceed 1 for a finite mean.
 	Scale float64
@@ -572,6 +580,7 @@ func (s SeverityParams) validate(prefix string) error {
 	if err := checkFinite(
 		namedFloat{prefix + ".median_fraction", s.MedianFraction},
 		namedFloat{prefix + ".sigma", s.Sigma},
+		namedFloat{prefix + ".median", s.Median},
 		namedFloat{prefix + ".scale", s.Scale},
 		namedFloat{prefix + ".alpha", s.Alpha},
 	); err != nil {
@@ -592,8 +601,15 @@ func (s SeverityParams) validate(prefix string) error {
 		if s.Alpha <= 1 {
 			return fmt.Errorf("%s.alpha: must exceed 1 for a finite mean, got %v", prefix, s.Alpha)
 		}
+	case Lognormal:
+		if s.Median <= 0 {
+			return fmt.Errorf("%s.median: must be positive, got %v", prefix, s.Median)
+		}
+		if s.Sigma <= 0 {
+			return fmt.Errorf("%s.sigma: must be positive, got %v", prefix, s.Sigma)
+		}
 	default:
-		return fmt.Errorf("%s.kind: must be %q or %q, got %q", prefix, SumInsuredLognormal, Pareto, s.Kind)
+		return fmt.Errorf("%s.kind: must be %q, %q or %q, got %q", prefix, SumInsuredLognormal, Pareto, Lognormal, s.Kind)
 	}
 	return nil
 }

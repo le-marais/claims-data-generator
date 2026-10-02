@@ -58,7 +58,7 @@ func (p PricingParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflat
 // section at index section of Sections. A sum-insured severity is expressed in
 // base-year sum-insured terms (baseSI = sumInsured / siDrift) trended by the
 // claims index only, and capped at the drifted sumInsured (a total loss). A
-// Pareto severity keeps the claims index and is uncapped. inflationFactor is
+// Pareto or Lognormal severity keeps the claims index and is uncapped. inflationFactor is
 // the assumed index at the midpoint of the policy's cover.
 //
 // Each claim pays its cost unless it is nil, and pays a further
@@ -84,6 +84,8 @@ func (p PricingParams) ExpectedSectionLoss(section int, sumInsured, excess, risk
 		return perClaim * limitedStopLossLognormal(median, sev.Sigma, excess, sumInsured)
 	case Pareto:
 		return perClaim * stopLossPareto(inflationFactor*sev.Scale, sev.Alpha, excess)
+	case Lognormal:
+		return perClaim * stopLossLognormal(inflationFactor*sev.Median, sev.Sigma, excess)
 	}
 	return 0
 }

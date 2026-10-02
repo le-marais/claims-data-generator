@@ -358,3 +358,30 @@ func TestSectionsDrawIndependently(t *testing.T) {
 		t.Fatalf("third-party median report lag %d days, want about 20", median)
 	}
 }
+
+// A lognormal section draws a dollar loss around its median, uncapped by the
+// sum insured and with no cover limit.
+func TestLognormalClaimsCentreOnTheirMedian(t *testing.T) {
+	p := only(params(), thirdParty, 0.15)
+	p.Sections[thirdParty].Severity = lob.SeverityParams{Kind: lob.Lognormal, Median: 3000, Sigma: 0.8}
+	claims := claim.NewClaimSimulator(p).Simulate(random.NewSource(11), fixedBook(40000, 2000, 0, 1.0))
+	if len(claims) < 1000 {
+		t.Fatalf("got %d claims, want plenty", len(claims))
+	}
+	costs := make([]float64, len(claims))
+	exceeded := false
+	for i, c := range claims {
+		costs[i] = c.Episodes[0].Ultimate.Dollars()
+		exceeded = exceeded || costs[i] > 2000
+		if c.CoverLimit != 0 {
+			t.Fatalf("claim %d has cover limit %v, want none", c.ID, c.CoverLimit)
+		}
+	}
+	sort.Float64s(costs)
+	if median := costs[len(costs)/2]; math.Abs(median/3000-1) > 0.05 {
+		t.Errorf("median cost %v, want about 3000", median)
+	}
+	if !exceeded {
+		t.Error("no claim exceeded the sum insured; a lognormal severity should be uncapped")
+	}
+}
