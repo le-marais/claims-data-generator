@@ -85,7 +85,7 @@ The ledger is each claim's event stream, and every measure folds from it: outsta
 
 ### `triangle` - aggregation and realism
 
-- `MonthlyGrid` is the one aggregation store: incremental cells, origin months down, development months across, run to full runoff, for paid, net paid, incurred, reported count and pure IBNR (each claim's cost booked at occurrence and released at report, read only by the realism gate). `BuildMonthlyGrid` folds the ledger into it on an `OriginBasis`, accident or underwriting.
+- `MonthlyGrid` is the one aggregation store: incremental cells, origin months down, development months across, run to full runoff, for paid, net paid, incurred and reported count. `BuildMonthlyGrid` folds the ledger into it on an `OriginBasis`, accident or underwriting.
 - `Coarsen` maps both axes onto calendar periods. `AnnualTriangles` is `Coarsen(Annual, 10, true)` cumulated, the view the UI and the realism gate read. New aggregate views coarsen the grid rather than re-scan the transactions.
 - `ExposureByMonth` gives premium, policy-years and policy count by origin month, and `EarnedPremiumByYear` rolls the monthly premium up by year.
 - `CompareToReference` scores paid and incurred age-to-age factors, the ultimate loss ratio and the loss-ratio drift, relative to the pool's median drift, against the P5-P95 bands across the reference companies, and returns a `Report`.

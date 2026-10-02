@@ -511,7 +511,7 @@ function renderRealism(r) {
   const scored = names.length
     ? `Scored on the ${names.join(" and ")} ${names.length > 1 ? "sections" : "section"} alone, their claims against their share of premium: the Schedule P private passenger auto reference is a liability line, and the line of business marks these sections to score against it. The reference companies are those with steady premium and reinsurance that write at least $5m a year.`
     : "Scored on the whole book against the Schedule P private passenger auto liability reference. The reference companies are those with steady premium and reinsurance that write at least $5m a year.";
-  scope.textContent = `${scored} The loss ratio band uses each company's loss ratio developed to age 10. Generated incurred adds pure IBNR at its true value but no bulk reserve, while Schedule P incurred includes both, so the incurred factors are a loose sanity bound. The drift band is each company's drift over the reference median, which leaves out the market cycle the companies share.`;
+  scope.textContent = `${scored} The loss ratio band uses each company's loss ratio developed to age 10. The incurred factors compare generated paid plus case with Schedule P incurred less its bulk and IBNR reserves. The drift band is each company's drift over the reference median, which leaves out the market cycle the companies share.`;
   panel.append(
     banner,
     scope,

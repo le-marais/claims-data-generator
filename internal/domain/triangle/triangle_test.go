@@ -289,12 +289,14 @@ func TestCompareToReferencePassesInsideBands(t *testing.T) {
 			Name:          "a",
 			Paid:          triangle.Triangle{Cells: [][]float64{{100, 150}}},
 			Incurred:      triangle.Triangle{Cells: [][]float64{{140, 150}}},
+			CaseIncurred:  triangle.Triangle{Cells: [][]float64{{140, 150}}},
 			EarnedPremium: []float64{200}, // LR 0.75
 		},
 		{
 			Name:          "b",
 			Paid:          triangle.Triangle{Cells: [][]float64{{100, 200}}},
 			Incurred:      triangle.Triangle{Cells: [][]float64{{210, 200}}},
+			CaseIncurred:  triangle.Triangle{Cells: [][]float64{{210, 200}}},
 			EarnedPremium: []float64{250}, // LR 0.8
 		},
 	}
@@ -306,6 +308,9 @@ func TestCompareToReferencePassesInsideBands(t *testing.T) {
 	report := triangle.CompareToReference(inside, ref)
 	if !report.Pass() {
 		t.Errorf("expected pass, got %+v", report)
+	}
+	if len(report.IncurredATA) != 1 {
+		t.Errorf("got %d incurred checks, want 1", len(report.IncurredATA))
 	}
 
 	outside := triangle.Comparison{

@@ -128,8 +128,9 @@ claims:
         risk_loading: 0.3
       scored: true
     # Third-party bodily injury: rarer, heavy-tailed, reported later (median
-    # 20 days, about 3.5% more than a year after the accident, which gives the
-    # reported counts and the incurred some pure IBNR) and settled slowly.
+    # 20 days, about 3.5% more than a year after the accident, so the reported
+    # counts and the incurred develop as late claims are reported) and
+    # settled slowly.
     # Its lags carry the later-age development of the Schedule P reference:
     # close_lag shape 1.5 and mean_days 500 were set by calibration against
     # the 45-company pool (MR-15). They keep paid development at ages 2-5 off

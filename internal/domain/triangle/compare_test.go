@@ -118,6 +118,38 @@ func driftRef(name string, secondHalf float64) ReferenceSet {
 	}
 }
 
+// MR-16: the incurred factors are scored against case incurred, Schedule P
+// incurred less its bulk and IBNR reserves, the counterpart of the generated
+// paid plus case, not against total incurred.
+func TestIncurredBandUsesCaseIncurred(t *testing.T) {
+	ref := func(name string, total, cased []float64) ReferenceSet {
+		return ReferenceSet{
+			Name:          name,
+			Paid:          Triangle{Cells: [][]float64{{50, 90}}},
+			Incurred:      Triangle{Cells: [][]float64{total}},
+			CaseIncurred:  Triangle{Cells: [][]float64{cased}},
+			EarnedPremium: []float64{200},
+		}
+	}
+	// Total incurred falls as early IBNR is released; case incurred rises as
+	// late claims are reported.
+	refs := []ReferenceSet{
+		ref("a", []float64{120, 100}, []float64{80, 100}),
+		ref("b", []float64{130, 110}, []float64{90, 108}),
+	}
+	report := CompareToReference(Comparison{Incurred: Triangle{Cells: [][]float64{{80, 98}}}, EarnedPremium: []float64{200}}, refs)
+	if len(report.IncurredATA) != 1 {
+		t.Fatalf("got %d incurred checks, want 1", len(report.IncurredATA))
+	}
+	c := report.IncurredATA[0]
+	if math.Abs(c.Band.Min-1.2) > 1e-9 || math.Abs(c.Band.Max-1.25) > 1e-9 {
+		t.Fatalf("incurred band min/max [%v, %v], want the case factors [1.2, 1.25]", c.Band.Min, c.Band.Max)
+	}
+	if !c.Within {
+		t.Fatalf("generated factor %v outside %+v", c.Value, c.Band)
+	}
+}
+
 // MR-13: the drift band is the reference companies' own drift on developed
 // incurred, not a fixed tolerance.
 func TestDriftBandComesFromReferenceDrift(t *testing.T) {

@@ -30,7 +30,8 @@ func EvaluateRealism(ds Dataset, startYear, years int, sections []int, refs []tr
 // liability line with no physical damage in it, so own-damage claims are left
 // out rather than bent to liability development speed. Paid is net of salvage
 // and subrogation to match Schedule P, which reports paid losses net of
-// recoveries.
+// recoveries. Incurred is paid plus case, the counterpart of the reference's
+// case incurred (MR-16).
 //
 // The triangles are the monthly grid coarsened to annual, like every other
 // aggregate view. Schedule P is an accident-year presentation, so the
@@ -50,7 +51,7 @@ func SectionComparison(ds Dataset, startYear, years int, sections []int) (triang
 	annual := grid.AnnualTriangles(developmentYears)
 	return triangle.Comparison{
 		Paid:          annual.NetPaid,
-		Incurred:      annual.TotalIncurred,
+		Incurred:      annual.Incurred,
 		EarnedPremium: triangle.EarnedPremiumByYear(policies, startYear, years),
 	}, nil
 }

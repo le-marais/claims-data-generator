@@ -11,19 +11,21 @@ import (
 //
 // Paid and incurred are net of reinsurance, as Schedule P reports them, and
 // EarnedPremium is net premium to match, so the loss ratio is net over net.
-// Incurred is Schedule P total incurred: paid, case, bulk and IBNR reserves.
-// The generated incurred it is compared with is paid plus case plus pure IBNR
-// held at its true value (AnnualSet.TotalIncurred), so unreported claims count
-// on both sides. The generated side still has no bulk reserve: a reference
-// company's IBNR held early and released later pulls its factors below 1,
-// which a perfect IBNR does not, so the incurred check stays a loose bound.
 type ReferenceSet struct {
 	// Name is the company's NAIC group or company code, for example "10007".
 	Name string
 	// Company is the company's name as Schedule P reports it.
-	Company  string
-	Paid     Triangle
+	Company string
+	Paid    Triangle
+	// Incurred is Schedule P total incurred: paid, case, and the bulk and
+	// IBNR reserves. Its developed form is the loss ratio's numerator.
 	Incurred Triangle
+	// CaseIncurred is Incurred less the bulk and IBNR reserves: paid plus
+	// case on reported claims, as Meyers scores incurred development. The
+	// incurred age-to-age factors are scored on it, because its generated
+	// counterpart, paid plus case, has no bulk reserve to hold and release
+	// (MR-16).
+	CaseIncurred Triangle
 	// EarnedPremium is net earned premium by accident year, the loss
 	// ratio's denominator.
 	EarnedPremium []float64
@@ -47,7 +49,10 @@ func (r ReferenceSet) developedIncurred() Triangle {
 
 // Comparison is a generated dataset's aggregates, ready to score.
 type Comparison struct {
-	Paid          Triangle
+	Paid Triangle
+	// Incurred is reported incurred, paid plus case, the counterpart of the
+	// reference's CaseIncurred. At full development it is the ultimate, so
+	// the loss ratio reads it too.
 	Incurred      Triangle
 	EarnedPremium []float64
 }
@@ -234,7 +239,7 @@ func CompareToReference(c Comparison, refs []ReferenceSet) Report {
 	incRef := make([]Triangle, len(refs))
 	for i, r := range refs {
 		paidRef[i] = r.Paid
-		incRef[i] = r.Incurred
+		incRef[i] = r.CaseIncurred
 	}
 	report := Report{
 		PaidATA:     checkAges(c.Paid.ATAFactors(), ATABands(paidRef)),

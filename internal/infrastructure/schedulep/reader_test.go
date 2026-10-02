@@ -41,6 +41,7 @@ func TestLoadBuildsTheValuationTriangleAndItsDevelopment(t *testing.T) {
 		Company:           "One",
 		Paid:              triangle.Triangle{StartYear: 2000, Cells: [][]float64{{20, 45}, {25}}},
 		Incurred:          triangle.Triangle{StartYear: 2000, Cells: [][]float64{{60, 55}, {70}}},
+		CaseIncurred:      triangle.Triangle{StartYear: 2000, Cells: [][]float64{{50, 53}, {58}}},
 		DevelopedIncurred: triangle.Triangle{StartYear: 2000, Cells: [][]float64{{60, 55}, {70, 66}}},
 		EarnedPremium:     []float64{90, 108},
 		DirectPremium:     []float64{100, 120},
@@ -56,7 +57,7 @@ func TestLoadRejectsBadFiles(t *testing.T) {
 	}{
 		{"empty", "", "empty"},
 		{"header only", header, "no rows"},
-		{"missing column", "GRCODE,GRNAME,AccidentYear,DevelopmentLag,IncurredLosses,CumPaidLoss,EarnedPremDIR\r\n1,One,2000,1,1,1,1\r\n", "EarnedPremNet"},
+		{"missing column", "GRCODE,GRNAME,AccidentYear,DevelopmentLag,IncurredLosses,BulkLoss,CumPaidLoss,EarnedPremDIR\r\n1,One,2000,1,1,0,1,1\r\n", "EarnedPremNet"},
 		{"bad number", header + "1,One,2000,2000,1,x,20,10,100,10,90,1,0\r\n", "line 2: IncurredLosses"},
 		{"duplicate row", twoYears + "1,One,2000,2000,1,60,20,10,100,10,90,1,0\r\n", "duplicate"},
 		{"no complete company", header + "2,Two,2000,2000,1,30,10,5,50,0,50,1,0\r\n2,Two,2001,2001,1,35,12,6,60,0,60,1,0\r\n", "no company"},
@@ -87,9 +88,9 @@ func TestLoadFileReadsEveryCompleteCompany(t *testing.T) {
 	}
 	for _, ref := range refs {
 		for i, row := range ref.DevelopedIncurred.Cells {
-			if len(row) != 10 || len(ref.Paid.Cells[i]) != 10-i || len(ref.Incurred.Cells[i]) != 10-i {
-				t.Fatalf("%s origin %d: developed %d, paid %d, incurred %d ages; want 10, %d, %d",
-					ref.Name, 1998+i, len(row), len(ref.Paid.Cells[i]), len(ref.Incurred.Cells[i]), 10-i, 10-i)
+			if len(row) != 10 || len(ref.Paid.Cells[i]) != 10-i || len(ref.Incurred.Cells[i]) != 10-i || len(ref.CaseIncurred.Cells[i]) != 10-i {
+				t.Fatalf("%s origin %d: developed %d, paid %d, incurred %d, case incurred %d ages; want 10, %d, %d, %d",
+					ref.Name, 1998+i, len(row), len(ref.Paid.Cells[i]), len(ref.Incurred.Cells[i]), len(ref.CaseIncurred.Cells[i]), 10-i, 10-i, 10-i)
 			}
 		}
 	}
@@ -123,6 +124,13 @@ func TestLoadKnownCompany(t *testing.T) {
 	}
 	if got := ref.Incurred.Cells[0][0]; got != 3938 {
 		t.Errorf("incurred 1998 lag 1 = %v, want 3938", got)
+	}
+	// Case incurred is incurred less the bulk and IBNR reserves.
+	if got := ref.CaseIncurred.Cells[0][0]; got != 3938-608 {
+		t.Errorf("case incurred 1998 lag 1 = %v, want 3938 - 608", got)
+	}
+	if got := ref.CaseIncurred.Cells[9]; !reflect.DeepEqual(got, []float64{5329 - 638}) {
+		t.Errorf("case incurred 2007 = %v, want [5329 - 638]", got)
 	}
 	// Net premium is the loss ratio's denominator; direct premium is kept
 	// for the net-to-direct ratio.

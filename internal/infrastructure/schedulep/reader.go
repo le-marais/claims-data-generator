@@ -1,7 +1,8 @@
 // Package schedulep reads the CAS loss reserving database's Schedule P
 // files: one CSV per line of business, with one row per company, accident
-// year and development lag. Losses are net of reinsurance; premium is direct
-// and net. The reference sets built from them back the realism gate.
+// year and development lag. Losses are net of reinsurance, with incurred
+// including bulk and IBNR reserves; premium is direct and net. The reference
+// sets built from them back the realism gate.
 package schedulep
 
 import (
@@ -21,10 +22,10 @@ import (
 )
 
 // numeric are the CAS columns read as numbers.
-var numeric = []string{"GRCODE", "AccidentYear", "DevelopmentLag", "IncurredLosses", "CumPaidLoss", "EarnedPremDIR", "EarnedPremNet"}
+var numeric = []string{"GRCODE", "AccidentYear", "DevelopmentLag", "IncurredLosses", "BulkLoss", "CumPaidLoss", "EarnedPremDIR", "EarnedPremNet"}
 
 type cell struct {
-	incurred, paid, direct, net float64
+	incurred, bulk, paid, direct, net float64
 }
 
 type company struct {
@@ -110,7 +111,7 @@ func parse(r io.Reader) ([]triangle.ReferenceSet, error) {
 		if _, dup := co.cells[key]; dup {
 			return nil, fmt.Errorf("line %d: duplicate row for company %d, accident year %d, lag %d", line, code, year, lag)
 		}
-		co.cells[key] = cell{incurred: v["IncurredLosses"], paid: v["CumPaidLoss"], direct: v["EarnedPremDIR"], net: v["EarnedPremNet"]}
+		co.cells[key] = cell{incurred: v["IncurredLosses"], bulk: v["BulkLoss"], paid: v["CumPaidLoss"], direct: v["EarnedPremDIR"], net: v["EarnedPremNet"]}
 		firstYear, lastYear = min(firstYear, year), max(lastYear, year)
 	}
 	if len(companies) == 0 {
@@ -134,15 +135,16 @@ func parse(r io.Reader) ([]triangle.ReferenceSet, error) {
 	return refs, nil
 }
 
-// referenceSet builds the company's paid and incurred triangles valued at the
-// end of the last accident year, its incurred developed to the last lag, and
-// its premium by accident year. ok is false when any cell is missing.
+// referenceSet builds the company's paid, incurred and case incurred
+// triangles valued at the end of the last accident year, its incurred
+// developed to the last lag, and its premium by accident year. ok is false when any cell is missing.
 func (c *company) referenceSet(firstYear, years int) (triangle.ReferenceSet, bool) {
 	ref := triangle.ReferenceSet{
 		Name:              strconv.Itoa(c.code),
 		Company:           c.name,
 		Paid:              triangle.Triangle{StartYear: firstYear, Cells: make([][]float64, years)},
 		Incurred:          triangle.Triangle{StartYear: firstYear, Cells: make([][]float64, years)},
+		CaseIncurred:      triangle.Triangle{StartYear: firstYear, Cells: make([][]float64, years)},
 		DevelopedIncurred: triangle.Triangle{StartYear: firstYear, Cells: make([][]float64, years)},
 		EarnedPremium:     make([]float64, years),
 		DirectPremium:     make([]float64, years),
@@ -160,6 +162,7 @@ func (c *company) referenceSet(firstYear, years int) (triangle.ReferenceSet, boo
 			if lag <= years-i {
 				ref.Paid.Cells[i] = append(ref.Paid.Cells[i], v.paid)
 				ref.Incurred.Cells[i] = append(ref.Incurred.Cells[i], v.incurred)
+				ref.CaseIncurred.Cells[i] = append(ref.CaseIncurred.Cells[i], v.incurred-v.bulk)
 			}
 		}
 	}

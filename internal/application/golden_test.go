@@ -93,7 +93,7 @@ func TestGoldenAggregateCSVBytes(t *testing.T) {
 // Regenerate it the same way as wantHash: run the test once, it prints the
 // actual value, paste it back in. Do not update it to hide an unintended
 // change.
-const wantAnnualHash = "e8bfa012a050ddaa7949744514e42bdcc34cd137312108d60cb2a8922499f199"
+const wantAnnualHash = "66e1f5158099e57ae887b42f1b4646f03e39c4f390bb8a647010183640225bbf"
 
 func TestGoldenAnnualTriangles(t *testing.T) {
 	req := request(t)
