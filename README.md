@@ -84,7 +84,7 @@ flowchart TD
     exposure["exposure by origin month"]
     trianglesCsv[("triangles.csv")]
     exposureCsv[("exposure.csv")]
-    realism{{"realism check<br/>scored section against<br/>Schedule P bands"}}
+    realism{{"realism check<br/>scored sections against<br/>Schedule P bands"}}
     yaml --> sim
     seed --> sim
     s1 --> policiesCsv
@@ -170,7 +170,7 @@ flowchart TD
     pierce -- "yes" --> ultimate --> closeDate --> nilFlag
 ```
 
-Losses that do not exceed the excess are never reported, so the reported frequency sits below `base_frequency`. In the preset, report lags are short for own damage and property damage and longer for injury claims, so there are claims incurred but not yet reported to estimate. Own-damage and property-damage claims settle in weeks to months. Injury claims are rarer, heavy-tailed (Pareto) and settle in a slow long-tail regime calibrated to the Schedule P liability reference, so paid losses keep developing at later ages. Property damage is a lognormal in start-year dollars, uncapped and with no cover limit. In both, settlement time lengthens smoothly with claim size. A share of reported claims are nil - they close without any payment at their first close.
+Losses that do not exceed the excess are never reported, so the reported frequency sits below `base_frequency`. In the preset, report lags are short for own damage and property damage and longer for injury claims, so there are claims incurred but not yet reported to estimate. Own-damage and property-damage claims settle in weeks to months. Injury claims are rarer, heavy-tailed (Pareto) and settle in a slow long-tail regime calibrated to the Schedule P liability reference, so paid losses keep developing at later ages. Property damage is a lognormal in start-year dollars, uncapped and with no cover limit. In every section, settlement time lengthens smoothly with claim size. A share of reported claims are nil - they close without any payment at their first close.
 
 Claims inflation is a stochastic path: each calendar year's factor is a mean level (a per-line-of-business knob) times lognormal noise, compounding from the start year and drawn from its own labelled sub-stream so it stays reproducible and independent of the other stages. The index sits at each year's compounded value in the middle of the year and moves smoothly between years rather than stepping each 1 January.
 
@@ -399,22 +399,22 @@ flowchart TD
 ```
 
 Generated data is checked against 96 hand-curated Schedule P private passenger
-auto reference companies (`data/reference/schedule p/ppauto_pos98-07/`,
-accident years 1998-2007). The reference is Schedule P Part 1B, private
-passenger auto liability/medical. It includes bodily injury and property damage
-liability, personal injury protection, medical payments and uninsured motorist.
-It excludes physical damage, which is Part 1J and has no 10-year history. The
-preset marks its two third-party (liability) sections, `third_party_property`
-and `third_party_injury`, `scored: true`, and the check scores them together:
-their claims against their share of premium. A line of business with no scored
-section is scored as a whole book. Own-damage claims are left out of the score
-rather than slowed to liability settlement speed, and the preset sets their
-settlement as a short-tail class. The preset carries no first-party injury cover
-(personal injury protection, medical payments, uninsured motorist). Part 1B is
-net of reinsurance and includes defence costs; the generated losses are gross of
-reinsurance and exclude defence costs, which the calibration absorbs
-implicitly. The UI's triangle tab still shows the whole book. The companies were curated from the full Schedule P
-extract via `data/reference/gr-code-list.md` and `tools/prune-dec2025.ps1` to
+auto reference companies (`data/reference/schedule p/ppauto_pos98-07/`, accident
+years 1998-2007). The reference is Schedule P Part 1B, private passenger auto
+liability/medical. It includes bodily injury and property damage liability,
+personal injury protection, medical payments and uninsured motorist. It excludes
+physical damage, which is Part 1J and has no 10-year history. The preset marks
+its two third-party (liability) sections, `third_party_property` and
+`third_party_injury`, `scored: true`, and the check scores them together: their
+claims against their share of premium. A line of business with no scored section
+is scored as a whole book. Own-damage claims are left out of the score rather
+than slowed to liability settlement speed, and the preset sets their settlement
+as a short-tail class. The preset carries no first-party injury cover (personal
+injury protection, medical payments, uninsured motorist). Part 1B is net of
+reinsurance and includes defence costs; the generated losses are gross of
+reinsurance and exclude defence costs, which the calibration absorbs implicitly.
+The UI's triangle tab still shows the whole book. The companies were curated
+from the full Schedule P extract via `data/reference/gr-code-list.md` and `tools/prune-dec2025.ps1` to
 remove low-volume and degenerate companies. Paid and incurred age-to-age
 development factors, the ultimate loss ratio, and the loss-ratio drift between
 the two halves of the accident years must fall inside the P5-P95 bands
