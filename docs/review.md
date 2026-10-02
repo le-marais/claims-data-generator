@@ -13,16 +13,26 @@ IDs are **MR** (model review). Severity uses the `docs/todo.md` scale: **high**
 undermines the mission, **medium** worth addressing soon, **low** fix when
 touching the area.
 
-## 1. MR-12 (low) - one setting drives two kinds of variation
+## 1. MR-19 (medium) - the final payment is always exactly 40% of the claim
 
-- Where: `internal/domain/policy/book.go`, `drawVehicle`.
-- `spread` sets both the sum-insured lognormal sigma and the risk-factor
-  standard deviation, so a YAML author cannot set them independently. On a
-  fleet book it is the spread of both within a fleet; the fleet block sets
-  the two apart between fleets (`sum_insured_sigma`, `risk_spread`).
-- Do it with the first class that needs the two set apart. It changes the
-  schema, so it belongs with that class's other schema changes.
-- Action: split it into two parameters.
+- Where: `internal/domain/transaction/runoff.go`, `drawInterimPayments` and
+  `runEpisode`.
+- When an episode draws any interim payments, they share exactly
+  `1 - settlement_share` of its cost and the final settlement pays the rest,
+  so the final payment is always `settlement_share` of the cost. An episode
+  with no interim payment pays 100% at close. The final payment's share takes
+  only those two values.
+- In the personal motor preset (seed 1, 1998-2000, 20,000 policies in the
+  first year), 2,036 of the 2,044 single-episode paying claims with two or
+  more payments have a final payment within $1.50 of 40% of their cost; 5,226
+  of the 8,182 claims pay once. Claims 3, 13, 18 and 48 of a 150-policy run on
+  the same seed split exactly 60/40.
+- The triangles barely notice, but anyone reading `transactions.csv` sees a
+  generated pattern, which undermines the transaction-level realism the
+  mission names as a differentiator.
+- Action: draw each episode's settlement share, for example a Beta with mean
+  `settlement_share`, so the final payment varies by claim; refresh the golden
+  hashes and re-check the realism gate.
 
 ## 2. MR-8 (low) - injury severity is a bare Pareto, and personal motor's liability takes the excess
 
@@ -38,7 +48,10 @@ touching the area.
   auto liability book would not do. On $1,000-excess policies it discards
   about 26% of property damage ground-up losses (median 1800, sigma 0.9), so
   the reported property damage frequency and severity depend on the insured's
-  own-damage excess. The per-section `no_excess` switch exists, and the
+  own-damage excess. The third party is underpaid: in a personal motor run
+  (seed 1, 1998-2000, 150 policies in the first year) claims 3, 28 and 33,
+  all property damage, paid their third parties $500, $300 and $500 less than
+  their losses. The per-section `no_excess` switch exists, and the
   commercial preset's liability sections use it; switching it on for the
   personal preset raises its liability frequency and cost, so its third-party
   frequencies need re-setting and its realism gate re-checking.
@@ -47,3 +60,32 @@ touching the area.
 - Action: set `no_excess: true` on the personal preset's two liability
   sections and recalibrate them. Later, a lognormal body with a Pareto tail as
   another severity kind.
+
+## 3. MR-20 (low) - payment and revision timing is not tied to claim events
+
+- Where: `internal/domain/transaction/runoff.go`, `drawInterimPayments` and
+  `drawRevisions`; `lob.RunoffParams`.
+- Interim payments and case revisions fall on uniformly random days of an
+  episode, at Poisson rates per year of its open duration. One `runoff` block
+  serves every section, so a small repair and a slow injury claim share
+  `payments_per_year` and `revisions_per_year`, and nothing ties a revision to
+  an event such as a repair estimate arriving.
+- In the 150-policy seed-1 run above: claim 13, a repair of about $500, paid
+  in two instalments over 88 days; claim 28, $5,532 of property damage, had
+  four case revisions in three and a half months; claim 33 left its case
+  untouched for four and a half months and revised it only on the close date.
+  Each is possible, but a real file shows them less often.
+- Action: when a class needs it, move the payment and revision rates onto
+  `SectionParams`, and consider a revision soon after report, when the first
+  estimate arrives.
+
+## 4. MR-12 (low) - one setting drives two kinds of variation
+
+- Where: `internal/domain/policy/book.go`, `drawVehicle`.
+- `spread` sets both the sum-insured lognormal sigma and the risk-factor
+  standard deviation, so a YAML author cannot set them independently. On a
+  fleet book it is the spread of both within a fleet; the fleet block sets
+  the two apart between fleets (`sum_insured_sigma`, `risk_spread`).
+- Do it with the first class that needs the two set apart. It changes the
+  schema, so it belongs with that class's other schema changes.
+- Action: split it into two parameters.
