@@ -162,13 +162,14 @@ type CloseLagParams struct {
 
 // RunoffParams mirrors lob.RunoffParams for YAML/JSON.
 type RunoffParams struct {
-	CaseAdequacyMean  float64 `yaml:"case_adequacy_mean" json:"case_adequacy_mean"`
-	CaseAdequacySigma float64 `yaml:"case_adequacy_sigma" json:"case_adequacy_sigma"`
-	PaymentsPerYear   float64 `yaml:"payments_per_year" json:"payments_per_year"`
-	SettlementShare   float64 `yaml:"settlement_share" json:"settlement_share"`
-	Concentration     float64 `yaml:"concentration" json:"concentration"`
-	RevisionsPerYear  float64 `yaml:"revisions_per_year" json:"revisions_per_year"`
-	RevisionSigma     float64 `yaml:"revision_sigma" json:"revision_sigma"`
+	CaseAdequacyMean        float64 `yaml:"case_adequacy_mean" json:"case_adequacy_mean"`
+	CaseAdequacySigma       float64 `yaml:"case_adequacy_sigma" json:"case_adequacy_sigma"`
+	PaymentsPerYear         float64 `yaml:"payments_per_year" json:"payments_per_year"`
+	SettlementShare         float64 `yaml:"settlement_share" json:"settlement_share"`
+	SettlementConcentration float64 `yaml:"settlement_concentration" json:"settlement_concentration"`
+	Concentration           float64 `yaml:"concentration" json:"concentration"`
+	RevisionsPerYear        float64 `yaml:"revisions_per_year" json:"revisions_per_year"`
+	RevisionSigma           float64 `yaml:"revision_sigma" json:"revision_sigma"`
 }
 
 func decode(r io.Reader) (LOBParams, error) {
@@ -351,13 +352,14 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			},
 		},
 		Runoff: lob.RunoffParams{
-			CaseAdequacyMean:  d.Runoff.CaseAdequacyMean,
-			CaseAdequacySigma: d.Runoff.CaseAdequacySigma,
-			PaymentsPerYear:   d.Runoff.PaymentsPerYear,
-			SettlementShare:   d.Runoff.SettlementShare,
-			Concentration:     d.Runoff.Concentration,
-			RevisionsPerYear:  d.Runoff.RevisionsPerYear,
-			RevisionSigma:     d.Runoff.RevisionSigma,
+			CaseAdequacyMean:        d.Runoff.CaseAdequacyMean,
+			CaseAdequacySigma:       d.Runoff.CaseAdequacySigma,
+			PaymentsPerYear:         d.Runoff.PaymentsPerYear,
+			SettlementShare:         d.Runoff.SettlementShare,
+			SettlementConcentration: d.Runoff.SettlementConcentration,
+			Concentration:           d.Runoff.Concentration,
+			RevisionsPerYear:        d.Runoff.RevisionsPerYear,
+			RevisionSigma:           d.Runoff.RevisionSigma,
 		},
 	}
 }

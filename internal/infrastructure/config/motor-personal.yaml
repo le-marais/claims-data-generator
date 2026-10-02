@@ -219,11 +219,17 @@ claims:
 # strengthen, the shape Schedule P Part 1B's case incurred shows (a median
 # factor of about 1.12 from age 1 to 2); it also keeps the incurred factor
 # at age 2-3 off the pool's low edge.
+# A claim with interim payments leaves a share of its cost for the final
+# settlement, drawn per episode from a Beta with mean settlement_share. A
+# settlement_concentration of 4 gives Beta(1.6, 2.4), a standard deviation of
+# about 0.22, so the final payment varies by claim without crowding toward
+# zero. A judgement value.
 runoff:
   case_adequacy_mean: 1.05
   case_adequacy_sigma: 0.35
   payments_per_year: 2.5
   settlement_share: 0.4
+  settlement_concentration: 4
   concentration: 1.0
   revisions_per_year: 4
   revision_sigma: 0.3

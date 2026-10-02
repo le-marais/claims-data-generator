@@ -168,11 +168,17 @@ claims:
 # cost, which gives case incurred factors of about 1.27, 1.06 and 1.02 at
 # ages 1-3, against Part 1C medians of 1.26, 1.08 and 1.05. The other runoff
 # values are judgement: fewer, larger interim payments than personal motor.
+# A claim with interim payments leaves a share of its cost for the final
+# settlement, drawn per episode from a Beta with mean settlement_share. A
+# settlement_concentration of 4 gives Beta(2, 2), a standard deviation of
+# about 0.22, so the final payment varies by claim without crowding toward
+# zero. A judgement value.
 runoff:
   case_adequacy_mean: 1.5
   case_adequacy_sigma: 0.4
   payments_per_year: 2.0
   settlement_share: 0.5
+  settlement_concentration: 4
   concentration: 1.0
   revisions_per_year: 4
   revision_sigma: 0.3
