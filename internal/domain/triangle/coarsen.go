@@ -43,7 +43,6 @@ type IncrementalSet struct {
 	PaidNet    [][]float64
 	Incurred   [][]float64
 	Reported   [][]int
-	IBNR       [][]float64
 }
 
 // Coarsen aggregates the incremental monthly grid onto a coarser grain. When
@@ -107,9 +106,7 @@ func (g MonthlyGrid) Coarsen(kind PeriodKind, devPeriods int, foldTail bool) Inc
 	set.PaidNet = raggedFloat(widths)
 	set.Incurred = raggedFloat(widths)
 	set.Reported = raggedInt(widths)
-	set.IBNR = raggedFloat(widths)
 	visit(func(row, dev, o, d int) {
-		set.IBNR[row][dev-1] += g.IBNR[o][d]
 		set.Paid[row][dev-1] += g.Paid[o][d]
 		set.PaidNet[row][dev-1] += g.PaidNet[o][d]
 		set.Incurred[row][dev-1] += g.Incurred[o][d]
@@ -144,8 +141,6 @@ func (s IncrementalSet) measure(m Measure) [][]float64 {
 		return s.PaidNet
 	case MeasureIncurred:
 		return s.Incurred
-	case MeasureIBNR:
-		return s.IBNR
 	case MeasureReported:
 		out := make([][]float64, len(s.Reported))
 		for i, row := range s.Reported {
@@ -166,9 +161,6 @@ type AnnualSet struct {
 	Paid     Triangle // gross of recoveries
 	NetPaid  Triangle // net of salvage and subrogation
 	Incurred Triangle // gross case plus net paid
-	// TotalIncurred is Incurred plus pure IBNR, the counterpart of Schedule P
-	// total incurred that the realism gate scores (see MonthlyGrid.IBNR).
-	TotalIncurred Triangle
 }
 
 // AnnualTriangles coarsens the grid to a yearly origin with devYears
@@ -178,19 +170,10 @@ type AnnualSet struct {
 // them.
 func (g MonthlyGrid) AnnualTriangles(devYears int) AnnualSet {
 	set := g.Coarsen(Annual, devYears, true)
-	incurred, ibnr := set.Cumulative(MeasureIncurred), set.Cumulative(MeasureIBNR)
-	total := Triangle{StartYear: incurred.StartYear, Cells: make([][]float64, len(incurred.Cells))}
-	for o, row := range incurred.Cells {
-		total.Cells[o] = make([]float64, len(row))
-		for d, v := range row {
-			total.Cells[o][d] = v + ibnr.Cells[o][d]
-		}
-	}
 	return AnnualSet{
-		Paid:          set.Cumulative(MeasurePaid),
-		NetPaid:       set.Cumulative(MeasurePaidNet),
-		Incurred:      incurred,
-		TotalIncurred: total,
+		Paid:     set.Cumulative(MeasurePaid),
+		NetPaid:  set.Cumulative(MeasurePaidNet),
+		Incurred: set.Cumulative(MeasureIncurred),
 	}
 }
 

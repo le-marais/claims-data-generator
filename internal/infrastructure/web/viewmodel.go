@@ -85,6 +85,7 @@ type realismJSON struct {
 	Pass           bool           `json:"pass"`
 	PaidATA        []ageCheckJSON `json:"paid_ata"`
 	IncurredATA    []ageCheckJSON `json:"incurred_ata"`
+	PaidShares     []ageCheckJSON `json:"paid_shares"`
 	LossRatio      checkJSON      `json:"loss_ratio"`
 	LossRatioDrift checkJSON      `json:"loss_ratio_drift"`
 }
@@ -214,6 +215,7 @@ func realismView(r triangle.Report, sections []string) realismJSON {
 		Pass:        r.Pass(),
 		PaidATA:     ageChecksView(r.PaidATA),
 		IncurredATA: ageChecksView(r.IncurredATA),
+		PaidShares:  ageChecksView(r.PaidShares),
 		LossRatio: checkJSON{
 			Value:  finite(r.LossRatio.Value),
 			Lo:     finite(r.LossRatio.Band.Lo),

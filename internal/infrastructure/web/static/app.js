@@ -509,16 +509,18 @@ function renderRealism(r) {
   scope.className = "empty-note";
   const names = (r.sections || []).map((s) => s.replaceAll("_", " "));
   const scored = names.length
-    ? `Scored on the ${names.join(" and ")} ${names.length > 1 ? "sections" : "section"} alone, their claims against their share of premium: the Schedule P private passenger auto reference is a liability line, and the line of business marks these sections to score against it.`
-    : "Scored on the whole book against the Schedule P private passenger auto liability reference.";
-  scope.textContent = `${scored} The loss ratio band uses each company's loss ratio developed to age 10. Generated incurred adds pure IBNR at its true value but no bulk reserve, while Schedule P incurred includes both, so the incurred factors are a loose sanity bound.`;
+    ? `Scored on the ${names.join(" and ")} ${names.length > 1 ? "sections" : "section"} alone, their claims against their share of premium: the Schedule P private passenger auto reference is a liability line, and the line of business marks these sections to score against it. The reference companies are those with steady premium and reinsurance that write at least $5m a year.`
+    : "Scored on the whole book against the Schedule P private passenger auto liability reference. The reference companies are those with steady premium and reinsurance that write at least $5m a year.";
+  scope.textContent = `${scored} The loss ratio band uses each company's loss ratio developed to age 10. The incurred factors compare generated paid plus case with Schedule P incurred less its bulk and IBNR reserves. The drift band is each company's drift over the reference median, which leaves out the market cycle the companies share.`;
   panel.append(
     banner,
     scope,
     bandCard("Paid age-to-age factors vs reference P5-P95 (min/max faint)", r.paid_ata || []),
     bandCard("Incurred age-to-age factors vs reference P5-P95 (min/max faint)", r.incurred_ata || []),
+    bandCard("Paid to date as a share of paid at age 10 vs reference P5-P95 (min/max faint)",
+      (r.paid_shares || []).map((c) => ({ ...c, label: `age ${c.age}` }))),
     bandCard("Net loss ratio vs Schedule P P5-P95 (min/max faint)", [{ ...r.loss_ratio, label: "Net LR" }]),
-    bandCard("Loss-ratio drift 2nd half / 1st half (flat = 1)", [{ ...r.loss_ratio_drift, label: "Drift" }]),
+    bandCard("Loss-ratio drift 2nd half / 1st half vs reference, relative to its median (flat = 1)", [{ ...r.loss_ratio_drift, label: "Drift" }]),
   );
 }
 

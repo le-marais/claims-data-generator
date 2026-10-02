@@ -17,7 +17,6 @@ const (
 	MeasurePaidNet                 // payments net of salvage and subrogation
 	MeasureIncurred                // gross case movements plus net paid
 	MeasureReported                // claim counts, by report month
-	MeasureIBNR                    // pure IBNR: true cost of claims occurred but not yet reported
 )
 
 // MonthlyGrid holds incremental monthly triangles: row o is origin month
@@ -37,13 +36,6 @@ type MonthlyGrid struct {
 	PaidNet    [][]float64
 	Incurred   [][]float64
 	Reported   [][]int
-	// IBNR is pure IBNR held at its true value: each claim's Cost is booked
-	// in its occurrence month and released in its report month, so the
-	// running sum at a valuation is the cost of claims that have occurred but
-	// are not yet reported. Incurred plus IBNR is the generated counterpart of
-	// Schedule P total incurred, with a perfect IBNR estimate and no bulk
-	// reserve.
-	IBNR [][]float64
 }
 
 // Origins returns the number of origin months in the grid.
@@ -64,8 +56,6 @@ func (g MonthlyGrid) Cell(m Measure, origin, dev int) float64 {
 		cells = g.PaidNet
 	case MeasureIncurred:
 		cells = g.Incurred
-	case MeasureIBNR:
-		cells = g.IBNR
 	default:
 		cells = g.Paid
 	}
@@ -129,7 +119,6 @@ func BuildMonthlyGrid(
 		PaidNet:    newFloatCells(originMonths, devPeriods),
 		Incurred:   newFloatCells(originMonths, devPeriods),
 		Reported:   newIntCells(originMonths, devPeriods),
-		IBNR:       newFloatCells(originMonths, devPeriods),
 	}
 
 	// Pass two places every movement. The weights match the annual triangles
@@ -141,15 +130,7 @@ func BuildMonthlyGrid(
 		if !ok {
 			continue
 		}
-		reported := devPeriod(startMonth, row, c.ReportDate().Month()) - 1
-		g.Reported[row][reported]++
-		// A claim reported in the month it occurred is never IBNR at a month
-		// end; skipping it keeps the cell free of a +cost-cost rounding residue.
-		if occurred := devPeriod(startMonth, row, c.OccurrenceDate.Month()) - 1; occurred < reported {
-			cost := c.Cost().Dollars()
-			g.IBNR[row][occurred] += cost
-			g.IBNR[row][reported] -= cost
-		}
+		g.Reported[row][devPeriod(startMonth, row, c.ReportDate().Month())-1]++
 	}
 	for _, tx := range txs {
 		row, ok := rows[tx.ClaimID]

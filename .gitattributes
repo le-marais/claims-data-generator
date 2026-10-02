@@ -4,3 +4,7 @@
 
 # Binary assets - never touch their bytes.
 *.png binary
+
+# The CAS reference files are kept byte for byte, CRLF included, so they
+# match the checksums in data/reference/README.md.
+data/reference/**/*.csv -text

@@ -6,31 +6,43 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 
 	refdata "github.com/le-marais/claimsgen/data/reference"
 	"github.com/le-marais/claimsgen/internal/application"
+	"github.com/le-marais/claimsgen/internal/domain/claim"
+	"github.com/le-marais/claimsgen/internal/domain/policy"
+	"github.com/le-marais/claimsgen/internal/domain/shared"
 	"github.com/le-marais/claimsgen/internal/domain/transaction"
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 	"github.com/le-marais/claimsgen/internal/infrastructure/schedulep"
 )
 
+// personalMotorRefs is the realism gate's reference pool: the embedded
+// private passenger auto companies that PersonalMotorCriteria selects.
+func personalMotorRefs(t *testing.T) []triangle.ReferenceSet {
+	t.Helper()
+	all, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return triangle.SelectReferences(all, application.PersonalMotorCriteria())
+}
+
 // TestDefaultPresetIsRealistic is the MVP realism gate: data generated with
 // the shipped motor-personal preset must land inside the bands observed
 // across the Schedule P reference companies.
 func TestDefaultPresetIsRealistic(t *testing.T) {
-	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	refs := personalMotorRefs(t)
 	req := request(t)
 	req.StartYear = 1998
 	req.Years = 10
-	// 40k keeps the loss-ratio drift metric's seed-to-seed sampling noise
-	// small enough for the 1.10 drift band: at 10k book size, heavy-tail
-	// claim-sampling noise pushes ~12.5% of seeds outside [0.909, 1.10] even
-	// with no systematic drift; at ~40k the metric stabilizes to about ±0.05.
-	req.InitialBookSize = 40000
+	// 100k keeps claim sampling noise in the late single-origin factors and
+	// in the drift below the spread of the reference pool, which is made of
+	// books of $5m a year and up: at 40k the incurred factor at age 9-10 left
+	// its band on 4 of 60 seeds by luck, at 100k on none of 30.
+	req.InitialBookSize = 100000
 	// Run the gate on several seeds so a calibration that only happens to
 	// pass on one seed is caught here.
 	for _, seed := range []uint64{1, 42, 7} {
@@ -52,10 +64,7 @@ func TestDefaultPresetIsRealistic(t *testing.T) {
 }
 
 func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
-	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	refs := personalMotorRefs(t)
 	req := request(t)
 	req.Years = 10
 	req.InitialBookSize = 2000
@@ -73,6 +82,9 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 	if len(report.IncurredATA) != 9 {
 		t.Errorf("incurred ATA checks = %d, want 9", len(report.IncurredATA))
 	}
+	if len(report.PaidShares) != 9 {
+		t.Errorf("paid share checks = %d, want 9", len(report.PaidShares))
+	}
 	if report.LossRatio.Value <= 0 {
 		t.Errorf("loss ratio = %v, want positive", report.LossRatio.Value)
 	}
@@ -81,10 +93,7 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 // The reference is a liability line, so the gate must score the scored
 // third-party sections alone: own-damage settlement speed cannot move them.
 func TestRealismScoresOnlyTheScoredSections(t *testing.T) {
-	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	refs := personalMotorRefs(t)
 	report := func(ownDamageMeanDays float64) triangle.Report {
 		req := request(t)
 		req.Years = 10
@@ -244,5 +253,75 @@ func TestRealismScoresTheUnionOfScoredSections(t *testing.T) {
 		if math.Abs(all.EarnedPremium[i]-ep) > 1e-6*ep {
 			t.Fatalf("year %d: sections' earned premium %v, whole book %v", i, all.EarnedPremium[i], ep)
 		}
+	}
+}
+
+// MR-15: the gate's pool is the complete companies with steady premium and
+// reinsurance that write at least $5m a year, less reinsurers.
+func TestPersonalMotorPool(t *testing.T) {
+	all, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := application.PersonalMotorCriteria()
+	var got []string
+	for _, r := range triangle.SelectReferences(all, c) {
+		got = append(got, r.Name)
+	}
+	want := []string{
+		"353", "460", "620", "1066", "1090", "1538", "1716", "1767", "2003", "2143",
+		"2208", "3240", "4839", "5185", "6947", "7080", "8427", "8672", "10007", "10022",
+		"13420", "13501", "13889", "14044", "14176", "14257", "14311", "14443", "15024", "15199",
+		"15997", "18163", "19119", "23574", "25755", "27022", "27065", "29440", "31062", "31550",
+		"34509", "34592", "35173", "37028", "41041",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("pool = %v\nwant %v", got, want)
+	}
+	reasons := map[string]string{}
+	for _, r := range all {
+		reasons[r.Name] = c.Reason(r)
+	}
+	for name, want := range map[string]string{
+		"29297": "net premium varies too much (CV 0.975)",         // fronts: keeps 5% of its direct premium
+		"13641": "net-to-direct ratio varies too much (CV 0.392)", // kept $4k of $14.0m direct in 2007
+		"10308": "net premium varies too much (CV 0.519)",         // about $70k a year, shrinking
+		"20430": "too small (mean net premium 2986)",              // cedes a steady 75%, which net premium makes fair
+		"33499": "reinsurer (Dorinco Rein Co)",
+	} {
+		if reasons[name] != want {
+			t.Errorf("company %s: Reason = %q, want %q", name, reasons[name], want)
+		}
+	}
+}
+
+// MR-18: Schedule P values every company at age 10, so the gate drops
+// generated development after age 10 rather than folding it into the last
+// age, which on a long-tail line would compare an ultimate with a reference
+// short of it.
+func TestSectionComparisonStopsAtAgeTen(t *testing.T) {
+	ds := application.Dataset{
+		Policies: []policy.Policy{{
+			ID: 1, CoverStart: shared.NewDate(1998, time.January, 1), CoverEnd: shared.NewDate(1998, time.December, 31),
+			Premium: shared.FromDollars(1000),
+		}},
+		Claims: []claim.Claim{{
+			ID: 1, PolicyID: 1, OccurrenceDate: shared.NewDate(1998, time.March, 1),
+			Episodes: []claim.Episode{{
+				Open: shared.NewDate(1998, time.April, 1), Close: shared.NewDate(2009, time.June, 1), Ultimate: shared.FromDollars(500),
+			}},
+		}},
+		Transactions: []transaction.Transaction{
+			{ID: 1, ClaimID: 1, Type: transaction.Payment, Date: shared.NewDate(1998, time.May, 1), Amount: shared.FromDollars(300)},
+			// Development year 12.
+			{ID: 2, ClaimID: 1, Type: transaction.Payment, Date: shared.NewDate(2009, time.June, 1), Amount: shared.FromDollars(200)},
+		},
+	}
+	c, err := application.SectionComparison(ds, 1998, 1, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := c.Paid.Cells[0]; len(got) != 10 || got[9] != 300 {
+		t.Fatalf("paid 1998 = %v, want ten ages ending at the 300 paid by age 10", got)
 	}
 }

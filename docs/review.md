@@ -18,9 +18,8 @@ touching the area.
 - Where: `internal/domain/policy/book.go`, `simulatePolicy`.
 - `spread` sets both the sum-insured lognormal sigma and the risk-factor
   standard deviation, so a YAML author cannot set them independently.
-- Do it with the second line of business: a commercial property class needs
-  the two set apart, and it changes the schema, so it belongs with that
-  class's other schema changes.
+- Do it with the first class that needs the two set apart. It changes the
+  schema, so it belongs with that class's other schema changes.
 - Action: split it into two parameters.
 
 ## 2. MR-8 (low) - injury severity is a bare Pareto, and liability takes the excess

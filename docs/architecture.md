@@ -23,8 +23,8 @@ internal/
     csv/                  writers for the five CSVs
     schedulep/            Schedule P reference-file reader
     web/                  HTTP server, JSON view models, form-field registry, embedded static UI
-data/reference/           Schedule P reference companies, private passenger auto embedded via refdata
-tools/                    dev-only: reference-data curation, README screenshots
+data/reference/           CAS Schedule P files, private passenger auto embedded via refdata
+tools/                    dev-only: README screenshots
 ```
 
 `shared.RandomSource` is the seam between the pure domain and `random.Source`: the domain states the draws it needs, infrastructure supplies them.
@@ -85,10 +85,11 @@ The ledger is each claim's event stream, and every measure folds from it: outsta
 
 ### `triangle` - aggregation and realism
 
-- `MonthlyGrid` is the one aggregation store: incremental cells, origin months down, development months across, run to full runoff, for paid, net paid, incurred, reported count and pure IBNR (each claim's cost booked at occurrence and released at report, read only by the realism gate). `BuildMonthlyGrid` folds the ledger into it on an `OriginBasis`, accident or underwriting.
-- `Coarsen` maps both axes onto calendar periods. `AnnualTriangles` is `Coarsen(Annual, 10, true)` cumulated, the view the UI and the realism gate read. New aggregate views coarsen the grid rather than re-scan the transactions.
+- `MonthlyGrid` is the one aggregation store: incremental cells, origin months down, development months across, run to full runoff, for paid, net paid, incurred and reported count. `BuildMonthlyGrid` folds the ledger into it on an `OriginBasis`, accident or underwriting.
+- `Coarsen` maps both axes onto calendar periods. `AnnualTriangles` is `Coarsen(Annual, 10, true)` cumulated, the view the UI reads. The realism gate reads `Coarsen(Annual, 10, false)` cumulated, dropping development after age 10, because Schedule P values every company at age 10. New aggregate views coarsen the grid rather than re-scan the transactions.
 - `ExposureByMonth` gives premium, policy-years and policy count by origin month, and `EarnedPremiumByYear` rolls the monthly premium up by year.
-- `CompareToReference` scores paid and incurred age-to-age factors, the ultimate loss ratio and the loss-ratio drift against the P5-P95 bands across the reference companies, and returns a `Report`.
+- `CompareToReference` scores paid and incurred age-to-age factors, paid to date at each age as a share of paid at the last age (`Triangle.DevelopmentShares`), the ultimate loss ratio and the loss-ratio drift, relative to the pool's median drift, against the P5-P95 bands across the reference companies, and returns a `Report`.
+- `ReferenceCriteria` picks the reference companies: steady net premium and net-to-direct ratio, a size floor and named exclusions. `SelectReferences` applies it, and `application.PersonalMotorCriteria` is the gate's pool.
 
 ### `shared` - value objects
 
@@ -105,7 +106,7 @@ The ledger is each claim's event stream, and every measure folds from it: outsta
 
 - **`config`** mirrors the domain structs field for field with `yaml` and `json` tags, so the domain stays tag-free and the same structs serve YAML loading and the web API. Decoding is strict, and `Load` maps then validates. The preset registry embeds `motor-personal.yaml` and lists it in `presetInfos` and `presetYAML`. `TestToDomainMapsEveryField` fails if a field is not carried across.
 - **`csv`** writes the five files with fixed formatting, so equal datasets give equal bytes, into a directory (`WriteDataset`, `WriteAggregates`) or one zip archive with fixed entry timestamps (`WriteZip`). Every column is numeric, an ISO-8601 date or a fixed enum, so no quoting is needed. `transactions.csv` is in claim-registration order, not date order.
-- **`schedulep`** reads each reference company's paid and incurred triangles, earned premium, and later reported development, which completes the incurred triangle for the loss-ratio checks. `refdata` embeds the 96 private passenger auto companies; the other five Schedule P lines in `data/reference/schedule p/` are curated but neither embedded nor read.
+- **`schedulep`** reads a CAS Schedule P file, one row per company, accident year and lag, into one reference set per company with every cell present: the paid and incurred triangles at the 2007 valuation, the incurred developed to age 10, and net and direct earned premium. `refdata` embeds the private passenger auto file; the other five lines in `data/reference/schedule p/` are kept but neither embedded nor read.
 - **`web`** serves the embedded single-page UI and a JSON API: `/api/lobs`, `/api/lobs/{id}/preset`, `/api/limits`, `/api/fields`, `/api/generate` (the run's analytics) and `/api/download` (the run's CSVs as a zip). Both run endpoints share one decode, check and generate path. The server is stateless and writes no files: the browser keeps the request behind the results it shows and sends it again to download, and the same seed and parameters reproduce the run byte for byte. The parameter form is built from the `formFields` registry, which `TestFormFieldsCoverEveryParameter` keeps complete. `ServeHTTP` rejects non-local `Host` and `Origin` headers, and runs are capped in size (`checkRunSize`).
 
 The CLI dispatches `generate` (load the preset or a `--config` YAML, generate, write the five CSVs) and `ui` (load the embedded reference data, bind `127.0.0.1:<port>`, serve).
@@ -117,7 +118,7 @@ The CLI dispatches `generate` (load the preset or a `--config` YAML, generate, w
 - **The ledger folds cleanly.** Each payment releases its own case, outstanding case is never negative, and every episode ends with the case at exactly zero. Gross paid equals the claim's true cost, and no claim pays beyond its `CoverLimit`: the sum insured less the excess on a sum-insured section, the section's `Limit` on a limited one. `internal/application/invariants_test.go` checks the ledger as a state machine.
 - **Recoveries stay below gross paid,** by at least a cent, and are the only rows dated after a claim's final close.
 - **Every claim closes.** There is no valuation date.
-- **Realism.** `TestDefaultPresetIsRealistic` keeps the preset's scored third-party sections (property damage and injury) inside the Schedule P P5-P95 bands across several seeds, and `TestPresetHasNoSystematicLossRatioDrift` switches the inflation and pricing noise off and requires a flat loss ratio.
+- **Realism.** `TestDefaultPresetIsRealistic` keeps the preset's scored third-party sections (property damage and injury) inside the P5-P95 bands of the selected Schedule P pool across several seeds, and `TestPresetHasNoSystematicLossRatioDrift` switches the inflation and pricing noise off and requires a flat loss ratio.
 - **Loopback-only UI.** A 127.0.0.1 bind, Host and Origin checks, capped request bodies, strict JSON and YAML decoding, and a front end that never assigns HTML. `docs/todo.md` lists what must change before the UI is served beyond 127.0.0.1.
 - **No free text in the CSVs.** If a free-text column is ever added, switch to `encoding/csv` with formula-lead-character escaping in the same change.
 

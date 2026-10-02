@@ -26,11 +26,11 @@ import (
 
 func newTestServer(t *testing.T) *web.Server {
 	t.Helper()
-	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorDir)
+	refs, err := schedulep.LoadFS(refdata.Files, refdata.PersonalMotorFile)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return web.NewServer(refs)
+	return web.NewServer(triangle.SelectReferences(refs, application.PersonalMotorCriteria()))
 }
 
 func do(t *testing.T, srv http.Handler, method, target string, body any) *httptest.ResponseRecorder {
@@ -154,6 +154,9 @@ func TestGenerateRoundTrip(t *testing.T) {
 				Max    float64 `json:"max"`
 				Within bool    `json:"within"`
 			} `json:"paid_ata"`
+			PaidShares []struct {
+				Age int `json:"age"`
+			} `json:"paid_shares"`
 			LossRatio struct {
 				Value float64 `json:"value"`
 			} `json:"loss_ratio"`
@@ -179,6 +182,9 @@ func TestGenerateRoundTrip(t *testing.T) {
 	}
 	if len(resp.Realism.PaidATA) == 0 || resp.Realism.LossRatio.Value <= 0 {
 		t.Fatalf("realism = %+v", resp.Realism)
+	}
+	if len(resp.Realism.PaidShares) != 9 || resp.Realism.PaidShares[0].Age != 1 {
+		t.Fatalf("realism.paid_shares = %+v, want ages 1-9", resp.Realism.PaidShares)
 	}
 	if resp.Realism.LossRatioDrift.Value <= 0 {
 		t.Fatalf("realism.loss_ratio_drift = %+v", resp.Realism.LossRatioDrift)

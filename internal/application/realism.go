@@ -30,11 +30,16 @@ func EvaluateRealism(ds Dataset, startYear, years int, sections []int, refs []tr
 // liability line with no physical damage in it, so own-damage claims are left
 // out rather than bent to liability development speed. Paid is net of salvage
 // and subrogation to match Schedule P, which reports paid losses net of
-// recoveries.
+// recoveries. Incurred is paid plus case, the counterpart of the reference's
+// case incurred (MR-16).
 //
 // The triangles are the monthly grid coarsened to annual, like every other
 // aggregate view. Schedule P is an accident-year presentation, so the
-// comparison is always on the accident basis.
+// comparison is always on the accident basis. It values every company at age
+// 10, so development after age 10 is dropped rather than folded into the last
+// age as the UI's triangles do (MR-18): the last factors, the paid shares and
+// the loss ratio then compare the same age on both sides, on a long-tail line
+// as on a short one.
 func SectionComparison(ds Dataset, startYear, years int, sections []int) (triangle.Comparison, error) {
 	if years < 1 {
 		return triangle.Comparison{}, fmt.Errorf("years: must be at least 1, got %d", years)
@@ -47,10 +52,10 @@ func SectionComparison(ds Dataset, startYear, years int, sections []int) (triang
 	if err != nil {
 		return triangle.Comparison{}, err
 	}
-	annual := grid.AnnualTriangles(developmentYears)
+	annual := grid.Coarsen(triangle.Annual, developmentYears, false)
 	return triangle.Comparison{
-		Paid:          annual.NetPaid,
-		Incurred:      annual.TotalIncurred,
+		Paid:          annual.Cumulative(triangle.MeasurePaidNet),
+		Incurred:      annual.Cumulative(triangle.MeasureIncurred),
 		EarnedPremium: triangle.EarnedPremiumByYear(policies, startYear, years),
 	}, nil
 }
@@ -79,4 +84,27 @@ func sectionsOf(ds Dataset, sections []int) ([]policy.Policy, []claim.Claim) {
 		}
 	}
 	return policies, claims
+}
+
+// PersonalMotorCriteria selects the private passenger auto reference pool
+// (MR-15). The two coefficient-of-variation limits are Meyers' for personal
+// auto (CAS Monograph 1, 2015, table 11): books with steady premium and a
+// steady reinsurance programme. The $5m-a-year floor (Schedule P is in
+// thousands) keeps companies whose factors are mostly claim sampling noise
+// from setting the band edges; the gate's generated book earns about
+// $20-45m a year on its scored sections. Reinsurers write assumed business,
+// not a personal auto book. Of the 121 complete companies, 45 are selected.
+func PersonalMotorCriteria() triangle.ReferenceCriteria {
+	return triangle.ReferenceCriteria{
+		MaxPremiumCV:     0.45,
+		MaxNetToDirectCV: 0.125,
+		MinMeanPremium:   5000,
+		Exclude: map[string]string{
+			"10019": "reinsurer (Overseas Partners Us Reins Co)",
+			"23876": "reinsurer (Mapfre Reins Corp)",
+			"33499": "reinsurer (Dorinco Rein Co)",
+			"35408": "reinsurer (Sirius Amer Ins Co)",
+			"42439": "reinsurer (Toa-Re Ins Co Of Amer)",
+		},
+	}
 }

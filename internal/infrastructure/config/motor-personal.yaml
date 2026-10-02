@@ -1,9 +1,10 @@
 # Personal motor insurance preset.
 # The realism reference is Schedule P Part 1B, private passenger auto
-# liability (data/reference/schedule p/ppauto_pos98-07, 96 hand-curated
-# companies). Part 1B covers bodily injury and property damage liability,
-# plus personal injury protection, medical payments and uninsured motorist,
-# which this product does not carry. The two third-party sections, property
+# liability (data/reference/schedule p/ppauto_pos98-07.csv, the 45
+# companies application.PersonalMotorCriteria selects). Part 1B covers
+# bodily injury and property damage liability, plus personal injury
+# protection, medical payments and uninsured motorist, which this product
+# does not carry. The two third-party sections, property
 # damage and injury, are scored together against it: their claims against
 # their share of premium, so their combined development triangles fall
 # within the reference's P5-P95 bands. The reference has no physical damage
@@ -127,12 +128,15 @@ claims:
         risk_loading: 0.3
       scored: true
     # Third-party bodily injury: rarer, heavy-tailed, reported later (median
-    # 20 days, about 3.5% more than a year after the accident, which gives the
-    # reported counts and the incurred some pure IBNR) and settled slowly.
+    # 20 days, about 3.5% more than a year after the accident, so the reported
+    # counts and the incurred develop as late claims are reported) and
+    # settled slowly.
     # Its lags carry the later-age development of the Schedule P reference:
-    # close_lag.mean_days 400 was set by calibration so paid and incurred
-    # development at ages 9-10 sit inside the bands across seeds (360-440 all
-    # passed). size_reference 10000 is a typical injury claim's cost.
+    # close_lag shape 1.5 and mean_days 500 were set by calibration against
+    # the 45-company pool (MR-15). They keep paid development at ages 2-5 off
+    # the pool's fast edge, and the factors at age 9-10 inside their bands,
+    # across seeds 1-30.
+    # size_reference 10000 is a typical injury claim's cost.
     # base_frequency 0.009 is set with property damage's (see above). limit
     # 100000 is a common per-person bodily injury limit on US personal auto
     # (the 100 in 100/300); it stops single claims in the millions that
@@ -144,8 +148,8 @@ claims:
       limit: 100000
       report_lag: {median: 20, sigma: 1.6}
       close_lag:
-        shape: 1.0
-        mean_days: 400
+        shape: 1.5
+        mean_days: 500
         size_reference: 10000
         size_elasticity: 0.25
         risk_loading: 0.3
