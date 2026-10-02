@@ -53,7 +53,8 @@ func recoveryFixture(t *testing.T, p lob.RecoveryParams, seed uint64) ([]claim.C
 			claims[i].Episodes[0].Nil = true
 		}
 	}
-	txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(seed), claims)
+	runoff := transaction.NewRunoffSimulator(params(), sections(lob.SettlementParams{Share: 0.4}, lob.SettlementParams{Share: 0.4}))
+	txs := runoff.Simulate(random.NewSource(seed), claims)
 	return claims, transaction.NewRecoverySimulator(withSections(p)).Apply(random.NewSource(seed), claims, txs)
 }
 
@@ -153,7 +154,7 @@ func TestRecoveriesOffReturnsRunoffUnchanged(t *testing.T) {
 		Subrogation: lob.RecoveryTypeParams{Probability: 0, MeanShare: 0.8, Concentration: 10, LagMedianDays: 180, LagSigma: 0.7},
 	}
 	claims := testClaims(100) // every claim in the own-damage section
-	before := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(4), claims)
+	before := transaction.NewRunoffSimulator(params(), sections()).Simulate(random.NewSource(4), claims)
 	after := transaction.NewRecoverySimulator(withSections(off)).Apply(random.NewSource(4), claims, before)
 	if len(after) != len(before) {
 		t.Fatalf("lengths differ: %d vs %d", len(after), len(before))
@@ -243,7 +244,7 @@ func TestNoSalvageOnALimitedSection(t *testing.T) {
 		for i := range claims {
 			claims[i].CoverLimit = claims[i].Episodes[0].Ultimate // settled at the limit
 		}
-		txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(1), claims)
+		txs := transaction.NewRunoffSimulator(params(), sections()).Simulate(random.NewSource(1), claims)
 		txs = transaction.NewRecoverySimulator(p).Apply(random.NewSource(1), claims, txs)
 		subrogated := 0
 		for _, tx := range txs {

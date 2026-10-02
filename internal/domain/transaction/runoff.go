@@ -42,11 +42,19 @@ type Transaction struct {
 // RunoffSimulator generates the transactions for each claim.
 type RunoffSimulator struct {
 	params lob.RunoffParams
+	// settlement is each section's settlement, by section index.
+	settlement []lob.SettlementParams
 }
 
-// NewRunoffSimulator builds a runoff simulator from the runoff parameters.
-func NewRunoffSimulator(p lob.RunoffParams) *RunoffSimulator {
-	return &RunoffSimulator{params: p}
+// NewRunoffSimulator builds a runoff simulator from the runoff parameters
+// and the line's sections of cover, whose settlements shape each claim's
+// payments.
+func NewRunoffSimulator(p lob.RunoffParams, sections []lob.SectionParams) *RunoffSimulator {
+	settlement := make([]lob.SettlementParams, len(sections))
+	for i, sec := range sections {
+		settlement[i] = sec.Settlement
+	}
+	return &RunoffSimulator{params: p, settlement: settlement}
 }
 
 // Simulate produces every claim's transactions in claim order, each claim's
@@ -75,15 +83,16 @@ type event struct {
 	amount shared.Money // payments only
 }
 
-// simulateClaim develops the claim's episodes in order. Each opens by moving
-// the case to the episode's opening case on its open date: on the report date
-// that is the claim's first ESTIMATE row, and on a reopen it re-raises the
-// case from zero.
+// simulateClaim develops the claim's episodes in order, each settling the
+// way the claim's section does. Each opens by moving the case to the
+// episode's opening case on its open date: on the report date that is the
+// claim's first ESTIMATE row, and on a reopen it re-raises the case from
+// zero.
 func (s *RunoffSimulator) simulateClaim(src shared.RandomSource, c claim.Claim) []Transaction {
 	e := &emitter{claimID: c.ID, report: c.ReportDate()}
 	for _, ep := range c.Episodes {
 		e.reviseTo(shared.DaysBetween(e.report, ep.Open), ep.OpeningCase)
-		s.runEpisode(src, e, ep)
+		s.runEpisode(src, e, ep, s.settlement[c.Section])
 	}
 	return e.txs
 }
@@ -109,7 +118,7 @@ func (s *RunoffSimulator) adequacyBias(u float64) float64 {
 // cost (ultimate - paid) times the adequacy bias; a nil episode, whose handler
 // does not know it will pay nothing, aims at the current case. Every target
 // is floored at one cent, so the case stays open until the close date.
-func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, ep claim.Episode) {
+func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, ep claim.Episode, st lob.SettlementParams) {
 	ultimate, isNil := ep.Ultimate, ep.Nil
 	base := shared.DaysBetween(e.report, ep.Open)
 	duration := shared.DaysBetween(ep.Open, ep.Close)
@@ -120,7 +129,7 @@ func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, ep cla
 		if ultimate < shared.OneCent {
 			ultimate = shared.OneCent // guards hand-built claims; generated claims always cost something
 		}
-		interims = s.drawInterimPayments(src, ultimate, duration, years)
+		interims = s.drawInterimPayments(src, st, ultimate, duration, years)
 	}
 	events := append(s.drawRevisions(src, duration, years), interims...)
 	sort.SliceStable(events, func(i, j int) bool {
@@ -159,11 +168,18 @@ func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, ep cla
 	e.reviseTo(base+duration, 0)
 }
 
-// drawInterimPayments splits (1 - settlement share) of the ultimate across
-// a Poisson number of payments on days strictly between report and close,
-// weighted by a Dirichlet draw. The remainder is paid at close.
-func (s *RunoffSimulator) drawInterimPayments(src shared.RandomSource, ultimate shared.Money, duration int, years float64) []event {
+// drawInterimPayments draws an episode's interim payments, on days strictly
+// between report and close; the final settlement at close pays the rest. A
+// lump-sum episode, drawn at the settlement's LumpSumProbability, has none,
+// and so has an episode whose Poisson count is zero. Otherwise the payments
+// share (1 - settlement share) of the ultimate by Dirichlet weights, given
+// out in date order, and a payment below MinPayment is held over to the
+// next.
+func (s *RunoffSimulator) drawInterimPayments(src shared.RandomSource, st lob.SettlementParams, ultimate shared.Money, duration int, years float64) []event {
 	if duration < 2 {
+		return nil
+	}
+	if st.LumpSumProbability > 0 && src.Bernoulli(st.LumpSumProbability) {
 		return nil
 	}
 	n := src.Poisson(s.params.PaymentsPerYear * years)
@@ -180,16 +196,24 @@ func (s *RunoffSimulator) drawInterimPayments(src shared.RandomSource, ultimate 
 		// Degenerate Dirichlet draw (all weights underflowed): settle at close.
 		return nil
 	}
-	pool := ultimate.MulFloat(1 - s.settlementShare(src)).Dollars()
+	pool := ultimate.MulFloat(1 - settlementShare(src, st)).Dollars()
+	offsets := make([]int, n)
+	for i := range offsets {
+		offsets[i] = s.interiorOffset(src, duration)
+	}
+	sort.Ints(offsets)
+	minimum := shared.FromDollars(s.params.MinPayment)
 	events := make([]event, 0, n)
-	paid := shared.Money(0)
-	for _, w := range weights {
-		amount := shared.FromDollars(pool * w / total)
-		if amount <= 0 {
+	paid, held := shared.Money(0), shared.Money(0)
+	for i, w := range weights {
+		amount := shared.FromDollars(pool*w/total) + held
+		if amount <= 0 || amount < minimum {
+			held = amount // too small to pay on its own: paid with the next
 			continue
 		}
-		events = append(events, event{offset: s.interiorOffset(src, duration), kind: kindPayment, amount: amount})
+		events = append(events, event{offset: offsets[i], kind: kindPayment, amount: amount})
 		paid += amount
+		held = 0
 	}
 	if paid >= ultimate {
 		// Rounding degenerate: fall back to settling everything at close.
@@ -199,10 +223,10 @@ func (s *RunoffSimulator) drawInterimPayments(src shared.RandomSource, ultimate 
 }
 
 // settlementShare is the share of the ultimate an episode with interim
-// payments leaves for its final settlement: SettlementShare, or a Beta draw
-// with that mean when SettlementConcentration is above 0.
-func (s *RunoffSimulator) settlementShare(src shared.RandomSource) float64 {
-	m, k := s.params.SettlementShare, s.params.SettlementConcentration
+// payments leaves for its final settlement: the settlement's Share, or a Beta
+// draw with that mean when its Concentration is above 0.
+func settlementShare(src shared.RandomSource, st lob.SettlementParams) float64 {
+	m, k := st.Share, st.Concentration
 	if k == 0 {
 		return m
 	}

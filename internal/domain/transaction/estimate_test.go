@@ -68,7 +68,7 @@ func TestCaseAdequacyNeverMovesPayments(t *testing.T) {
 		p := params()
 		p.CaseAdequacyMean = mean
 		var out []transaction.Transaction
-		for _, tx := range transaction.NewRunoffSimulator(p).Simulate(random.NewSource(6), estimated(p, claims, 6)) {
+		for _, tx := range transaction.NewRunoffSimulator(p, sections()).Simulate(random.NewSource(6), estimated(p, claims, 6)) {
 			if tx.Type == transaction.Payment {
 				tx.ID = 0 // IDs shift with the number of case rows
 				out = append(out, tx)

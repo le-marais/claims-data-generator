@@ -73,7 +73,7 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 	if err := ctx.Err(); err != nil {
 		return Dataset{}, err
 	}
-	txs := transaction.NewRunoffSimulator(req.LOB.Runoff).
+	txs := transaction.NewRunoffSimulator(req.LOB.Runoff, req.LOB.Claims.Sections).
 		Simulate(src.Split("runoff"), claims)
 	if err := ctx.Err(); err != nil {
 		return Dataset{}, err
