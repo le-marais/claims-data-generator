@@ -21,8 +21,8 @@ func pooledLossRatio(r application.SummaryReport) float64 {
 // not experience: the realized loss ratio is emergent. It moves mostly with
 // the simulated inflation path, which pricing knows only by its mean, and
 // with each underwriting year's adequacy noise. Over seeds 1-40 the motor
-// preset at a 40k initial book landed between 0.94 and 1.08 times the target,
-// and the commercial motor preset at 15k fleets between 0.91 and 1.10; the
+// preset at a 40k initial book landed between 0.93 and 1.08 times the target,
+// and the commercial motor preset at 15k fleets between 0.93 and 1.09; the
 // spread barely narrows with book size. +/-15% leaves room for a preset's
 // pricing and claims assumptions to drift apart by design.
 const presetLossRatioBand = 0.15

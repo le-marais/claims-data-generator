@@ -52,10 +52,12 @@ pricing:
       base_frequency: 0.030
       severity: {kind: lognormal, median: 1800, sigma: 0.9}
       limit: 50000
+      no_excess: true
     - name: third_party_injury
-      base_frequency: 0.009
-      severity: {kind: pareto, scale: 6000, alpha: 2.0}
+      base_frequency: 0.010
+      severity: {kind: lognormal_pareto, median: 5000, sigma: 1.1, scale: 30000, alpha: 1.8}
       limit: 100000
+      no_excess: true
   nil_probability: 0.08
   reopen_probability: 0.04
   reopen_estimate_factor: 0.45
@@ -65,13 +67,18 @@ claims:
   # count at base_frequency times the policy's risk factor, a ground-up loss
   # from its severity, and its own report and close lags. base_frequency 0
   # switches a section off. Losses that do not exceed the policy's excess
-  # are never reported.
+  # are never reported, unless the section takes no excess (no_excess:
+  # true), as liability cover does: it pays every loss from the first
+  # dollar.
   #
   # severity kinds: sum_insured_lognormal is a lognormal fraction of the sum
   # insured in start-year dollars, capped at the sum insured (a total loss);
   # lognormal is a lognormal loss in start-year dollars with median and
-  # sigma; pareto is a Pareto loss in dollars. Neither has a cap of its own:
-  # a section's limit (below) caps what the policy pays.
+  # sigma; pareto is a Pareto loss in dollars; lognormal_pareto is a
+  # lognormal body (median, sigma) below scale and a Pareto tail (alpha)
+  # above it, joined so the density is continuous at scale, which sets the
+  # tail's share of losses. None of the last three has a cap of its own: a
+  # section's limit (below) caps what the policy pays.
   #
   # report_lag is the lognormal occurrence-to-report lag in days. close_lag
   # is the gamma report-to-close lag: a claim costing size_reference in
@@ -107,47 +114,54 @@ claims:
       recoveries: true
     # Third-party property damage: the other party's vehicle and property.
     # The most common Schedule P Part 1B claim: reported within days, small,
-    # and settled in weeks to months. Median 1800 and a 60 day mean close are
-    # typical small property damage repairs settled in weeks. Scored together
-    # with injury. The two third-party frequencies, 0.030 here and 0.009 for
-    # injury, give a liability cost of about $170 per policy-year and about
-    # three property damage claims per injury claim after the excess. limit
-    # 50000 is a common property damage liability limit; it rarely binds at
-    # this severity.
+    # and settled in weeks to months. Median 1800 is a typical small property
+    # damage repair; mean_days 80 was set with injury's lags by calibration
+    # (see below). Liability takes no excess: the policy's excess is an
+    # own-damage term, and the third party is paid in full. Scored together
+    # with injury. The two third-party frequencies, 0.030 here and 0.010 for
+    # injury, give a liability cost of about $175 per policy-year, injury
+    # about half of it, and three property damage claims per injury claim.
+    # limit 50000 is a common property damage liability limit; it rarely
+    # binds at this severity.
     - name: third_party_property
       base_frequency: 0.030
       severity: {kind: lognormal, median: 1800, sigma: 0.9}
       limit: 50000
+      no_excess: true
       report_lag: {median: 3, sigma: 1.2}
       close_lag:
         shape: 1.2
-        mean_days: 60
+        mean_days: 80
         size_reference: 2000
         size_elasticity: 0.2
         risk_loading: 0.3
     # Third-party bodily injury: rarer, heavy-tailed, reported later (median
     # 20 days, about 3.5% more than a year after the accident, so the reported
     # counts and the incurred develop as late claims are reported) and
-    # settled slowly.
+    # settled slowly. Its lognormal_pareto severity has a body of small
+    # claims, about 20% under $2,000 and a median near $5,000, and a Pareto
+    # tail from $30,000 holding about 5% of claims; the average claim is
+    # about $9,300 under the limit. Liability takes no excess.
     # Its lags carry the later-age development of the Schedule P reference:
-    # close_lag shape 1.5 and mean_days 500 were set by calibration against
-    # the 45-company pool (MR-15). They keep paid development at ages 2-5 off
-    # the pool's fast edge, and the factors at age 9-10 inside their bands,
-    # across seeds 1-30.
+    # property damage's mean_days 80, and close_lag shape 2.0 and mean_days
+    # 650 here, were set by calibration against the 45-company pool. They
+    # keep paid development at ages 1-4 off the pool's fast edge, and the
+    # factors at age 9-10 inside their bands, across seeds 1-30.
     # size_reference 10000 is a typical injury claim's cost.
-    # base_frequency 0.009 is set with property damage's (see above). limit
+    # base_frequency 0.010 is set with property damage's (see above). limit
     # 100000 is a common per-person bodily injury limit on US personal auto
     # (the 100 in 100/300); it stops single claims in the millions that
     # personal auto limits do not pay.
     # Re-run the realism gate after any change to either third-party section.
     - name: third_party_injury
-      base_frequency: 0.009
-      severity: {kind: pareto, scale: 6000, alpha: 2.0}
+      base_frequency: 0.010
+      severity: {kind: lognormal_pareto, median: 5000, sigma: 1.1, scale: 30000, alpha: 1.8}
       limit: 100000
+      no_excess: true
       report_lag: {median: 20, sigma: 1.6}
       close_lag:
-        shape: 1.5
-        mean_days: 500
+        shape: 2.0
+        mean_days: 650
         size_reference: 10000
         size_elasticity: 0.25
         risk_loading: 0.3
@@ -200,11 +214,13 @@ claims:
 # expected opening case, and the noise on each estimate), so they move
 # reserves and incurred development, never the loss cost. The bias decays
 # over each claim's life, reaching parity at close, so incurred development
-# carries a persistent signal for IBNER methods to find. 0.90 opens cases
-# about 11% redundant, so incurred develops downward, the shape Schedule P
-# total incurred shows as early reserves are released.
+# carries a persistent signal for IBNER methods to find. 1.05 opens cases
+# about 5% deficient, so incurred develops a little upward as cases
+# strengthen, the shape Schedule P Part 1B's case incurred shows (a median
+# factor of about 1.12 from age 1 to 2); it also keeps the incurred factor
+# at age 2-3 off the pool's low edge.
 runoff:
-  case_adequacy_mean: 0.90
+  case_adequacy_mean: 1.05
   case_adequacy_sigma: 0.35
   payments_per_year: 2.5
   settlement_share: 0.4
