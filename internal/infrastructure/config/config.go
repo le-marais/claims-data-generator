@@ -39,6 +39,20 @@ type BookParams struct {
 	SumInsuredMedian    float64              `yaml:"sum_insured_median" json:"sum_insured_median"`
 	SumInsuredInflation float64              `yaml:"sum_insured_inflation" json:"sum_insured_inflation"`
 	ExcessChoices       []ExcessChoiceParams `yaml:"excess_choices" json:"excess_choices"`
+	Fleet               FleetParams          `yaml:"fleet" json:"fleet"`
+}
+
+// FleetParams mirrors lob.FleetParams for YAML/JSON.
+type FleetParams struct {
+	Size            FleetSizeParams `yaml:"size" json:"size"`
+	SumInsuredSigma float64         `yaml:"sum_insured_sigma" json:"sum_insured_sigma"`
+	RiskSpread      float64         `yaml:"risk_spread" json:"risk_spread"`
+}
+
+// FleetSizeParams mirrors lob.FleetSizeParams for YAML/JSON.
+type FleetSizeParams struct {
+	Median float64 `yaml:"median" json:"median"`
+	Sigma  float64 `yaml:"sigma" json:"sigma"`
 }
 
 // ExcessChoiceParams mirrors lob.ExcessChoice for YAML/JSON.
@@ -297,6 +311,11 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			SumInsuredMedian:    d.Book.SumInsuredMedian,
 			SumInsuredInflation: d.Book.SumInsuredInflation,
 			ExcessChoices:       excesses,
+			Fleet: lob.FleetParams{
+				Size:            lob.FleetSizeParams{Median: d.Book.Fleet.Size.Median, Sigma: d.Book.Fleet.Size.Sigma},
+				SumInsuredSigma: d.Book.Fleet.SumInsuredSigma,
+				RiskSpread:      d.Book.Fleet.RiskSpread,
+			},
 		},
 		Pricing: lob.PricingParams{
 			TargetLossRatio:      d.Pricing.TargetLossRatio,

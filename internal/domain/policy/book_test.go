@@ -43,6 +43,25 @@ func pricingParams() lob.PricingParams {
 	}
 }
 
+// withFleets switches the fleet book on.
+func withFleets(p lob.BookParams, median, sigma, sumInsuredSigma, riskSpread float64) lob.BookParams {
+	p.Fleet = lob.FleetParams{
+		Size:            lob.FleetSizeParams{Median: median, Sigma: sigma},
+		SumInsuredSigma: sumInsuredSigma,
+		RiskSpread:      riskSpread,
+	}
+	return p
+}
+
+// fleetsOf groups a book's policies by fleet, keeping book order within each.
+func fleetsOf(book []policy.Policy) map[int][]policy.Policy {
+	out := map[int][]policy.Policy{}
+	for _, p := range book {
+		out[p.FleetID] = append(out[p.FleetID], p)
+	}
+	return out
+}
+
 func countByStartYear(book []policy.Policy) map[int]int {
 	counts := map[int]int{}
 	for _, p := range book {
@@ -103,7 +122,13 @@ func TestPolicyIDsAreSequential(t *testing.T) {
 }
 
 func TestPolicyFieldConsistency(t *testing.T) {
-	prm := params()
+	for _, prm := range []lob.BookParams{params(), withFleets(params(), 3, 0.8, 0.5, 0.4)} {
+		checkPolicyFields(t, prm)
+	}
+}
+
+func checkPolicyFields(t *testing.T, prm lob.BookParams) {
+	t.Helper()
 	sim := policy.NewBookSimulator(prm, pricingParams())
 	book := sim.Simulate(random.NewSource(2), 1998, 3, 500)
 	validExcess := map[float64]bool{0: true, 100: true, 300: true, 500: true, 1000: true}
@@ -343,5 +368,150 @@ func TestSectionPremiumsMakeUpThePremium(t *testing.T) {
 		if d := sum - p.Premium; d < -1 || d > 1 {
 			t.Fatalf("policy %d section premiums sum to %v, want its premium %v", p.ID, sum, p.Premium)
 		}
+	}
+}
+
+// With no fleet block each policy is a fleet of one vehicle.
+func TestWithoutFleetsEachPolicyIsItsOwnFleet(t *testing.T) {
+	book := policy.NewBookSimulator(params(), pricingParams()).Simulate(random.NewSource(1), 1998, 2, 50)
+	for _, p := range book {
+		if p.FleetID != p.ID {
+			t.Fatalf("policy %d is on fleet %d, want its own", p.ID, p.FleetID)
+		}
+	}
+}
+
+// A fleet is one contract: its vehicles share the cover dates and the
+// excess, and each draws its own sum insured. Policy and fleet IDs both run
+// in sequence.
+func TestFleetVehiclesShareCoverAndExcess(t *testing.T) {
+	book := policy.NewBookSimulator(withFleets(params(), 4, 0.8, 0.5, 0.4), pricingParams()).Simulate(random.NewSource(2), 1998, 3, 300)
+	lastFleet := 0
+	for i, p := range book {
+		if p.ID != i+1 {
+			t.Fatalf("policy %d has ID %d, want %d", i, p.ID, i+1)
+		}
+		if p.FleetID != lastFleet && p.FleetID != lastFleet+1 {
+			t.Fatalf("policy %d is on fleet %d after fleet %d, want fleets in sequence", p.ID, p.FleetID, lastFleet)
+		}
+		lastFleet = p.FleetID
+	}
+	multi := 0
+	for id, vehicles := range fleetsOf(book) {
+		first := vehicles[0]
+		for _, v := range vehicles[1:] {
+			if v.CoverStart != first.CoverStart || v.CoverEnd != first.CoverEnd || v.Excess != first.Excess {
+				t.Fatalf("fleet %d: vehicle %d has cover %s-%s excess %v, want the fleet's %s-%s excess %v",
+					id, v.ID, v.CoverStart, v.CoverEnd, v.Excess, first.CoverStart, first.CoverEnd, first.Excess)
+			}
+			if v.SumInsured == first.SumInsured {
+				t.Fatalf("fleet %d: vehicles %d and %d share a sum insured", id, first.ID, v.ID)
+			}
+		}
+		if len(vehicles) > 1 {
+			multi++
+		}
+	}
+	if multi == 0 {
+		t.Fatal("no fleet has more than one vehicle")
+	}
+}
+
+// The book's size and growth count fleets; the vehicles follow from them.
+func TestBookSizeCountsFleets(t *testing.T) {
+	p := withFleets(params(), 4, 0.8, 0.5, 0.4)
+	p.SizeVolatility = 0
+	book := policy.NewBookSimulator(p, pricingParams()).Simulate(random.NewSource(1), 1998, 3, 100)
+	fleets := map[int]map[int]bool{}
+	for _, v := range book {
+		year := v.CoverStart.Year()
+		if fleets[year] == nil {
+			fleets[year] = map[int]bool{}
+		}
+		fleets[year][v.FleetID] = true
+	}
+	for year, n := range map[int]int{1997: 95, 1998: 100, 1999: 105, 2000: 110} {
+		if got := len(fleets[year]); got != n {
+			t.Errorf("year %d: %d fleets, want %d", year, got, n)
+		}
+	}
+	if len(book) <= 410 {
+		t.Errorf("%d vehicles on 410 fleets, want more vehicles than fleets", len(book))
+	}
+}
+
+func TestFleetSizeCentresOnItsMedian(t *testing.T) {
+	book := policy.NewBookSimulator(withFleets(params(), 3, 0.8, 0, 0), pricingParams()).Simulate(random.NewSource(5), 1998, 1, 10000)
+	var sizes []int
+	for _, vehicles := range fleetsOf(book) {
+		sizes = append(sizes, len(vehicles))
+	}
+	sort.Ints(sizes)
+	if sizes[0] < 1 {
+		t.Fatalf("smallest fleet has %d vehicles, want at least 1", sizes[0])
+	}
+	if median := sizes[len(sizes)/2]; median != 3 {
+		t.Fatalf("median fleet size = %d, want 3", median)
+	}
+	if largest := sizes[len(sizes)-1]; largest < 20 {
+		t.Fatalf("largest of %d fleets has %d vehicles, want a tail beyond 20", len(sizes), largest)
+	}
+}
+
+// A fleet sets the level of its vehicles' values and risk; spread is what is
+// left between vehicles of one fleet. With spread small, almost all the
+// variation in log sum insured and in risk factor lies between fleets.
+func TestFleetsSetTheirVehiclesValueAndRisk(t *testing.T) {
+	p := withFleets(params(), 6, 0.3, 0.8, 0.5)
+	p.Spread = 0.02
+	book := policy.NewBookSimulator(p, pricingParams()).Simulate(random.NewSource(6), 1998, 1, 3000)
+	for name, value := range map[string]func(policy.Policy) float64{
+		"log sum insured": func(v policy.Policy) float64 { return math.Log(v.SumInsured.Dollars()) },
+		"risk factor":     func(v policy.Policy) float64 { return v.RiskFactor },
+	} {
+		var within, between []float64
+		for _, vehicles := range fleetsOf(book) {
+			mean := 0.0
+			for _, v := range vehicles {
+				mean += value(v)
+			}
+			mean /= float64(len(vehicles))
+			between = append(between, mean)
+			for _, v := range vehicles {
+				within = append(within, value(v)-mean)
+			}
+		}
+		if w, b := variance(within), variance(between); w > 0.02*b {
+			t.Errorf("%s: within-fleet variance %.5f is not small against the between-fleet %.5f", name, w, b)
+		}
+	}
+}
+
+func variance(xs []float64) float64 {
+	mean := 0.0
+	for _, x := range xs {
+		mean += x
+	}
+	mean /= float64(len(xs))
+	v := 0.0
+	for _, x := range xs {
+		v += (x - mean) * (x - mean)
+	}
+	return v / float64(len(xs))
+}
+
+// ProjectedSize counts vehicles, the rows a run costs, so a fleet book
+// projects its fleets times the expected fleet size.
+func TestProjectedSizeCountsVehicles(t *testing.T) {
+	plain := params()
+	p := withFleets(plain, 3, 0.8, 0.5, 0.4)
+	want := policy.ProjectedSize(plain, 3, 100) * p.Fleet.ExpectedSize()
+	if got := policy.ProjectedSize(p, 3, 100); math.Abs(got-want) > 1e-9 {
+		t.Fatalf("ProjectedSize = %v, want %v", got, want)
+	}
+	p.SizeVolatility = 0
+	got := len(policy.NewBookSimulator(p, pricingParams()).Simulate(random.NewSource(3), 1998, 8, 2000))
+	if projected := policy.ProjectedSize(p, 8, 2000); math.Abs(float64(got)/projected-1) > 0.05 {
+		t.Fatalf("simulated %d vehicles, projection %v", got, projected)
 	}
 }

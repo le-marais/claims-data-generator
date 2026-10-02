@@ -32,7 +32,8 @@ var staticFS embed.FS
 // book size compounds by the growth factor every year, so a slip in either
 // field can ask for billions of policies - not a security boundary; the CLI
 // stays unlimited. maxProjectedPolicies is the one that bites, since neither
-// scalar bound alone catches compounding. About 240k policies take a second
+// scalar bound alone catches compounding, and on a fleet book it counts the
+// vehicles, the policies that cost run time. About 240k policies take a second
 // on a laptop, so the cap is roughly half a minute of work.
 const (
 	maxYears             = 100
@@ -299,7 +300,7 @@ func checkRunSize(l lob.LineOfBusiness, years, initialBookSize int) error {
 		return fmt.Errorf("initial book size: must be at most %d, got %d", maxInitialBookSize, initialBookSize)
 	}
 	if projected := policy.ProjectedSize(l.Book, years, initialBookSize); projected > maxProjectedPolicies {
-		return fmt.Errorf("run too large: %d policies over %d years at growth %g projects to about %.0f policies, more than the %d limit",
+		return fmt.Errorf("run too large: an initial book of %d over %d years at growth %g projects to about %.0f policies, more than the %d limit",
 			initialBookSize, years, l.Book.GrowthFactor, projected, maxProjectedPolicies)
 	}
 	return nil

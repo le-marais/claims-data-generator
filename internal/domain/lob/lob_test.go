@@ -77,6 +77,21 @@ func TestValidLineOfBusinessPasses(t *testing.T) {
 	}
 }
 
+// validFleet is a fleet book with every field set.
+func validFleet() FleetParams {
+	return FleetParams{Size: FleetSizeParams{Median: 3, Sigma: 1}, SumInsuredSigma: 0.5, RiskSpread: 0.4}
+}
+
+func TestFleetExpectedSize(t *testing.T) {
+	if got := (FleetParams{}).ExpectedSize(); got != 1 {
+		t.Errorf("fleets off: ExpectedSize = %v, want 1", got)
+	}
+	f := validFleet()
+	if got, want := f.ExpectedSize(), 3*math.Exp(0.5); math.Abs(got-want) > 1e-12 {
+		t.Errorf("ExpectedSize = %v, want the lognormal mean %v", got, want)
+	}
+}
+
 func TestValidationNamesTheOffendingField(t *testing.T) {
 	cases := []struct {
 		field  string
@@ -97,6 +112,12 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"book.excess_choices", func(l *LineOfBusiness) { l.Book.ExcessChoices = nil }},
 		{"book.excess_choices", func(l *LineOfBusiness) { l.Book.ExcessChoices[0].Weight = -1 }},
 		{"book.excess_choices", func(l *LineOfBusiness) { l.Book.ExcessChoices[0].Value = -100 }},
+		{"book.fleet.size.median", func(l *LineOfBusiness) { l.Book.Fleet = validFleet(); l.Book.Fleet.Size.Median = -1 }},
+		{"book.fleet.size.median", func(l *LineOfBusiness) { l.Book.Fleet = validFleet(); l.Book.Fleet.Size.Median = 0.5 }},
+		{"book.fleet.size.sigma", func(l *LineOfBusiness) { l.Book.Fleet = validFleet(); l.Book.Fleet.Size.Sigma = -0.1 }},
+		{"book.fleet.sum_insured_sigma", func(l *LineOfBusiness) { l.Book.Fleet = validFleet(); l.Book.Fleet.SumInsuredSigma = -0.1 }},
+		{"book.fleet.risk_spread", func(l *LineOfBusiness) { l.Book.Fleet = validFleet(); l.Book.Fleet.RiskSpread = -0.1 }},
+		{"book.fleet.risk_spread", func(l *LineOfBusiness) { l.Book.Fleet = validFleet(); l.Book.Fleet.RiskSpread = math.NaN() }},
 		{"pricing.target_loss_ratio", func(l *LineOfBusiness) { l.Pricing.TargetLossRatio = 0 }},
 		{"pricing.adequacy_volatility", func(l *LineOfBusiness) { l.Pricing.AdequacyVolatility = -0.1 }},
 		{"pricing.sections[0].base_frequency", func(l *LineOfBusiness) { l.Pricing.Sections[0].BaseFrequency = -0.1 }},
@@ -246,6 +267,13 @@ func TestValidateSkipsSwitchedOffBlocks(t *testing.T) {
 		}},
 		{"salvage off", func(l *LineOfBusiness) {
 			l.Claims.Recoveries.Salvage = RecoveryTypeParams{}
+		}},
+		{"fleets", func(l *LineOfBusiness) { l.Book.Fleet = validFleet() }},
+		{"fleets with no spreads", func(l *LineOfBusiness) {
+			l.Book.Fleet = FleetParams{Size: FleetSizeParams{Median: 1}}
+		}},
+		{"fleets off", func(l *LineOfBusiness) {
+			l.Book.Fleet = FleetParams{Size: FleetSizeParams{Sigma: -1}, SumInsuredSigma: -1, RiskSpread: -1}
 		}},
 		{"subrogation off", func(l *LineOfBusiness) {
 			l.Claims.Recoveries.Subrogation = RecoveryTypeParams{}

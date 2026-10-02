@@ -18,13 +18,15 @@ type LineOfBusiness struct {
 
 // BookParams drives the policy book simulation.
 type BookParams struct {
-	// GrowthFactor is the year-on-year trend in policy count; each year's
-	// book size is previous size x GrowthFactor x lognormal noise.
+	// GrowthFactor is the year-on-year trend in the number of fleets written,
+	// which without a fleet book is the policy count; each year's book size is
+	// previous size x GrowthFactor x lognormal noise.
 	GrowthFactor float64
 	// SizeVolatility is the sigma of the mean-1 lognormal noise on book size.
 	SizeVolatility float64
 	// Spread is the heterogeneity knob: sigma of the sum insured lognormal
-	// and the standard deviation of the mean-1 risk factor gamma.
+	// and the standard deviation of the mean-1 risk factor gamma. With a
+	// fleet book it is the heterogeneity of the vehicles within a fleet.
 	Spread float64
 	// SumInsuredMedian is the year-1 median sum insured in dollars.
 	SumInsuredMedian float64
@@ -32,6 +34,48 @@ type BookParams struct {
 	SumInsuredInflation float64
 	// ExcessChoices is the discrete set of available excesses with weights.
 	ExcessChoices []ExcessChoice
+	// Fleet switches on a fleet book, in which each policy is one vehicle on
+	// a fleet. The zero value writes every policy as its own fleet.
+	Fleet FleetParams
+}
+
+// FleetParams drives a fleet book: fleets are written first, each with its
+// own size, level of vehicle value and risk, and then each vehicle on a fleet
+// is a policy drawn around the fleet's values. A fleet is one contract, so
+// its vehicles share its cover dates and excess. A Size.Median of 0 switches
+// fleets off, and the other fields are then not required.
+type FleetParams struct {
+	// Size is the lognormal number of vehicles on a fleet, rounded to a whole
+	// number and at least 1.
+	Size FleetSizeParams
+	// SumInsuredSigma is the lognormal sigma of a fleet's median vehicle sum
+	// insured around the book's SumInsuredMedian: how far fleets' vehicle
+	// values differ, a courier's vans against a haulier's tractors.
+	SumInsuredSigma float64
+	// RiskSpread is the standard deviation of the mean-one gamma fleet risk
+	// factor, which scales the risk factor of every vehicle on the fleet:
+	// how far operators differ in drivers, routes and safety. 0 gives every
+	// fleet a factor of 1.
+	RiskSpread float64
+}
+
+// FleetSizeParams is the lognormal number of vehicles on a fleet.
+type FleetSizeParams struct {
+	Median float64
+	Sigma  float64
+}
+
+// Enabled reports whether the book is written as fleets.
+func (f FleetParams) Enabled() bool { return f.Size.Median > 0 }
+
+// ExpectedSize is about the mean number of vehicles on a fleet: the
+// lognormal mean, ignoring the rounding to whole vehicles, and 1 with fleets
+// off.
+func (f FleetParams) ExpectedSize() float64 {
+	if !f.Enabled() {
+		return 1
+	}
+	return math.Max(1, f.Size.Median*math.Exp(f.Size.Sigma*f.Size.Sigma/2))
 }
 
 type ExcessChoice struct {
@@ -383,6 +427,36 @@ func (b BookParams) validate() error {
 	}
 	if totalWeight <= 0 {
 		return fmt.Errorf("book.excess_choices: weights must sum to a positive value")
+	}
+	return b.Fleet.validate()
+}
+
+func (f FleetParams) validate() error {
+	if err := checkFinite(
+		namedFloat{"book.fleet.size.median", f.Size.Median},
+		namedFloat{"book.fleet.size.sigma", f.Size.Sigma},
+		namedFloat{"book.fleet.sum_insured_sigma", f.SumInsuredSigma},
+		namedFloat{"book.fleet.risk_spread", f.RiskSpread},
+	); err != nil {
+		return err
+	}
+	if f.Size.Median < 0 {
+		return fmt.Errorf("book.fleet.size.median: must not be negative, got %v", f.Size.Median)
+	}
+	if f.Size.Median == 0 {
+		return nil // switched off: the rest of the block is never read
+	}
+	if f.Size.Median < 1 {
+		return fmt.Errorf("book.fleet.size.median: must be 0 (no fleets) or at least 1, got %v", f.Size.Median)
+	}
+	if f.Size.Sigma < 0 {
+		return fmt.Errorf("book.fleet.size.sigma: must not be negative, got %v", f.Size.Sigma)
+	}
+	if f.SumInsuredSigma < 0 {
+		return fmt.Errorf("book.fleet.sum_insured_sigma: must not be negative, got %v", f.SumInsuredSigma)
+	}
+	if f.RiskSpread < 0 {
+		return fmt.Errorf("book.fleet.risk_spread: must not be negative, got %v", f.RiskSpread)
 	}
 	return nil
 }
