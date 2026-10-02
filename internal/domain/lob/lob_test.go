@@ -131,6 +131,12 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"claims.sections[0].close_lag.size_elasticity", func(l *LineOfBusiness) { l.Claims.Sections[0].CloseLag.SizeElasticity = -0.1 }},
 		{"claims.sections[1].close_lag.size_reference", func(l *LineOfBusiness) { l.Claims.Sections[1].CloseLag.SizeElasticity = 0.3 }},
 		{"claims.sections[0].close_lag.risk_loading", func(l *LineOfBusiness) { l.Claims.Sections[0].CloseLag.RiskLoading = -0.1 }},
+		{"claims.sections[1].limit", func(l *LineOfBusiness) { l.Claims.Sections[1].Limit = -1 }},
+		{"claims.sections[1].limit", func(l *LineOfBusiness) { l.Claims.Sections[1].Limit = math.Inf(1) }},
+		{"claims.sections[0].limit", func(l *LineOfBusiness) { l.Claims.Sections[0].Limit = 50000 }},
+		{"pricing.sections[1].limit", func(l *LineOfBusiness) { l.Pricing.Sections[1].Limit = -1 }},
+		{"pricing.sections[1].limit", func(l *LineOfBusiness) { l.Pricing.Sections[1].Limit = math.NaN() }},
+		{"pricing.sections[0].limit", func(l *LineOfBusiness) { l.Pricing.Sections[0].Limit = 50000 }},
 		{"runoff.case_adequacy_mean", func(l *LineOfBusiness) { l.Runoff.CaseAdequacyMean = 0 }},
 		{"runoff.case_adequacy_sigma", func(l *LineOfBusiness) { l.Runoff.CaseAdequacySigma = -1 }},
 		{"runoff.payments_per_year", func(l *LineOfBusiness) { l.Runoff.PaymentsPerYear = -1 }},
@@ -261,6 +267,16 @@ func TestValidateSkipsSwitchedOffBlocks(t *testing.T) {
 		{"two sections scored", func(l *LineOfBusiness) {
 			l.Claims.Sections[0].Scored = true
 		}},
+		{"limited pareto third party", func(l *LineOfBusiness) {
+			l.Claims.Sections[1].Limit = 100000
+			l.Pricing.Sections[1].Limit = 100000
+		}},
+		{"limited lognormal third party", func(l *LineOfBusiness) {
+			l.Claims.Sections[1].Severity = SeverityParams{Kind: Lognormal, Median: 2000, Sigma: 0.8}
+			l.Claims.Sections[1].Limit = 50000
+			l.Pricing.Sections[1].Severity = SeverityParams{Kind: Lognormal, Median: 2000, Sigma: 0.8}
+			l.Pricing.Sections[1].Limit = 50000
+		}},
 	}
 	for _, c := range cases {
 		l := validMotor()
@@ -313,5 +329,16 @@ func TestScoredSections(t *testing.T) {
 	l.Claims.Sections[0].Scored, l.Claims.Sections[1].Scored = false, false
 	if got := l.Claims.ScoredSections(); got != nil {
 		t.Errorf("ScoredSections() with none scored = %v, want nil", got)
+	}
+}
+
+// A sum-insured section's limit is its sum insured, so a separate limit on it
+// is rejected rather than silently stacked on the cap.
+func TestValidateRejectsALimitOnASumInsuredSection(t *testing.T) {
+	l := validMotor()
+	l.Claims.Sections[0].Limit = 50000
+	want := "claims.sections[0].limit: must be 0 on a sum_insured_lognormal section, whose limit is its sum insured, got 50000"
+	if err := l.Validate(); err == nil || err.Error() != want {
+		t.Errorf("got %v, want %q", err, want)
 	}
 }

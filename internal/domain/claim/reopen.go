@@ -36,8 +36,10 @@ func (s *ReopenSimulator) WithInflation(x InflationIndex) *ReopenSimulator {
 // makes no draw at all. Claims that do not reopen are returned unchanged.
 //
 // The reopen's additional cost is capped at the cover the claim has left, so
-// total paid never exceeds CoverLimit. A claim already paid up to its limit
-// (a total loss) has nothing left to pay and does not reopen.
+// total paid never exceeds CoverLimit, the sum insured less excess or the
+// section's limit. A claim already paid up to its limit (a total loss, or a
+// liability claim settled at its limit) has nothing left to pay and does not
+// reopen.
 func (s *ReopenSimulator) Apply(src shared.RandomSource, claims []Claim) []Claim {
 	r := s.params.Reopening
 	if r.Probability <= 0 {

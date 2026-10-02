@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/le-marais/claimsgen/internal/application"
+	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/domain/shared"
 	"github.com/le-marais/claimsgen/internal/domain/transaction"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
@@ -170,8 +171,9 @@ func TestDatasetInvariants(t *testing.T) {
 		} else if s.paid <= 0 {
 			t.Fatalf("claim %d total paid %v not positive", c.ID, s.paid)
 		}
-		// Every payment adds up to exactly the true cost, and own damage never
-		// pays beyond the cover, reopen included.
+		// Every payment adds up to exactly the true cost, and no claim pays
+		// beyond its cover limit, reopen included: sum insured minus excess on
+		// a sum-insured section, the section's limit on a limited one.
 		want := shared.Money(0)
 		for _, e := range c.Episodes {
 			if !e.Nil {
@@ -181,11 +183,20 @@ func TestDatasetInvariants(t *testing.T) {
 		if s.paid != want {
 			t.Fatalf("claim %d total paid %v, want its true cost %v", c.ID, s.paid, want)
 		}
-		if c.CoverLimit > 0 {
+		sec := req.LOB.Claims.Sections[c.Section]
+		limit := shared.Money(0) // unlimited
+		switch {
+		case sec.Severity.Kind == lob.SumInsuredLognormal:
 			pol := policies[c.PolicyID]
-			if limit := pol.sumInsured - pol.excess; c.CoverLimit != limit || s.paid > limit {
-				t.Fatalf("claim %d paid %v against cover limit %v, want at most sum insured minus excess %v", c.ID, s.paid, c.CoverLimit, limit)
-			}
+			limit = pol.sumInsured - pol.excess
+		case sec.Limit > 0:
+			limit = shared.FromDollars(sec.Limit)
+		}
+		if c.CoverLimit != limit {
+			t.Fatalf("claim %d in section %s has cover limit %v, want %v", c.ID, sec.Name, c.CoverLimit, limit)
+		}
+		if limit > 0 && s.paid > limit {
+			t.Fatalf("claim %d paid %v, above its cover limit %v", c.ID, s.paid, limit)
 		}
 		if c.Reopened() && !s.afterReopen {
 			t.Fatalf("reopened claim %d has no transactions after its first close", c.ID)

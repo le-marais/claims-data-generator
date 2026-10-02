@@ -44,12 +44,16 @@ pricing:
     - name: own_damage
       base_frequency: 0.096
       severity: {kind: sum_insured_lognormal, median_fraction: 0.12, sigma: 1.0}
+    # Each third-party section prices with the same limit as its claims
+    # section below.
     - name: third_party_property
       base_frequency: 0.030
       severity: {kind: lognormal, median: 1800, sigma: 0.9}
+      limit: 50000
     - name: third_party_injury
       base_frequency: 0.009
       severity: {kind: pareto, scale: 6000, alpha: 2.0}
+      limit: 100000
   nil_probability: 0.08
   reopen_probability: 0.04
   reopen_estimate_factor: 0.45
@@ -72,6 +76,11 @@ claims:
   # mean_days on average, and the mean scales by
   # (size / size_reference)^size_elasticity and risk factor^risk_loading,
   # so larger and riskier claims take longer, smoothly.
+  #
+  # limit is the most the policy pays on one claim, reopen included, in
+  # nominal dollars: a contract term, so claims inflation does not trend it.
+  # 0 or absent is unlimited. A sum_insured_lognormal section leaves it at 0,
+  # because its sum insured is its limit.
   #
   # recoveries: true makes the section's claims eligible for salvage and
   # subrogation. scored: true marks a section the realism gate scores
@@ -99,10 +108,16 @@ claims:
     # The most common Schedule P Part 1B claim: reported within days, small,
     # and settled in weeks to months. Median 1800 and a 60 day mean close are
     # typical small property damage repairs settled in weeks. Scored together
-    # with injury.
+    # with injury. The two third-party frequencies, 0.030 here and 0.009 for
+    # injury, keep the liability cost per policy-year close to the earlier
+    # single third-party section's (about $170) and give about three property
+    # damage claims per injury claim after the excess. limit 50000 is a
+    # common property damage liability limit; it rarely binds at this
+    # severity.
     - name: third_party_property
       base_frequency: 0.030
       severity: {kind: lognormal, median: 1800, sigma: 0.9}
+      limit: 50000
       report_lag: {median: 3, sigma: 1.2}
       close_lag:
         shape: 1.2
@@ -118,10 +133,15 @@ claims:
     # close_lag.mean_days 400 was set by calibration so paid and incurred
     # development at ages 9-10 sit inside the bands across seeds (360-440 all
     # passed). size_reference 10000 is a typical injury claim's cost.
+    # base_frequency 0.009 is set with property damage's (see above). limit
+    # 100000 is a common per-person bodily injury limit on US personal auto
+    # (the 100 in 100/300); it stops single claims in the millions that
+    # personal auto limits do not pay.
     # Re-run the realism gate after any change to either third-party section.
     - name: third_party_injury
       base_frequency: 0.009
       severity: {kind: pareto, scale: 6000, alpha: 2.0}
+      limit: 100000
       report_lag: {median: 20, sigma: 1.6}
       close_lag:
         shape: 1.0

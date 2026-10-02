@@ -81,6 +81,9 @@ type PricingSectionParams struct {
 	BaseFrequency float64
 	// Severity is the assumed ground-up loss distribution.
 	Severity SeverityParams
+	// Limit is the assumed most the policy pays on one claim, in nominal
+	// dollars; 0 is unlimited. See SectionParams.Limit.
+	Limit float64
 }
 
 // ClaimParams drives claim event simulation.
@@ -115,11 +118,18 @@ type SectionParams struct {
 	// 0 switches the section off.
 	BaseFrequency float64
 	Severity      SeverityParams
-	ReportLag     ReportLagParams
-	CloseLag      CloseLagParams
+	// Limit is the most the policy pays on one claim over its whole life,
+	// reopen included, in nominal dollars. It is a contract term, so claims
+	// inflation does not trend it and erodes it over the years. 0 is
+	// unlimited. A sum-insured severity is already limited by its sum
+	// insured, so it must leave Limit at 0.
+	Limit     float64
+	ReportLag ReportLagParams
+	CloseLag  CloseLagParams
 	// Recoveries makes the section's claims eligible for salvage and
-	// subrogation. Salvage further needs a total loss, which only a
-	// sum-insured severity can reach.
+	// subrogation. Salvage further needs a total loss on a sum-insured
+	// severity: a liability claim settled at its Limit leaves no wreck to
+	// sell.
 	Recoveries bool
 	// Scored marks a section the realism gate scores against the Schedule P
 	// reference. The gate scores the scored sections together, their claims
@@ -136,12 +146,13 @@ const (
 	// in start-year dollars, capped at the sum insured: a claim that reaches
 	// the cap is a total loss.
 	SumInsuredLognormal SeverityKind = "sum_insured_lognormal"
-	// Pareto is a Pareto loss in start-year dollars with no cap, for
-	// liability.
+	// Pareto is a Pareto loss in start-year dollars with no cap of its own,
+	// for liability; a section Limit caps what the policy pays.
 	Pareto SeverityKind = "pareto"
-	// Lognormal is a lognormal loss in start-year dollars with no cap, for
-	// claims sized independently of the insured's own cover, such as
-	// third-party property damage.
+	// Lognormal is a lognormal loss in start-year dollars with no cap of its
+	// own, for claims sized independently of the insured's own cover, such
+	// as third-party property damage; a section Limit caps what the policy
+	// pays.
 	Lognormal SeverityKind = "lognormal"
 )
 
@@ -232,7 +243,8 @@ type ReopeningParams struct {
 	Probability float64
 	// EstimateFactor is the mean additional cost of the reopen episode as a
 	// factor of the claim's ultimate; it may exceed 1. Reopens on a
-	// sum-insured section are capped at the cover the claim has left.
+	// sum-insured or limited section are capped at the cover the claim has
+	// left.
 	EstimateFactor float64
 	// EstimateSigma is the sigma of the mean-1 lognormal noise on the
 	// reopen's additional cost.
@@ -431,7 +443,25 @@ func (s PricingSectionParams) validate(prefix string) error {
 	if s.BaseFrequency == 0 {
 		return nil // priced at nothing: the severity is never read
 	}
-	return s.Severity.validate(prefix + ".severity")
+	if err := s.Severity.validate(prefix + ".severity"); err != nil {
+		return err
+	}
+	return validateLimit(prefix, s.Limit, s.Severity.Kind)
+}
+
+// validateLimit checks a section's per-claim limit: finite, not negative, and
+// 0 on a sum-insured severity, whose limit is already its sum insured.
+func validateLimit(prefix string, limit float64, kind SeverityKind) error {
+	if err := checkFinite(namedFloat{prefix + ".limit", limit}); err != nil {
+		return err
+	}
+	if limit < 0 {
+		return fmt.Errorf("%s.limit: must not be negative, got %v", prefix, limit)
+	}
+	if limit != 0 && kind == SumInsuredLognormal {
+		return fmt.Errorf("%s.limit: must be 0 on a sum_insured_lognormal section, whose limit is its sum insured, got %v", prefix, limit)
+	}
+	return nil
 }
 
 func (c ClaimParams) validate() error {
@@ -490,6 +520,9 @@ func (s SectionParams) validate(prefix string) error {
 		return nil
 	}
 	if err := s.Severity.validate(prefix + ".severity"); err != nil {
+		return err
+	}
+	if err := validateLimit(prefix, s.Limit, s.Severity.Kind); err != nil {
 		return err
 	}
 	if err := s.ReportLag.validate(prefix + ".report_lag"); err != nil {

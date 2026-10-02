@@ -28,7 +28,10 @@ const (
 // recovery simulator reads: they decide which sections are eligible.
 func withSections(p lob.RecoveryParams) lob.ClaimParams {
 	return lob.ClaimParams{
-		Sections:   []lob.SectionParams{{Name: "own_damage", Recoveries: true}, {Name: "third_party"}},
+		Sections: []lob.SectionParams{
+			{Name: "own_damage", Severity: lob.SeverityParams{Kind: lob.SumInsuredLognormal}, Recoveries: true},
+			{Name: "third_party"},
+		},
 		Recoveries: p,
 	}
 }
@@ -55,7 +58,7 @@ func recoveryFixture(t *testing.T, p lob.RecoveryParams, seed uint64) ([]claim.C
 }
 
 // Subrogation attaches to paid claims in a section with recoveries, salvage
-// only to paid total losses (MR-7).
+// only to paid total losses on a sum-insured section (MR-7).
 func TestRecoveriesOnlyOnEligibleClaims(t *testing.T) {
 	certain := recoveryParams()
 	certain.Salvage.Probability = 1
@@ -65,7 +68,7 @@ func TestRecoveriesOnlyOnEligibleClaims(t *testing.T) {
 	eligible := map[transaction.Type]map[int]bool{transaction.Salvage: {}, transaction.Subrogation: {}}
 	for _, c := range claims {
 		eligible[transaction.Subrogation][c.ID] = c.Section == ownDamage && !c.Nil()
-		eligible[transaction.Salvage][c.ID] = c.TotalLoss() && !c.Nil()
+		eligible[transaction.Salvage][c.ID] = c.Section == ownDamage && c.TotalLoss() && !c.Nil()
 	}
 	got := map[transaction.Type]map[int]bool{transaction.Salvage: {}, transaction.Subrogation: {}}
 	for _, tx := range txs {
@@ -216,5 +219,41 @@ func TestSalvageArrivesSoonerThanSubrogationOnAverage(t *testing.T) {
 	if salvageSum/salvageN >= subroSum/subroN {
 		t.Errorf("mean salvage lag %v days >= mean subrogation lag %v days, want salvage sooner",
 			salvageSum/salvageN, subroSum/subroN)
+	}
+}
+
+// A liability claim settled at its limit reaches its cover limit too, but
+// there is no wreck to sell: salvage needs a sum-insured section, while
+// subrogation still applies.
+func TestNoSalvageOnALimitedSection(t *testing.T) {
+	certain := recoveryParams()
+	certain.Salvage.Probability = 1
+	certain.Subrogation.Probability = 1
+	for _, sev := range []lob.SeverityParams{
+		{Kind: lob.Pareto, Scale: 4000, Alpha: 2.2},
+		{Kind: lob.Lognormal, Median: 2000, Sigma: 0.8},
+	} {
+		p := lob.ClaimParams{
+			Sections:   []lob.SectionParams{{Name: "liability", Severity: sev, Limit: 3000, Recoveries: true}},
+			Recoveries: certain,
+		}
+		claims := testClaims(100)
+		for i := range claims {
+			claims[i].CoverLimit = claims[i].Episodes[0].Ultimate // settled at the limit
+		}
+		txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(1), claims)
+		txs = transaction.NewRecoverySimulator(p).Apply(random.NewSource(1), claims, txs)
+		subrogated := 0
+		for _, tx := range txs {
+			switch tx.Type {
+			case transaction.Salvage:
+				t.Fatalf("%s: salvage on limited liability claim %d", sev.Kind, tx.ClaimID)
+			case transaction.Subrogation:
+				subrogated++
+			}
+		}
+		if subrogated == 0 {
+			t.Fatalf("%s: no subrogation; the fixture did not exercise recoveries", sev.Kind)
+		}
 	}
 }
