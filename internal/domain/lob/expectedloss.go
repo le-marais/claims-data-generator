@@ -60,8 +60,8 @@ func (p PricingParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflat
 //
 // A sum-insured severity is expressed in base-year sum-insured terms (baseSI =
 // sumInsured / siDrift), trended by the claims index only, and capped at the
-// drifted sumInsured (a total loss). A Pareto or Lognormal severity keeps the
-// claims index. With a Limit L its cost per claim is E[min((X-d)+, L)] =
+// drifted sumInsured (a total loss). A Pareto, Lognormal or LognormalPareto
+// severity keeps the claims index on its dollar amounts. With a Limit L its cost per claim is E[min((X-d)+, L)] =
 // stopLoss(d) - stopLoss(d+L) for excess d; the limit is nominal, so it is not
 // trended. With no limit it is the uncapped stop-loss. A section that takes
 // no excess prices at d = 0.
@@ -102,6 +102,13 @@ func (p PricingParams) ExpectedSectionLoss(section int, sumInsured, excess, risk
 		cost := stopLossLognormal(median, sev.Sigma, excess)
 		if sec.Limit > 0 {
 			cost -= stopLossLognormal(median, sev.Sigma, excess+sec.Limit)
+		}
+		return perClaim * cost
+	case LognormalPareto:
+		d := newLognormalPareto(inflationFactor*sev.Median, sev.Sigma, inflationFactor*sev.Scale, sev.Alpha)
+		cost := d.stopLoss(excess)
+		if sec.Limit > 0 {
+			cost -= d.stopLoss(excess + sec.Limit)
 		}
 		return perClaim * cost
 	}

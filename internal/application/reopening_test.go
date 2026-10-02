@@ -42,10 +42,12 @@ func TestReopeningOffLeavesNoPostCloseActivity(t *testing.T) {
 }
 
 // TestDefaultPresetGeneratesReopenedClaims proves the feature is on by
-// default, including the nil-reopen pattern.
+// default, including the nil-reopen pattern. At 8% nil and 4% reopen the
+// book expects about ten reopened nil claims, so none at all would mean the
+// pattern is off rather than unlucky.
 func TestDefaultPresetGeneratesReopenedClaims(t *testing.T) {
 	req := request(t)
-	req.InitialBookSize = 2000
+	req.InitialBookSize = 6000
 	ds, err := application.GenerateDataset(t.Context(), random.NewSource(18), req)
 	if err != nil {
 		t.Fatal(err)
@@ -63,7 +65,7 @@ func TestDefaultPresetGeneratesReopenedClaims(t *testing.T) {
 		t.Fatal("default preset generated no reopened claims")
 	}
 	if nilReopened == 0 {
-		t.Fatal("default preset generated no reopened nil claims (expected some at 8% nil x 4% reopen with 2000 policies x 3 years)")
+		t.Fatal("default preset generated no reopened nil claims (expected about ten at 8% nil x 4% reopen with 6000 policies x 3 years)")
 	}
 }
 

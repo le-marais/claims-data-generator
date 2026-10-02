@@ -104,6 +104,18 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"claims.sections[1].severity.sigma", func(l *LineOfBusiness) {
 			l.Claims.Sections[1].Severity = SeverityParams{Kind: Lognormal, Median: 2000}
 		}},
+		{"claims.sections[1].severity.median", func(l *LineOfBusiness) {
+			l.Claims.Sections[1].Severity = SeverityParams{Kind: LognormalPareto, Sigma: 1, Scale: 25000, Alpha: 2}
+		}},
+		{"claims.sections[1].severity.sigma", func(l *LineOfBusiness) {
+			l.Claims.Sections[1].Severity = SeverityParams{Kind: LognormalPareto, Median: 4000, Scale: 25000, Alpha: 2}
+		}},
+		{"claims.sections[1].severity.scale", func(l *LineOfBusiness) {
+			l.Claims.Sections[1].Severity = SeverityParams{Kind: LognormalPareto, Median: 4000, Sigma: 1, Alpha: 2}
+		}},
+		{"claims.sections[1].severity.alpha", func(l *LineOfBusiness) {
+			l.Claims.Sections[1].Severity = SeverityParams{Kind: LognormalPareto, Median: 4000, Sigma: 1, Scale: 25000, Alpha: 1}
+		}},
 		{"book.growth_factor", func(l *LineOfBusiness) { l.Book.GrowthFactor = 0 }},
 		{"book.size_volatility", func(l *LineOfBusiness) { l.Book.SizeVolatility = -0.1 }},
 		{"book.spread", func(l *LineOfBusiness) { l.Book.Spread = 0 }},
@@ -261,6 +273,10 @@ func TestValidateSkipsSwitchedOffBlocks(t *testing.T) {
 		name   string
 		mutate func(*LineOfBusiness)
 	}{
+		{"lognormal-pareto third party", func(l *LineOfBusiness) {
+			l.Claims.Sections[1].Severity = SeverityParams{Kind: LognormalPareto, Median: 4000, Sigma: 1, Scale: 25000, Alpha: 2}
+			l.Pricing.Sections[1].Severity = SeverityParams{Kind: LognormalPareto, Median: 4000, Sigma: 1, Scale: 25000, Alpha: 2}
+		}},
 		{"lognormal third party", func(l *LineOfBusiness) {
 			l.Claims.Sections[1].Severity = SeverityParams{Kind: Lognormal, Median: 2000, Sigma: 0.8}
 			l.Pricing.Sections[1].Severity = SeverityParams{Kind: Lognormal, Median: 2000, Sigma: 0.8}

@@ -201,6 +201,12 @@ const (
 	// as third-party property damage; a section Limit caps what the policy
 	// pays.
 	Lognormal SeverityKind = "lognormal"
+	// LognormalPareto is a lognormal body truncated at a threshold and a
+	// Pareto tail above it, in start-year dollars, for liability claims with
+	// many small losses and a heavy tail, such as bodily injury. The tail's
+	// share of losses keeps the density continuous at the threshold. Like
+	// Pareto, it has no cap of its own.
+	LognormalPareto SeverityKind = "lognormal_pareto"
 )
 
 // SeverityParams is a section's ground-up loss distribution. Kind selects
@@ -219,6 +225,9 @@ type SeverityParams struct {
 	// the tail index, which must exceed 1 for a finite mean.
 	Scale float64
 	Alpha float64
+	// LognormalPareto reads all four: Median and Sigma for its body
+	// lognormal, Scale for the threshold where its tail starts, and Alpha for
+	// the tail index.
 }
 
 // ReportLagParams is the lognormal occurrence-to-report lag in days.
@@ -710,8 +719,21 @@ func (s SeverityParams) validate(prefix string) error {
 		if s.Sigma <= 0 {
 			return fmt.Errorf("%s.sigma: must be positive, got %v", prefix, s.Sigma)
 		}
+	case LognormalPareto:
+		if s.Median <= 0 {
+			return fmt.Errorf("%s.median: must be positive, got %v", prefix, s.Median)
+		}
+		if s.Sigma <= 0 {
+			return fmt.Errorf("%s.sigma: must be positive, got %v", prefix, s.Sigma)
+		}
+		if s.Scale <= 0 {
+			return fmt.Errorf("%s.scale: must be positive, got %v", prefix, s.Scale)
+		}
+		if s.Alpha <= 1 {
+			return fmt.Errorf("%s.alpha: must exceed 1 for a finite mean, got %v", prefix, s.Alpha)
+		}
 	default:
-		return fmt.Errorf("%s.kind: must be %q, %q or %q, got %q", prefix, SumInsuredLognormal, Pareto, Lognormal, s.Kind)
+		return fmt.Errorf("%s.kind: must be %q, %q, %q or %q, got %q", prefix, SumInsuredLognormal, Pareto, Lognormal, LognormalPareto, s.Kind)
 	}
 	return nil
 }
