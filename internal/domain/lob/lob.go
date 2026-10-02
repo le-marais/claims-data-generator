@@ -81,6 +81,9 @@ type PricingSectionParams struct {
 	BaseFrequency float64
 	// Severity is the assumed ground-up loss distribution.
 	Severity SeverityParams
+	// Limit is the assumed most the policy pays on one claim, in nominal
+	// dollars; 0 is unlimited. See SectionParams.Limit.
+	Limit float64
 }
 
 // ClaimParams drives claim event simulation.
@@ -115,14 +118,23 @@ type SectionParams struct {
 	// 0 switches the section off.
 	BaseFrequency float64
 	Severity      SeverityParams
-	ReportLag     ReportLagParams
-	CloseLag      CloseLagParams
+	// Limit is the most the policy pays on one claim over its whole life,
+	// reopen included, in nominal dollars. It is a contract term, so claims
+	// inflation does not trend it and erodes it over the years. 0 is
+	// unlimited. A sum-insured severity is already limited by its sum
+	// insured, so it must leave Limit at 0.
+	Limit     float64
+	ReportLag ReportLagParams
+	CloseLag  CloseLagParams
 	// Recoveries makes the section's claims eligible for salvage and
-	// subrogation. Salvage further needs a total loss, which only a
-	// sum-insured severity can reach.
+	// subrogation. Salvage further needs a total loss on a sum-insured
+	// severity: a liability claim settled at its Limit leaves no wreck to
+	// sell.
 	Recoveries bool
-	// Scored marks the section the realism gate scores against the Schedule
-	// P reference, at most one. With none marked it scores the whole book.
+	// Scored marks a section the realism gate scores against the Schedule P
+	// reference. The gate scores the scored sections together, their claims
+	// against their combined premium; with none marked it scores the whole
+	// book.
 	Scored bool
 }
 
@@ -134,9 +146,14 @@ const (
 	// in start-year dollars, capped at the sum insured: a claim that reaches
 	// the cap is a total loss.
 	SumInsuredLognormal SeverityKind = "sum_insured_lognormal"
-	// Pareto is a Pareto loss in start-year dollars with no cap, for
-	// liability.
+	// Pareto is a Pareto loss in start-year dollars with no cap of its own,
+	// for liability; a section Limit caps what the policy pays.
 	Pareto SeverityKind = "pareto"
+	// Lognormal is a lognormal loss in start-year dollars with no cap of its
+	// own, for claims sized independently of the insured's own cover, such
+	// as third-party property damage; a section Limit caps what the policy
+	// pays.
+	Lognormal SeverityKind = "lognormal"
 )
 
 // SeverityParams is a section's ground-up loss distribution. Kind selects
@@ -144,9 +161,13 @@ const (
 type SeverityParams struct {
 	Kind SeverityKind
 	// MedianFraction and Sigma parameterize SumInsuredLognormal: the median
-	// loss as a fraction of sum insured, and the lognormal sigma.
+	// loss as a fraction of sum insured, and the lognormal sigma. Sigma is
+	// shared with Lognormal.
 	MedianFraction float64
 	Sigma          float64
+	// Median and Sigma parameterize Lognormal: the median loss in start-year
+	// dollars, and the lognormal sigma.
+	Median float64
 	// Scale and Alpha parameterize Pareto: the minimum loss in dollars, and
 	// the tail index, which must exceed 1 for a finite mean.
 	Scale float64
@@ -222,7 +243,8 @@ type ReopeningParams struct {
 	Probability float64
 	// EstimateFactor is the mean additional cost of the reopen episode as a
 	// factor of the claim's ultimate; it may exceed 1. Reopens on a
-	// sum-insured section are capped at the cover the claim has left.
+	// sum-insured or limited section are capped at the cover the claim has
+	// left.
 	EstimateFactor float64
 	// EstimateSigma is the sigma of the mean-1 lognormal noise on the
 	// reopen's additional cost.
@@ -312,15 +334,16 @@ func (l LineOfBusiness) checkPricingSections() error {
 	return nil
 }
 
-// ScoredSection is the index of the section the realism gate scores, or -1
-// when none is marked and the gate scores the whole book.
-func (c ClaimParams) ScoredSection() int {
+// ScoredSections are the indices of the sections the realism gate scores, in
+// order, or nil when none is marked and the gate scores the whole book.
+func (c ClaimParams) ScoredSections() []int {
+	var scored []int
 	for i, sec := range c.Sections {
 		if sec.Scored {
-			return i
+			scored = append(scored, i)
 		}
 	}
-	return -1
+	return scored
 }
 
 func (b BookParams) validate() error {
@@ -420,7 +443,29 @@ func (s PricingSectionParams) validate(prefix string) error {
 	if s.BaseFrequency == 0 {
 		return nil // priced at nothing: the severity is never read
 	}
-	return s.Severity.validate(prefix + ".severity")
+	if err := s.Severity.validate(prefix + ".severity"); err != nil {
+		return err
+	}
+	return validateLimit(prefix, s.Limit, s.Severity.Kind)
+}
+
+// validateLimit checks a section's per-claim limit: finite, not negative, and
+// 0 on a sum-insured severity, whose limit is already its sum insured.
+func validateLimit(prefix string, limit float64, kind SeverityKind) error {
+	if err := checkFinite(namedFloat{prefix + ".limit", limit}); err != nil {
+		return err
+	}
+	if limit < 0 {
+		return fmt.Errorf("%s.limit: must not be negative, got %v", prefix, limit)
+	}
+	// A limit below one cent rounds to a cover limit of 0, which is unlimited.
+	if limit != 0 && limit < 0.01 {
+		return fmt.Errorf("%s.limit: must be 0 (unlimited) or at least 0.01, got %v", prefix, limit)
+	}
+	if limit != 0 && kind == SumInsuredLognormal {
+		return fmt.Errorf("%s.limit: must be 0 on a sum_insured_lognormal section, whose limit is its sum insured, got %v", prefix, limit)
+	}
+	return nil
 }
 
 func (c ClaimParams) validate() error {
@@ -431,7 +476,7 @@ func (c ClaimParams) validate() error {
 		return fmt.Errorf("claims.sections: must not be empty")
 	}
 	names := map[string]bool{}
-	scored, active := 0, 0
+	active := 0
 	for i, sec := range c.Sections {
 		prefix := fmt.Sprintf("claims.sections[%d]", i)
 		if sec.Name == "" {
@@ -444,15 +489,9 @@ func (c ClaimParams) validate() error {
 		if err := sec.validate(prefix); err != nil {
 			return err
 		}
-		if sec.Scored {
-			scored++
-		}
 		if sec.BaseFrequency > 0 {
 			active++
 		}
-	}
-	if scored > 1 {
-		return fmt.Errorf("claims.sections: at most one section may be scored, got %d", scored)
 	}
 	if active == 0 {
 		return fmt.Errorf("claims.sections: at least one section must have a positive base_frequency")
@@ -485,6 +524,9 @@ func (s SectionParams) validate(prefix string) error {
 		return nil
 	}
 	if err := s.Severity.validate(prefix + ".severity"); err != nil {
+		return err
+	}
+	if err := validateLimit(prefix, s.Limit, s.Severity.Kind); err != nil {
 		return err
 	}
 	if err := s.ReportLag.validate(prefix + ".report_lag"); err != nil {
@@ -575,6 +617,7 @@ func (s SeverityParams) validate(prefix string) error {
 	if err := checkFinite(
 		namedFloat{prefix + ".median_fraction", s.MedianFraction},
 		namedFloat{prefix + ".sigma", s.Sigma},
+		namedFloat{prefix + ".median", s.Median},
 		namedFloat{prefix + ".scale", s.Scale},
 		namedFloat{prefix + ".alpha", s.Alpha},
 	); err != nil {
@@ -595,8 +638,15 @@ func (s SeverityParams) validate(prefix string) error {
 		if s.Alpha <= 1 {
 			return fmt.Errorf("%s.alpha: must exceed 1 for a finite mean, got %v", prefix, s.Alpha)
 		}
+	case Lognormal:
+		if s.Median <= 0 {
+			return fmt.Errorf("%s.median: must be positive, got %v", prefix, s.Median)
+		}
+		if s.Sigma <= 0 {
+			return fmt.Errorf("%s.sigma: must be positive, got %v", prefix, s.Sigma)
+		}
 	default:
-		return fmt.Errorf("%s.kind: must be %q or %q, got %q", prefix, SumInsuredLognormal, Pareto, s.Kind)
+		return fmt.Errorf("%s.kind: must be %q, %q or %q, got %q", prefix, SumInsuredLognormal, Pareto, Lognormal, s.Kind)
 	}
 	return nil
 }

@@ -171,3 +171,54 @@ func TestExpectedPolicyLossAllowsForNilClaims(t *testing.T) {
 		t.Fatalf("with nil claims: got %v, want %v", with, want)
 	}
 }
+
+// A lognormal section prices the uncapped stop-loss of a dollar lognormal,
+// trended by the assumed claims index, ignoring the sum insured.
+func TestExpectedSectionLossPricesADollarLognormal(t *testing.T) {
+	p := motorPricing()
+	p.Sections[1].Severity = SeverityParams{Kind: Lognormal, Median: 2000, Sigma: 0.8}
+	payout := 1 - p.NilProbability + p.ReopenProbability*p.ReopenEstimateFactor
+	want := p.Sections[1].BaseFrequency * 1.3 * payout * stopLossLognormal(1.1*2000, 0.8, 300)
+	got := p.ExpectedSectionLoss(1, 20000, 300, 1.3, 1.1, 1.05)
+	if math.Abs(got-want) > 1e-9*want {
+		t.Fatalf("lognormal section loss = %v, want %v", got, want)
+	}
+	if other := p.ExpectedSectionLoss(1, 5000, 300, 1.3, 1.1, 1.05); other != got {
+		t.Fatalf("lognormal section moved with the sum insured: %v vs %v", other, got)
+	}
+}
+
+// A per-claim limit L prices E[min((X-d)+, L)] = stopLoss(d) - stopLoss(d+L),
+// with the limit in nominal dollars, so it is not trended by the claims index.
+func TestExpectedSectionLossAppliesTheLimit(t *testing.T) {
+	const si, excess, risk, infl, drift, limit = 20000.0, 300.0, 1.3, 1.1, 1.05, 10000.0
+	cases := []struct {
+		name     string
+		sev      SeverityParams
+		stopLoss func(d float64) float64
+	}{
+		{"pareto", SeverityParams{Kind: Pareto, Scale: 4000, Alpha: 2.2},
+			func(d float64) float64 { return stopLossPareto(infl*4000, 2.2, d) }},
+		{"lognormal", SeverityParams{Kind: Lognormal, Median: 2000, Sigma: 0.8},
+			func(d float64) float64 { return stopLossLognormal(infl*2000, 0.8, d) }},
+	}
+	for _, c := range cases {
+		p := motorPricing()
+		p.Sections[1].Severity = c.sev
+		unlimited := p.ExpectedSectionLoss(1, si, excess, risk, infl, drift)
+		payout := 1 - p.NilProbability + p.ReopenProbability*p.ReopenEstimateFactor
+		perClaim := p.Sections[1].BaseFrequency * risk * payout
+		if want := perClaim * c.stopLoss(excess); math.Abs(unlimited-want) > 1e-9*want {
+			t.Errorf("%s: zero limit = %v, want the unlimited %v", c.name, unlimited, want)
+		}
+		p.Sections[1].Limit = limit
+		got := p.ExpectedSectionLoss(1, si, excess, risk, infl, drift)
+		want := perClaim * (c.stopLoss(excess) - c.stopLoss(excess+limit))
+		if math.Abs(got-want) > 1e-9*want {
+			t.Errorf("%s: limited loss = %v, want %v", c.name, got, want)
+		}
+		if !(got < unlimited) {
+			t.Errorf("%s: limited loss %v not below unlimited %v", c.name, got, unlimited)
+		}
+	}
+}

@@ -4,13 +4,13 @@ Where claimsgen is heading, in recommended order. It lists outstanding direction
 
 ## Near term
 
-The next step is the second line of business below, which folds in MR-12 (separate sum-insured and risk spreads) and the per-class switches from MR-8 (liability limit, excess on liability claims).
+The next step is the second line of business below, which folds in MR-12 (separate sum-insured and risk spreads) and the per-class excess switch from MR-8 (excess on liability claims).
 
 ## Mid term - second line of business
 
 Prove the "one parameterizable engine" differentiator by adding a second short-tail class to personal motor, most likely **commercial property**. The plumbing is ready - sections of cover, the preset registry, the line-of-business dropdown, and the preset-driven UI form were built so a new class is a YAML file plus a registration line. The real work is:
 
-- **Per-line-of-business reference data and calibration.** The realism gate is motor-only today: `claimsgen ui` loads the private passenger auto reference directory (`refdata.PersonalMotorDir`), and only that set is embedded. Reference data needs to be keyed per line of business so each class calibrates against an appropriate Schedule P family. `data/reference/schedule p/` already holds hand-curated companies for all six Schedule P lines - private passenger auto (96 companies), commercial auto (92), other liability (92), workers compensation (61), products liability (13) and medical malpractice (8) - kept against `data/reference/gr-code-list.md`. Schedule P carries liability lines only, so a commercial *property* class has no direct reference family; commercial auto is the closest short-tail fit.
+- **Per-line-of-business reference data and calibration.** The realism gate is motor-only today: `claimsgen ui` loads the private passenger auto reference directory (`refdata.PersonalMotorDir`), and only that set is embedded. Reference data needs to be keyed per line of business so each class calibrates against an appropriate Schedule P family. `data/reference/schedule p/` already holds hand-curated companies for all six Schedule P lines - private passenger auto (96 companies), commercial auto (92), other liability (92), workers compensation (61), products liability (13) and medical malpractice (8) - kept against `data/reference/gr-code-list.md`. The embedded extract holds those six liability lines only. Schedule P itself has homeowners (Part 1A) and commercial multiple peril (Part 1E) on ten years, and special property (Part 1I) on a short history, but none of these is embedded, so a commercial *property* class has no reference in the repo today.
 - **Any class-specific behavior** commercial property needs that motor does not. A class with no liability tail is already a single sum-insured section; anything else, such as severity capped harder at the sum insured, is new section behaviour.
 
 ## Longer term

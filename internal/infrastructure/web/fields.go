@@ -30,6 +30,8 @@ var severityFields = []formField{
 	{Path: []string{"severity", "sigma"}, Kind: "sum_insured_lognormal", Label: "Severity sigma", Tip: "Sigma of the lognormal loss fraction."},
 	{Path: []string{"severity", "scale"}, Kind: "pareto", Label: "Severity scale", Tip: "Pareto scale (minimum loss) in start-year dollars."},
 	{Path: []string{"severity", "alpha"}, Kind: "pareto", Label: "Severity alpha", Tip: "Pareto tail index; must exceed 1."},
+	{Path: []string{"severity", "median"}, Kind: "lognormal", Label: "Severity median", Tip: "Median ground-up loss in start-year dollars; uncapped by the sum insured."},
+	{Path: []string{"severity", "sigma"}, Kind: "lognormal", Label: "Severity sigma", Tip: "Sigma of the lognormal loss."},
 }
 
 // formFields is the parameter form's metadata, served at GET /api/fields so
@@ -64,6 +66,7 @@ var formFields = []fieldGroup{
 		Sections: []string{"pricing", "sections"},
 		Fields: slices.Concat([]formField{
 			{Path: []string{"base_frequency"}, Label: "Assumed base frequency", Tip: "Assumed ground-up frequency per policy-year used for pricing (independent of the true claims frequency)."},
+			{Path: []string{"limit"}, Label: "Assumed limit", Tip: "Per-claim limit assumed for pricing, in nominal dollars; 0 is unlimited."},
 		}, severityFields),
 	},
 	{
@@ -73,7 +76,7 @@ var formFields = []fieldGroup{
 			{Path: []string{"claims", "inflation", "volatility"}, Label: "Claims inflation volatility", Tip: "Sigma of the mean-one lognormal noise on each year's inflation factor; 0 gives a smooth trend."},
 			{Path: []string{"claims", "nil_probability"}, Label: "Nil claim probability", Tip: "Probability a claim closes without payment at its first close; 0 switches nil claims off."},
 			{Path: []string{"claims", "reopening", "probability"}, Label: "Reopen probability", Tip: "Chance a closed claim reopens once; 0 switches reopening off."},
-			{Path: []string{"claims", "reopening", "estimate_factor"}, Label: "Reopen estimate factor", Tip: "Mean additional reopen cost as a factor of the claim's ultimate; a sum-insured section is capped at the cover left."},
+			{Path: []string{"claims", "reopening", "estimate_factor"}, Label: "Reopen estimate factor", Tip: "Mean additional reopen cost as a factor of the claim's ultimate; a sum-insured or limited section is capped at the cover left."},
 			{Path: []string{"claims", "reopening", "estimate_sigma"}, Label: "Reopen estimate sigma", Tip: "Sigma of the mean-one lognormal noise on the reopen's additional cost."},
 			{Path: []string{"claims", "reopening", "lag_median_days"}, Label: "Reopen lag median days", Tip: "Median days from first close to reopen."},
 			{Path: []string{"claims", "reopening", "lag_sigma"}, Label: "Reopen lag sigma", Tip: "Sigma of the lognormal close-to-reopen lag."},
@@ -84,6 +87,7 @@ var formFields = []fieldGroup{
 		Sections: []string{"claims", "sections"},
 		Fields: slices.Concat([]formField{
 			{Path: []string{"base_frequency"}, Label: "Base frequency", Tip: "Ground-up claims per policy-year at risk factor 1; 0 switches the section off."},
+			{Path: []string{"limit"}, Label: "Limit", Tip: "Most the policy pays on one claim, reopen included, in nominal dollars; 0 is unlimited. Must be 0 on a sum-insured section, whose limit is the sum insured."},
 		}, severityFields, []formField{
 			{Path: []string{"report_lag", "median"}, Label: "Report lag median", Tip: "Median occurrence-to-report lag in days."},
 			{Path: []string{"report_lag", "sigma"}, Label: "Report lag sigma", Tip: "Sigma of the lognormal report lag."},

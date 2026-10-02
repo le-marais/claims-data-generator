@@ -55,18 +55,22 @@ func (p PricingParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflat
 }
 
 // ExpectedSectionLoss is the expected loss of one section of the policy, the
-// section at index section of Sections. A sum-insured severity is expressed in
-// base-year sum-insured terms (baseSI = sumInsured / siDrift) trended by the
-// claims index only, and capped at the drifted sumInsured (a total loss). A
-// Pareto severity keeps the claims index and is uncapped. inflationFactor is
-// the assumed index at the midpoint of the policy's cover.
+// section at index section of Sections. inflationFactor is the assumed claims
+// index at the midpoint of the policy's cover.
+//
+// A sum-insured severity is expressed in base-year sum-insured terms (baseSI =
+// sumInsured / siDrift), trended by the claims index only, and capped at the
+// drifted sumInsured (a total loss). A Pareto or Lognormal severity keeps the
+// claims index. With a Limit L its cost per claim is E[min((X-d)+, L)] =
+// stopLoss(d) - stopLoss(d+L) for excess d; the limit is nominal, so it is not
+// trended. With no limit it is the uncapped stop-loss.
 //
 // Each claim pays its cost unless it is nil, and pays a further
 // ReopenEstimateFactor of that cost if it reopens, nil or not, so the expected
 // payout per claim is the cost times 1 - NilProbability + ReopenProbability *
-// ReopenEstimateFactor. The reopen term ignores the cap that holds a
-// sum-insured reopen within the cover left, so claims near their limit are
-// slightly overpriced.
+// ReopenEstimateFactor. The reopen term ignores the cap that holds a reopen
+// within the cover left, on a sum-insured or a limited section alike, so
+// claims near their limit are slightly overpriced.
 func (p PricingParams) ExpectedSectionLoss(section int, sumInsured, excess, riskFactor, inflationFactor, siDrift float64) float64 {
 	sec := p.Sections[section]
 	// A section priced at no frequency is skipped rather than multiplied by
@@ -83,7 +87,19 @@ func (p PricingParams) ExpectedSectionLoss(section int, sumInsured, excess, risk
 		median := inflationFactor * sumInsured / siDrift * sev.MedianFraction
 		return perClaim * limitedStopLossLognormal(median, sev.Sigma, excess, sumInsured)
 	case Pareto:
-		return perClaim * stopLossPareto(inflationFactor*sev.Scale, sev.Alpha, excess)
+		scale := inflationFactor * sev.Scale
+		cost := stopLossPareto(scale, sev.Alpha, excess)
+		if sec.Limit > 0 {
+			cost -= stopLossPareto(scale, sev.Alpha, excess+sec.Limit)
+		}
+		return perClaim * cost
+	case Lognormal:
+		median := inflationFactor * sev.Median
+		cost := stopLossLognormal(median, sev.Sigma, excess)
+		if sec.Limit > 0 {
+			cost -= stopLossLognormal(median, sev.Sigma, excess+sec.Limit)
+		}
+		return perClaim * cost
 	}
 	return 0
 }

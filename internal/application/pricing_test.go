@@ -69,7 +69,8 @@ func TestUnderpricingRaisesRealizedLossRatio(t *testing.T) {
 	under := base
 	under.Pricing.Sections = slices.Clone(base.Pricing.Sections)
 	under.Pricing.Sections[ownDamage].Severity.MedianFraction *= 0.5
-	under.Pricing.Sections[thirdParty].Severity.Scale *= 0.5
+	under.Pricing.Sections[thirdPartyProperty].Severity.Median *= 0.5
+	under.Pricing.Sections[thirdPartyInjury].Severity.Scale *= 0.5
 	reqUnder := req
 	reqUnder.LOB = under
 
@@ -105,7 +106,8 @@ func TestMatchedPricingAbsorbsNilClaimsAndInflation(t *testing.T) {
 	}
 	// Own damage only, at the preset's total claim frequency.
 	base.Claims.Sections[ownDamage].BaseFrequency, base.Pricing.Sections[ownDamage].BaseFrequency = 0.12, 0.12
-	base.Claims.Sections[thirdParty].BaseFrequency, base.Pricing.Sections[thirdParty].BaseFrequency = 0, 0
+	base.Claims.Sections[thirdPartyProperty].BaseFrequency, base.Pricing.Sections[thirdPartyProperty].BaseFrequency = 0, 0
+	base.Claims.Sections[thirdPartyInjury].BaseFrequency, base.Pricing.Sections[thirdPartyInjury].BaseFrequency = 0, 0
 	base.Claims.NilProbability, base.Pricing.NilProbability = 0, 0
 	base.Claims.Inflation = lob.InflationParams{Mean: 1, Volatility: 0}
 	base.Pricing.InflationMean = 1

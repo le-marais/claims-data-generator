@@ -79,8 +79,9 @@ type binJSON struct {
 }
 
 type realismJSON struct {
-	// Section names the section the report scores; empty means the whole book.
-	Section        string         `json:"section"`
+	// Sections names the sections the report scores together; empty means
+	// the whole book.
+	Sections       []string       `json:"sections"`
 	Pass           bool           `json:"pass"`
 	PaidATA        []ageCheckJSON `json:"paid_ata"`
 	IncurredATA    []ageCheckJSON `json:"incurred_ata"`
@@ -127,7 +128,7 @@ func buildResponse(req generateRequest, ds application.Dataset, ag application.A
 			Incurred: triangleView(ag.Annual.Incurred),
 		},
 		Distributions: distributionsView(application.ComputeDistributions(ds)),
-		Realism:       realismView(realism, scoredSectionName(req.Params)),
+		Realism:       realismView(realism, scoredSectionNames(req.Params)),
 	}
 }
 
@@ -195,20 +196,21 @@ func finite(f float64) float64 {
 	return f
 }
 
-// scoredSectionName is the name of the section the realism gate scores, or
-// empty when it scores the whole book.
-func scoredSectionName(p config.LOBParams) string {
+// scoredSectionNames are the names of the sections the realism gate scores,
+// or empty when it scores the whole book.
+func scoredSectionNames(p config.LOBParams) []string {
+	names := []string{}
 	for _, sec := range p.Claims.Sections {
 		if sec.Scored {
-			return sec.Name
+			names = append(names, sec.Name)
 		}
 	}
-	return ""
+	return names
 }
 
-func realismView(r triangle.Report, section string) realismJSON {
+func realismView(r triangle.Report, sections []string) realismJSON {
 	return realismJSON{
-		Section:     section,
+		Sections:    sections,
 		Pass:        r.Pass(),
 		PaidATA:     ageChecksView(r.PaidATA),
 		IncurredATA: ageChecksView(r.IncurredATA),

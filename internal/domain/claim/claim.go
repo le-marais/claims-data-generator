@@ -33,7 +33,8 @@ type Claim struct {
 	Section int
 	// CoverLimit is the most the policy pays on the claim over its whole
 	// life, reopen included: sum insured minus excess for a sum-insured
-	// severity, zero (unlimited) for a Pareto one.
+	// severity, the section's limit for a limited one, zero (unlimited)
+	// otherwise.
 	CoverLimit shared.Money
 	// RiskFactor is the policy's risk factor, kept for the reopen pass's
 	// close-lag draw, which runs after the claim stage has let go of the
@@ -115,8 +116,8 @@ func (c Claim) Cost() shared.Money {
 	return cost
 }
 
-// TotalLoss reports whether the claim wrote the insured property off: its true
-// cost reached its cover limit, the sum insured less excess.
+// TotalLoss reports whether the claim's true cost reached its cover limit,
+// which on a sum-insured section is a write-off of the insured property.
 func (c Claim) TotalLoss() bool {
 	return c.CoverLimit > 0 && c.Episodes[0].Ultimate >= c.CoverLimit
 }
@@ -239,7 +240,8 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 
 	// Losses are drawn in start-year dollars and trended by the claims index
 	// at the occurrence date. A sum-insured loss is then capped at the drifted
-	// sum insured, representing a total loss; a Pareto loss is uncapped.
+	// sum insured, representing a total loss; a Pareto or lognormal loss is
+	// uncapped, though the cost after excess is capped at the section's limit.
 	loss := s.drawGroundUpLoss(src, pol, sec.Severity) * s.inflation.For(occurrence)
 	coverLimit := shared.Money(0) // unlimited
 	if sec.Severity.Kind == lob.SumInsuredLognormal {
@@ -251,6 +253,15 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	cost := loss - pol.Excess.Dollars()
 	if cost <= 0 {
 		return Claim{}, false
+	}
+	// The limit is a nominal contract term, so it is not trended. The close
+	// lag below reads the capped cost: a claim settled at the limit settles
+	// like a claim of the limit's size.
+	if sec.Limit > 0 {
+		if cost > sec.Limit {
+			cost = sec.Limit
+		}
+		coverLimit = shared.FromDollars(sec.Limit)
 	}
 	ultimate := shared.FromDollars(cost)
 	if ultimate < shared.OneCent {
@@ -281,11 +292,14 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 }
 
 // drawGroundUpLoss draws a loss in start-year dollars from a section's
-// severity: a lognormal fraction of the policy's base-year sum insured, or a
-// Pareto amount. Either kind takes one draw.
+// severity: a lognormal fraction of the policy's base-year sum insured, a
+// Pareto amount, or a lognormal amount. Every kind takes one draw.
 func (s *ClaimSimulator) drawGroundUpLoss(src shared.RandomSource, pol policy.Policy, sev lob.SeverityParams) float64 {
-	if sev.Kind == lob.Pareto {
+	switch sev.Kind {
+	case lob.Pareto:
 		return src.Pareto(sev.Scale, sev.Alpha)
+	case lob.Lognormal:
+		return src.LogNormal(math.Log(sev.Median), sev.Sigma)
 	}
 	return s.baseSumInsured(pol) * src.LogNormal(math.Log(sev.MedianFraction), sev.Sigma)
 }

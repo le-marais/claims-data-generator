@@ -14,8 +14,9 @@ import (
 
 // Section indices in the motor preset.
 const (
-	ownDamage  = 0
-	thirdParty = 1
+	ownDamage          = 0
+	thirdPartyProperty = 1
+	thirdPartyInjury   = 2
 )
 
 func request(t *testing.T) application.GenerateRequest {

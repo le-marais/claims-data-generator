@@ -19,7 +19,7 @@ import (
 // It guards against unintended changes to the generated data or its CSV
 // encoding. If a change to the output is intentional, regenerate this digest
 // by running the test once (it prints the actual value) and paste it back in.
-const wantHash = "0c9df2b63bfc3a9107d8be7b308eecfed110359cdba1d01ab173ce95a08031ed"
+const wantHash = "f15d9d4b3188d2f9b32ac1cc427ce9624d21e7cce1939de8dd6eae4dddd3bab5"
 
 func TestGoldenCSVBytes(t *testing.T) {
 	ds, err := application.GenerateDataset(t.Context(), random.NewSource(1), request(t))
@@ -48,7 +48,7 @@ func TestGoldenCSVBytes(t *testing.T) {
 // small deterministic dataset. Regenerate it the same way as wantHash: run the
 // test once, it prints the actual value, paste it back in. Do not update it to
 // hide an unintended change.
-const wantAggregateHash = "3b29bf1d47a657ff8e5e9c6c197229705921f236dd4724f3455a8a4786456ae0"
+const wantAggregateHash = "f0f9e60c47bd77924ee3f5a7c9d93849e9889afe508cb706ba98528624895f5e"
 
 func TestGoldenAggregateCSVBytes(t *testing.T) {
 	req := request(t)
@@ -93,7 +93,7 @@ func TestGoldenAggregateCSVBytes(t *testing.T) {
 // Regenerate it the same way as wantHash: run the test once, it prints the
 // actual value, paste it back in. Do not update it to hide an unintended
 // change.
-const wantAnnualHash = "994d4856b0d35c959d0174ef20bc3a56b493418922e6baf5432c5f7261b065f8"
+const wantAnnualHash = "14e04e7c9c35b2133720f8217ee3ff573afd1ad8679f5df49499953c189d2b06"
 
 func TestGoldenAnnualTriangles(t *testing.T) {
 	req := request(t)
@@ -105,7 +105,7 @@ func TestGoldenAnnualTriangles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	liability, err := application.SectionComparison(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSection())
+	liability, err := application.SectionComparison(ds, req.StartYear, req.Years, req.LOB.Claims.ScoredSections())
 	if err != nil {
 		t.Fatal(err)
 	}

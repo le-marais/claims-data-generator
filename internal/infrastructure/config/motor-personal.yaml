@@ -1,12 +1,14 @@
 # Personal motor insurance preset.
-# The third-party (liability) section is calibrated so its development
-# triangles fall within the P5-P95 bands observed across the curated
-# Schedule P private passenger auto reference data
-# (data/reference/schedule p/ppauto_pos98-07, 96 hand-curated companies).
-# That reference is a liability line with no physical damage in it, so the
-# realism gate scores third-party claims against their share of premium and
-# leaves own damage out; own-damage settlement is set as a short-tail class
-# instead of being bent to liability speed.
+# The realism reference is Schedule P Part 1B, private passenger auto
+# liability (data/reference/schedule p/ppauto_pos98-07, 96 hand-curated
+# companies). Part 1B covers bodily injury and property damage liability,
+# plus personal injury protection, medical payments and uninsured motorist,
+# which this product does not carry. The two third-party sections, property
+# damage and injury, are scored together against it: their claims against
+# their share of premium, so their combined development triangles fall
+# within the reference's P5-P95 bands. The reference has no physical damage
+# in it, so own damage is not scored; its settlement is set as a short-tail
+# class instead of being bent to liability speed.
 name: motor-personal
 book:
   growth_factor: 1.03
@@ -42,9 +44,16 @@ pricing:
     - name: own_damage
       base_frequency: 0.096
       severity: {kind: sum_insured_lognormal, median_fraction: 0.12, sigma: 1.0}
-    - name: third_party
-      base_frequency: 0.024
-      severity: {kind: pareto, scale: 4000, alpha: 2.2}
+    # Each third-party section prices with the same limit as its claims
+    # section below.
+    - name: third_party_property
+      base_frequency: 0.030
+      severity: {kind: lognormal, median: 1800, sigma: 0.9}
+      limit: 50000
+    - name: third_party_injury
+      base_frequency: 0.009
+      severity: {kind: pareto, scale: 6000, alpha: 2.0}
+      limit: 100000
   nil_probability: 0.08
   reopen_probability: 0.04
   reopen_estimate_factor: 0.45
@@ -58,7 +67,9 @@ claims:
   #
   # severity kinds: sum_insured_lognormal is a lognormal fraction of the sum
   # insured in start-year dollars, capped at the sum insured (a total loss);
-  # pareto is a Pareto loss in dollars with no cap.
+  # lognormal is a lognormal loss in start-year dollars with median and
+  # sigma; pareto is a Pareto loss in dollars. Neither has a cap of its own:
+  # a section's limit (below) caps what the policy pays.
   #
   # report_lag is the lognormal occurrence-to-report lag in days. close_lag
   # is the gamma report-to-close lag: a claim costing size_reference in
@@ -67,9 +78,15 @@ claims:
   # (size / size_reference)^size_elasticity and risk factor^risk_loading,
   # so larger and riskier claims take longer, smoothly.
   #
+  # limit is the most the policy pays on one claim, reopen included, in
+  # nominal dollars: a contract term, so claims inflation does not trend it.
+  # 0 or absent is unlimited. A sum_insured_lognormal section leaves it at 0,
+  # because its sum insured is its limit.
+  #
   # recoveries: true makes the section's claims eligible for salvage and
-  # subrogation. scored: true marks the section the realism gate scores
-  # against the Schedule P reference.
+  # subrogation. scored: true marks a section the realism gate scores
+  # against the Schedule P reference; every scored section is scored
+  # together.
   sections:
     # Own damage: vehicle damage, sized off the sum insured, reported within
     # days and settled in weeks. Its lags are judgement values, since no
@@ -88,20 +105,48 @@ claims:
         size_elasticity: 0.2
         risk_loading: 0.3
       recoveries: true
-    # Third-party liability, the section the realism gate scores. Injury
-    # claims are reported later: median 20 days, mean about 72, and about
-    # 3.5% more than a year after the accident, which gives the reported
-    # counts and the incurred some pure IBNR to estimate. They settle far
-    # slower, in a regime calibrated to the Schedule P reference. Re-run the
-    # realism gate after any change to this section.
-    - name: third_party
-      base_frequency: 0.024
-      severity: {kind: pareto, scale: 4000, alpha: 2.2}
+    # Third-party property damage: the other party's vehicle and property.
+    # The most common Schedule P Part 1B claim: reported within days, small,
+    # and settled in weeks to months. Median 1800 and a 60 day mean close are
+    # typical small property damage repairs settled in weeks. Scored together
+    # with injury. The two third-party frequencies, 0.030 here and 0.009 for
+    # injury, give a liability cost of about $170 per policy-year and about
+    # three property damage claims per injury claim after the excess. limit
+    # 50000 is a common property damage liability limit; it rarely binds at
+    # this severity.
+    - name: third_party_property
+      base_frequency: 0.030
+      severity: {kind: lognormal, median: 1800, sigma: 0.9}
+      limit: 50000
+      report_lag: {median: 3, sigma: 1.2}
+      close_lag:
+        shape: 1.2
+        mean_days: 60
+        size_reference: 2000
+        size_elasticity: 0.2
+        risk_loading: 0.3
+      scored: true
+    # Third-party bodily injury: rarer, heavy-tailed, reported later (median
+    # 20 days, about 3.5% more than a year after the accident, which gives the
+    # reported counts and the incurred some pure IBNR) and settled slowly.
+    # Its lags carry the later-age development of the Schedule P reference:
+    # close_lag.mean_days 400 was set by calibration so paid and incurred
+    # development at ages 9-10 sit inside the bands across seeds (360-440 all
+    # passed). size_reference 10000 is a typical injury claim's cost.
+    # base_frequency 0.009 is set with property damage's (see above). limit
+    # 100000 is a common per-person bodily injury limit on US personal auto
+    # (the 100 in 100/300); it stops single claims in the millions that
+    # personal auto limits do not pay.
+    # Re-run the realism gate after any change to either third-party section.
+    - name: third_party_injury
+      base_frequency: 0.009
+      severity: {kind: pareto, scale: 6000, alpha: 2.0}
+      limit: 100000
       report_lag: {median: 20, sigma: 1.6}
       close_lag:
         shape: 1.0
-        mean_days: 340
-        size_reference: 5000
+        mean_days: 400
+        size_reference: 10000
         size_elasticity: 0.25
         risk_loading: 0.3
       scored: true

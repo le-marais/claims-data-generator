@@ -213,7 +213,7 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, rerr.status, rerr.msg)
 		return
 	}
-	realism, err := application.EvaluateRealism(res.ds, res.req.StartYear, res.req.Years, res.line.Claims.ScoredSection(), s.refs)
+	realism, err := application.EvaluateRealism(res.ds, res.req.StartYear, res.req.Years, res.line.Claims.ScoredSections(), s.refs)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

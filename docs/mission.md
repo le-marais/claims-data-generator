@@ -40,7 +40,7 @@ It runs as a CLI (`claimsgen generate`) or as a local browser UI (`claimsgen ui`
 
 A user can generate a realistic personal motor dataset on their own machine and feed it into a reserving model, study or demonstration without manual fixes.
 
-Realism is measured against Schedule P: the third-party (liability) section of the shipped preset must sit inside the P5-P95 bands of the private passenger auto liability reference companies.
+Realism is measured against Schedule P: the third-party (liability) sections of the shipped preset must sit inside the P5-P95 bands of the private passenger auto liability reference companies.
 
 ## Next
 
