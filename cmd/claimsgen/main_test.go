@@ -160,6 +160,35 @@ func TestGeneratePresetMatchesTheDefault(t *testing.T) {
 	}
 }
 
+// The commercial preset writes a fleet book: some vehicles share a fleet.
+func TestGenerateCommercialPresetWritesFleets(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "output")
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"generate", "--out", out, "--years", "2", "--initial-book-size", "50", "--preset", "motor-commercial"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("exit code = %d, stderr: %s", code, stderr.String())
+	}
+	if !strings.HasPrefix(stdout.String(), "motor-commercial:") {
+		t.Errorf("stdout %q should name the preset", stdout.String())
+	}
+	policies, err := os.ReadFile(filepath.Join(out, "policies.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fleets := map[string]int{}
+	for _, row := range strings.Split(strings.TrimSpace(string(policies)), "\n")[1:] {
+		fleets[strings.Split(row, ",")[1]]++
+	}
+	shared := 0
+	for _, n := range fleets {
+		if n > 1 {
+			shared++
+		}
+	}
+	if shared == 0 {
+		t.Fatalf("no fleet_id is shared by two policies among %d fleets", len(fleets))
+	}
+}
+
 func TestGenerateRejectsPresetWithConfig(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	path := filepath.Join("..", "..", "internal", "infrastructure", "config", "motor-personal.yaml")

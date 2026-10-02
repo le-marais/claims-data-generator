@@ -11,6 +11,7 @@ import (
 
 	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/domain/triangle"
+	"github.com/le-marais/claimsgen/internal/infrastructure/config"
 	csvout "github.com/le-marais/claimsgen/internal/infrastructure/csv"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 )
@@ -86,7 +87,7 @@ func TestGoldenAggregateCSVBytes(t *testing.T) {
 // Coarsen keying both axes on calendar period rather than computed directly,
 // and the branch that introduced that derivation stated as an invariant that
 // the annual triangles are unchanged, cell for cell, from what the prior
-// direct computation produced. TestDefaultPresetIsRealistic's P5-P95 bands
+// direct computation produced. TestPresetsAreRealistic's P5-P95 bands
 // are wide enough to absorb a real shift without failing, so this digest is
 // the only thing that would catch one: the Schedule P realism bands and the
 // shipped preset's calibration both depend on these cells not moving.
@@ -95,8 +96,35 @@ func TestGoldenAggregateCSVBytes(t *testing.T) {
 // change.
 const wantAnnualHash = "66e1f5158099e57ae887b42f1b4646f03e39c4f390bb8a647010183640225bbf"
 
+// wantCommercialAnnualHash pins the same cells for the commercial motor
+// preset, whose calibration depends on them in the same way. Regenerate it
+// the same way.
+const wantCommercialAnnualHash = "268f739dd495b12ca11c0a29f703796512b5ea82906d346eac86fb56c5049059"
+
 func TestGoldenAnnualTriangles(t *testing.T) {
-	req := request(t)
+	commercial := request(t)
+	l, err := config.Preset("motor-commercial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	commercial.LOB, commercial.InitialBookSize = l, 150
+	for _, c := range []struct {
+		preset string
+		req    application.GenerateRequest
+		want   string
+	}{
+		{"motor-personal", request(t), wantAnnualHash},
+		{"motor-commercial", commercial, wantCommercialAnnualHash},
+	} {
+		if got := annualHash(t, c.preset, c.req); got != c.want {
+			t.Errorf("%s: golden annual triangle hash mismatch:\n got: %s\nwant: %s", c.preset, got, c.want)
+		}
+	}
+}
+
+// annualHash digests a run's annual triangles and its realism comparison.
+func annualHash(t *testing.T, presetID string, req application.GenerateRequest) string {
+	t.Helper()
 	ds, err := application.GenerateDataset(t.Context(), random.NewSource(1), req)
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +133,7 @@ func TestGoldenAnnualTriangles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	liability, err := application.SectionComparison(ds, req.StartYear, req.Years, scoredSections(t, "motor-personal", req.LOB))
+	liability, err := application.SectionComparison(ds, req.StartYear, req.Years, scoredSections(t, presetID, req.LOB))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,8 +151,5 @@ func TestGoldenAnnualTriangles(t *testing.T) {
 	for y, ep := range liability.EarnedPremium {
 		fmt.Fprintf(h, "ep,%d,%s\n", y, strconv.FormatFloat(ep, 'f', 2, 64))
 	}
-	got := hex.EncodeToString(h.Sum(nil))
-	if got != wantAnnualHash {
-		t.Fatalf("golden annual triangle hash mismatch:\n got: %s\nwant: %s", got, wantAnnualHash)
-	}
+	return hex.EncodeToString(h.Sum(nil))
 }

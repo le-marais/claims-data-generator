@@ -65,8 +65,12 @@ func TestLOBList(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &lobs); err != nil {
 		t.Fatal(err)
 	}
-	if len(lobs) != 1 || lobs[0].ID != "motor-personal" || lobs[0].Name != "Motor personal" {
-		t.Fatalf("lobs = %+v", lobs)
+	want := []struct {
+		ID   string `json:"id"`
+		Name string `json:"name"`
+	}{{"motor-personal", "Motor personal"}, {"motor-commercial", "Motor commercial"}}
+	if !reflect.DeepEqual(lobs, want) {
+		t.Fatalf("lobs = %+v, want %+v", lobs, want)
 	}
 }
 
@@ -154,6 +158,20 @@ func TestGenerateScoresAgainstThePresetPool(t *testing.T) {
 	}
 	if r.Reference.Label != "private passenger auto liability" || r.Reference.Companies != 45 || r.Reference.MinPremium != 5e6 {
 		t.Fatalf("reference = %+v, want the 45 private passenger auto companies of $5m a year and up", r.Reference)
+	}
+}
+
+// A commercial motor run is scored against the commercial auto pool.
+func TestGenerateScoresCommercialAgainstItsPool(t *testing.T) {
+	body := generateBody(t)
+	params, err := config.PresetParams("motor-commercial")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body["preset"], body["params"], body["initial_book_size"] = "motor-commercial", params, 100
+	r := realismOf(t, body)
+	if !r.Scored || r.Reference.Label != "commercial auto liability" || r.Reference.Companies != 42 || r.Reference.MinPremium != 1e6 {
+		t.Fatalf("realism = %+v, want scored against the 42 commercial auto companies of $1m a year and up", r)
 	}
 }
 
