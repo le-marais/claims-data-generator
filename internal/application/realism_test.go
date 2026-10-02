@@ -78,6 +78,9 @@ func TestEvaluateRealismProducesChecksAtEveryAge(t *testing.T) {
 	if len(report.IncurredATA) != 9 {
 		t.Errorf("incurred ATA checks = %d, want 9", len(report.IncurredATA))
 	}
+	if len(report.PaidShares) != 9 {
+		t.Errorf("paid share checks = %d, want 9", len(report.PaidShares))
+	}
 	if report.LossRatio.Value <= 0 {
 		t.Errorf("loss ratio = %v, want positive", report.LossRatio.Value)
 	}

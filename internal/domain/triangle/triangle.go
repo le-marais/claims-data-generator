@@ -44,6 +44,38 @@ func (t Triangle) ATAFactors() []float64 {
 	return factors
 }
 
+// DevelopmentShares returns, for every development age but the last, the
+// cumulative amount at that age as a share of the amount at the last age,
+// summed over the origins developed to the last age. It is the compounded
+// pattern the age-to-age factors only show one step at a time. It returns nil
+// with fewer than two ages or a zero total at the last age.
+func (t Triangle) DevelopmentShares() []float64 {
+	width := 0
+	for _, row := range t.Cells {
+		width = max(width, len(row))
+	}
+	if width < 2 {
+		return nil
+	}
+	totals := make([]float64, width)
+	for _, row := range t.Cells {
+		if len(row) == width {
+			for d, v := range row {
+				totals[d] += v
+			}
+		}
+	}
+	last := totals[width-1]
+	if last == 0 {
+		return nil
+	}
+	shares := make([]float64, width-1)
+	for d := range shares {
+		shares[d] = totals[d] / last
+	}
+	return shares
+}
+
 // latestDiagonal returns the last available cumulative value per origin.
 func (t Triangle) latestDiagonal() []float64 {
 	latest := make([]float64, 0, len(t.Cells))

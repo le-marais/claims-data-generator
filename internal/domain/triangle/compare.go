@@ -37,6 +37,9 @@ type ReferenceSet struct {
 	// age. The loss ratio is scored on it. The zero value means the later
 	// development is not available, and Incurred is used instead.
 	DevelopedIncurred Triangle
+	// DevelopedPaid is Paid completed the same way. The paid shares are
+	// scored on it; a company without it is left out of their bands.
+	DevelopedPaid Triangle
 }
 
 // developedIncurred is the incurred triangle the loss ratio is scored on.
@@ -118,9 +121,15 @@ func bandFromValues(xs []float64) Band {
 // ATABands returns, per development age, the band of volume-weighted
 // age-to-age factors observed across the given triangles.
 func ATABands(triangles []Triangle) []Band {
+	return bandsByAge(triangles, Triangle.ATAFactors)
+}
+
+// bandsByAge returns, per development age, the band of one per-age metric
+// observed across the given triangles, skipping NaN values.
+func bandsByAge(triangles []Triangle, metric func(Triangle) []float64) []Band {
 	var perAge [][]float64
 	for _, t := range triangles {
-		for age, f := range t.ATAFactors() {
+		for age, f := range metric(t) {
 			if math.IsNaN(f) {
 				continue
 			}
@@ -137,9 +146,9 @@ func ATABands(triangles []Triangle) []Band {
 	return bands
 }
 
-// AgeCheck scores one development age against a band. Age is the 1-based
-// development period the factor develops from, so age 1 is the factor from
-// development period 1 to 2.
+// AgeCheck scores one development age against a band. Age is 1-based: for a
+// factor, the development period it develops from, so age 1 is the factor
+// from period 1 to 2; for a share, the period the share is taken at.
 type AgeCheck struct {
 	Age    int
 	Value  float64
@@ -156,17 +165,23 @@ type Check struct {
 
 // Report is the outcome of comparing generated data to the reference set.
 type Report struct {
-	PaidATA        []AgeCheck
-	IncurredATA    []AgeCheck
+	PaidATA     []AgeCheck
+	IncurredATA []AgeCheck
+	// PaidShares scores paid to date at each age as a share of paid at the
+	// last age (MR-17). Each factor can sit inside its own band while the
+	// pattern they compound to does not.
+	PaidShares     []AgeCheck
 	LossRatio      Check
 	LossRatioDrift Check
 }
 
 // Pass reports whether every checked metric fell inside its band.
 func (r Report) Pass() bool {
-	for _, c := range append(r.PaidATA, r.IncurredATA...) {
-		if !c.Within {
-			return false
+	for _, checks := range [][]AgeCheck{r.PaidATA, r.IncurredATA, r.PaidShares} {
+		for _, c := range checks {
+			if !c.Within {
+				return false
+			}
 		}
 	}
 	return r.LossRatio.Within && r.LossRatioDrift.Within
@@ -182,6 +197,10 @@ func (r Report) String() string {
 	}
 	writeChecks("paid", r.PaidATA)
 	writeChecks("incurred", r.IncurredATA)
+	for _, c := range r.PaidShares {
+		fmt.Fprintf(&b, "paid share at age %d: %.4f in [%.4f, %.4f] = %v\n",
+			c.Age, c.Value, c.Band.Lo, c.Band.Hi, c.Within)
+	}
 	fmt.Fprintf(&b, "ultimate loss ratio: %.4f in [%.4f, %.4f] = %v\n",
 		r.LossRatio.Value, r.LossRatio.Band.Lo, r.LossRatio.Band.Hi, r.LossRatio.Within)
 	fmt.Fprintf(&b, "loss ratio drift (2nd half / 1st half): %.4f in [%.4f, %.4f] = %v\n",
@@ -217,9 +236,14 @@ func usableRefs(refs []ReferenceSet) []ReferenceSet {
 
 // CompareToReference scores the generated aggregates against the P5-P95 bands
 // observed across the usable reference companies: volume-weighted age-to-age
-// factors for paid and incurred, the overall ultimate loss ratio, and the
-// loss-ratio drift between the two halves of the accident years. Only ages
-// present in both generated and reference data are checked.
+// factors for paid and incurred, paid to date at each age as a share of paid
+// at the last age, the overall ultimate loss ratio, and the loss-ratio drift
+// between the two halves of the accident years. Only ages present in both
+// generated and reference data are checked.
+//
+// The paid shares are taken on fully developed squares on both sides: the
+// generated triangles run to full development, and each company's paid is
+// completed with its later development (MR-17).
 //
 // The drift band is the reference companies' drift relative to the pool's
 // median drift (MR-15). Accident years 1998-2007 span the 2001-2004 hard
@@ -241,9 +265,16 @@ func CompareToReference(c Comparison, refs []ReferenceSet) Report {
 		paidRef[i] = r.Paid
 		incRef[i] = r.CaseIncurred
 	}
+	var devPaidRef []Triangle
+	for _, r := range refs {
+		if len(r.DevelopedPaid.Cells) > 0 {
+			devPaidRef = append(devPaidRef, r.DevelopedPaid)
+		}
+	}
 	report := Report{
 		PaidATA:     checkAges(c.Paid.ATAFactors(), ATABands(paidRef)),
 		IncurredATA: checkAges(c.Incurred.ATAFactors(), ATABands(incRef)),
+		PaidShares:  checkAges(c.Paid.DevelopmentShares(), bandsByAge(devPaidRef, Triangle.DevelopmentShares)),
 	}
 
 	var lrs []float64

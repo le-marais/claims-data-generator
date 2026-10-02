@@ -13,39 +13,7 @@ IDs are **MR** (model review). Severity uses the `docs/todo.md` scale: **high**
 undermines the mission, **medium** worth addressing soon, **low** fix when
 touching the area.
 
-## 1. MR-16 (medium) - incurred is scored including bulk reserves
-
-- Where: `internal/domain/triangle/compare.go` (`ReferenceSet`),
-  `internal/application/realism.go` (`SectionComparison`).
-- Schedule P Part 2 incurred includes bulk and IBNR reserves (Part 4). The
-  gate scores it against the generated paid plus case plus pure IBNR held at
-  its true value. A company's bulk reserve is a reserving judgement, held
-  early and released later, which the generator does not model, so the README
-  calls the incurred check a loose sanity bound.
-- Meyers scores reported incurred, Part 2 less Part 4. The CAS files carry
-  Part 4 as `BulkLoss`, so case incurred is available, and its like-for-like
-  generated counterpart is paid plus case (`AnnualSet.Incurred`).
-- On the 45-company pool, case-incurred development at age 1-2 runs from
-  0.99 (P5) to 1.38 (P95), median 1.12. Before MR-15's recalibration, the
-  preset's reported incurred developed 1.03-1.05 there, at P22-P27, and sat at
-  P9-P27 over the first three factors: inside the bands, but light.
-- Action: read `BulkLoss`, score the generated reported incurred against
-  case-incurred bands, and drop the loose-bound caveat.
-
-## 2. MR-17 (medium) - each development age is scored alone
-
-- Where: `internal/domain/triangle/compare.go` (`CompareToReference`,
-  `checkAges`).
-- Every age-to-age factor is checked against its own band, so a pattern that
-  sits at the same edge at every age passes. Before MR-15's recalibration,
-  the preset's paid factors at ages 2-3, 3-4 and 4-5 sat at P9, P10 and P20 of
-  the then 96-company pool, and it paid 54.5% of its 120-month paid within 12
-  months, about P88 of the reference, yet it passed.
-- Action: also score cumulative development, for example paid to date at each
-  age as a share of paid at age 10, against the same shares across the
-  reference companies.
-
-## 3. MR-12 (low) - one setting drives two kinds of variation
+## 1. MR-12 (low) - one setting drives two kinds of variation
 
 - Where: `internal/domain/policy/book.go`, `simulatePolicy`.
 - `spread` sets both the sum-insured lognormal sigma and the risk-factor
@@ -55,7 +23,7 @@ touching the area.
   class's other schema changes.
 - Action: split it into two parameters.
 
-## 4. MR-8 (low) - injury severity is a bare Pareto, and liability takes the excess
+## 2. MR-8 (low) - injury severity is a bare Pareto, and liability takes the excess
 
 - Where: `internal/domain/claim/claim.go`, `drawGroundUpLoss` and
   `simulateClaim`.
@@ -74,7 +42,7 @@ touching the area.
   the excess. Later, a lognormal body with a Pareto tail as another severity
   kind.
 
-## 5. MR-18 (low) - the other Schedule P lines are thin, and the gate folds the tail
+## 3. MR-18 (low) - the other Schedule P lines are thin, and the gate folds the tail
 
 - Where: `data/reference/schedule p/`, `internal/application/realism.go`
   (`grid.AnnualTriangles`, which folds development past age 10).

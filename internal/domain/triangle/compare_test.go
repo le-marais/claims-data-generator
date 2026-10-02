@@ -150,6 +150,39 @@ func TestIncurredBandUsesCaseIncurred(t *testing.T) {
 	}
 }
 
+// MR-17: a paid pattern inside every age-to-age band can still be extreme as
+// a whole. The paid share check scores the compounded pattern and catches it.
+func TestPaidSharesCatchAPatternFastAtEveryAge(t *testing.T) {
+	ref := func(name string, paid ...float64) ReferenceSet {
+		tri := Triangle{StartYear: 1998, Cells: [][]float64{paid}}
+		return ReferenceSet{Name: name, Paid: tri, DevelopedPaid: tri, Incurred: tri, CaseIncurred: tri, EarnedPremium: []float64{100}}
+	}
+	// Factors (2, 3), (2.5, 2.5) and (3, 2): fast or slow early, each company
+	// reaches about six times its first-year paid.
+	refs := []ReferenceSet{ref("a", 10, 20, 60), ref("b", 10, 25, 62.5), ref("c", 10, 30, 60)}
+	// Factors (2.2, 2.2) sit inside both factor bands, [2.05, 2.95], but pay
+	// a fifth of the total in the first year, against about a sixth.
+	gen := Triangle{StartYear: 1998, Cells: [][]float64{{10, 22, 48.4}}}
+	report := CompareToReference(Comparison{Paid: gen, Incurred: gen, EarnedPremium: []float64{80}}, refs)
+	for _, c := range append(report.PaidATA, report.IncurredATA...) {
+		if !c.Within {
+			t.Fatalf("factor at age %d = %v outside %+v, want inside", c.Age, c.Value, c.Band)
+		}
+	}
+	if !report.LossRatio.Within {
+		t.Fatalf("loss ratio %v outside %+v, want inside", report.LossRatio.Value, report.LossRatio.Band)
+	}
+	if len(report.PaidShares) != 2 {
+		t.Fatalf("got %d paid share checks, want 2", len(report.PaidShares))
+	}
+	if s := report.PaidShares[0]; s.Age != 1 || s.Within {
+		t.Fatalf("paid share check %+v, want age 1 outside its band", s)
+	}
+	if report.Pass() {
+		t.Fatal("Pass() = true with a paid share outside its band")
+	}
+}
+
 // MR-13: the drift band is the reference companies' own drift on developed
 // incurred, not a fixed tolerance.
 func TestDriftBandComesFromReferenceDrift(t *testing.T) {

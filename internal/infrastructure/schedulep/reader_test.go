@@ -43,6 +43,7 @@ func TestLoadBuildsTheValuationTriangleAndItsDevelopment(t *testing.T) {
 		Incurred:          triangle.Triangle{StartYear: 2000, Cells: [][]float64{{60, 55}, {70}}},
 		CaseIncurred:      triangle.Triangle{StartYear: 2000, Cells: [][]float64{{50, 53}, {58}}},
 		DevelopedIncurred: triangle.Triangle{StartYear: 2000, Cells: [][]float64{{60, 55}, {70, 66}}},
+		DevelopedPaid:     triangle.Triangle{StartYear: 2000, Cells: [][]float64{{20, 45}, {25, 50}}},
 		EarnedPremium:     []float64{90, 108},
 		DirectPremium:     []float64{100, 120},
 	}}
@@ -88,7 +89,7 @@ func TestLoadFileReadsEveryCompleteCompany(t *testing.T) {
 	}
 	for _, ref := range refs {
 		for i, row := range ref.DevelopedIncurred.Cells {
-			if len(row) != 10 || len(ref.Paid.Cells[i]) != 10-i || len(ref.Incurred.Cells[i]) != 10-i || len(ref.CaseIncurred.Cells[i]) != 10-i {
+			if len(row) != 10 || len(ref.DevelopedPaid.Cells[i]) != 10 || len(ref.Paid.Cells[i]) != 10-i || len(ref.Incurred.Cells[i]) != 10-i || len(ref.CaseIncurred.Cells[i]) != 10-i {
 				t.Fatalf("%s origin %d: developed %d, paid %d, incurred %d, case incurred %d ages; want 10, %d, %d, %d",
 					ref.Name, 1998+i, len(row), len(ref.Paid.Cells[i]), len(ref.Incurred.Cells[i]), len(ref.CaseIncurred.Cells[i]), 10-i, 10-i, 10-i)
 			}
@@ -149,6 +150,9 @@ func TestLoadKnownCompany(t *testing.T) {
 	}
 	if got := dev.Cells[9][9]; got != 5468 {
 		t.Errorf("2007 developed = %v, want 5468", got)
+	}
+	if got := ref.DevelopedPaid.Cells[1][9]; got != 4000 {
+		t.Errorf("1999 developed paid = %v, want 4000", got)
 	}
 }
 

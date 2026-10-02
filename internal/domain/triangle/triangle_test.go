@@ -191,6 +191,21 @@ func TestPercentileInterpolates(t *testing.T) {
 	}
 }
 
+// Shares are taken over the origins developed to the last age only.
+func TestDevelopmentShares(t *testing.T) {
+	tri := triangle.Triangle{Cells: [][]float64{{20, 60, 100}, {30, 90, 100}, {50}}}
+	got := tri.DevelopmentShares()
+	if want := []float64{0.25, 0.75}; len(got) != 2 || !approx(got[0], want[0]) || !approx(got[1], want[1]) {
+		t.Fatalf("DevelopmentShares = %v, want %v (50 and 150 of 200)", got, want)
+	}
+	if got := (triangle.Triangle{Cells: [][]float64{{5}}}).DevelopmentShares(); got != nil {
+		t.Errorf("one age: DevelopmentShares = %v, want nil", got)
+	}
+	if got := (triangle.Triangle{Cells: [][]float64{{5, 0}}}).DevelopmentShares(); got != nil {
+		t.Errorf("zero at the last age: DevelopmentShares = %v, want nil", got)
+	}
+}
+
 func TestBandsAcrossReferenceSets(t *testing.T) {
 	refs := []triangle.ReferenceSet{
 		{Paid: triangle.Triangle{Cells: [][]float64{{100, 150, 165}}}},

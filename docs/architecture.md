@@ -88,7 +88,7 @@ The ledger is each claim's event stream, and every measure folds from it: outsta
 - `MonthlyGrid` is the one aggregation store: incremental cells, origin months down, development months across, run to full runoff, for paid, net paid, incurred and reported count. `BuildMonthlyGrid` folds the ledger into it on an `OriginBasis`, accident or underwriting.
 - `Coarsen` maps both axes onto calendar periods. `AnnualTriangles` is `Coarsen(Annual, 10, true)` cumulated, the view the UI and the realism gate read. New aggregate views coarsen the grid rather than re-scan the transactions.
 - `ExposureByMonth` gives premium, policy-years and policy count by origin month, and `EarnedPremiumByYear` rolls the monthly premium up by year.
-- `CompareToReference` scores paid and incurred age-to-age factors, the ultimate loss ratio and the loss-ratio drift, relative to the pool's median drift, against the P5-P95 bands across the reference companies, and returns a `Report`.
+- `CompareToReference` scores paid and incurred age-to-age factors, paid to date at each age as a share of paid at the last age (`Triangle.DevelopmentShares`), the ultimate loss ratio and the loss-ratio drift, relative to the pool's median drift, against the P5-P95 bands across the reference companies, and returns a `Report`.
 - `ReferenceCriteria` picks the reference companies: steady net premium and net-to-direct ratio, a size floor and named exclusions. `SelectReferences` applies it, and `application.PersonalMotorCriteria` is the gate's pool.
 
 ### `shared` - value objects

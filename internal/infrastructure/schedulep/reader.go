@@ -136,8 +136,8 @@ func parse(r io.Reader) ([]triangle.ReferenceSet, error) {
 }
 
 // referenceSet builds the company's paid, incurred and case incurred
-// triangles valued at the end of the last accident year, its incurred
-// developed to the last lag, and its premium by accident year. ok is false when any cell is missing.
+// triangles valued at the end of the last accident year, its paid and
+// incurred developed to the last lag, and its premium by accident year. ok is false when any cell is missing.
 func (c *company) referenceSet(firstYear, years int) (triangle.ReferenceSet, bool) {
 	ref := triangle.ReferenceSet{
 		Name:              strconv.Itoa(c.code),
@@ -146,6 +146,7 @@ func (c *company) referenceSet(firstYear, years int) (triangle.ReferenceSet, boo
 		Incurred:          triangle.Triangle{StartYear: firstYear, Cells: make([][]float64, years)},
 		CaseIncurred:      triangle.Triangle{StartYear: firstYear, Cells: make([][]float64, years)},
 		DevelopedIncurred: triangle.Triangle{StartYear: firstYear, Cells: make([][]float64, years)},
+		DevelopedPaid:     triangle.Triangle{StartYear: firstYear, Cells: make([][]float64, years)},
 		EarnedPremium:     make([]float64, years),
 		DirectPremium:     make([]float64, years),
 	}
@@ -159,6 +160,7 @@ func (c *company) referenceSet(firstYear, years int) (triangle.ReferenceSet, boo
 				ref.EarnedPremium[i], ref.DirectPremium[i] = v.net, v.direct
 			}
 			ref.DevelopedIncurred.Cells[i] = append(ref.DevelopedIncurred.Cells[i], v.incurred)
+			ref.DevelopedPaid.Cells[i] = append(ref.DevelopedPaid.Cells[i], v.paid)
 			if lag <= years-i {
 				ref.Paid.Cells[i] = append(ref.Paid.Cells[i], v.paid)
 				ref.Incurred.Cells[i] = append(ref.Incurred.Cells[i], v.incurred)

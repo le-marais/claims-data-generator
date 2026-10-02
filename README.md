@@ -387,7 +387,7 @@ flowchart TD
     dataset["generated dataset"]
     section["scored sections together<br/>their claims against<br/>each policy's premium for them"]
     triangles["accident-year triangles, 10 development years<br/>paid net of recoveries,<br/>incurred: paid plus case, earned premium"]
-    metrics["paid age-to-age factors<br/>incurred age-to-age factors<br/>ultimate loss ratio<br/>loss-ratio drift between the two halves<br/>of the accident years"]
+    metrics["paid age-to-age factors<br/>incurred age-to-age factors<br/>paid to date as a share of paid at age 10<br/>ultimate loss ratio<br/>loss-ratio drift between the two halves<br/>of the accident years"]
     references[("45 Schedule P private passenger auto<br/>liability companies, accident years 1998-2007,<br/>steady premium and reinsurance, $5m a year and up")]
     bands["P5-P95 band for each metric<br/>across the companies,<br/>drift relative to their median"]
     verdict{"every metric<br/>inside its band?"}
@@ -425,16 +425,18 @@ programme (coefficient of variation of the net-to-direct premium ratio under
 0.125), the limits Meyers used to select Schedule P triangles (CAS Monograph 1,
 2015); at least $5m of net premium a year, so claim sampling noise in small
 books does not set the band edges; and no reinsurers. Paid and incurred
-age-to-age development factors, the ultimate loss ratio, and the loss-ratio
-drift between the two halves of the accident years must fall inside the P5-P95
-bands observed across those companies. The generated triangles run to full
-development, so the loss ratio is scored against each company's loss ratio
-developed to age 10 with its later reported development, not its latest
-diagonal. Incurred development is scored on each company's case incurred,
-Schedule P incurred less its bulk and IBNR reserves (Part 2 less Part 4),
-against the generated paid plus case: neither side counts claims not yet
-reported, and a company's bulk reserve, held early and released later, does not
-move the factors. A backstop filter drops any
+age-to-age development factors, paid to date at each age as a share of paid at
+age 10, the ultimate loss ratio, and the loss-ratio drift between the two halves
+of the accident years must fall inside the P5-P95 bands observed across those
+companies. The paid shares score the pattern the factors compound to, so a book
+at the same edge of every factor band still fails; both sides take them on the
+fully developed square. The generated triangles run to full development, so the
+loss ratio is scored against each company's loss ratio developed to age 10 with
+its later reported development, not its latest diagonal. Incurred development is
+scored on each company's case incurred, Schedule P incurred less its bulk and
+IBNR reserves (Part 2 less Part 4), against the generated paid plus case:
+neither side counts claims not yet reported, and a company's bulk reserve, held
+early and released later, does not move the factors. A backstop filter drops any
 company carrying no scorable signal, and the full min/max range is shown for
 context. The paid comparison is net of recoveries, matching how Schedule P
 reports paid losses. This runs as a test gate (`TestDefaultPresetIsRealistic`,
