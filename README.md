@@ -221,7 +221,7 @@ Each episode turns the claim's true cost into a ledger of `ESTIMATE` and `PAYMEN
 %%{init: {"flowchart": {"wrappingWidth": 480}}}%%
 flowchart TD
     opening["report date: the case opens<br/>ESTIMATE = ultimate × LN(case_adequacy_sigma) / case_adequacy_mean"]
-    events["events on days strictly inside the episode<br/>revisions: Poisson, revisions_per_year × years open<br/>interim payments: Poisson, payments_per_year × years open,<br/>sharing (1 - settlement_share) × ultimate by Dirichlet(concentration) weights"]
+    events["events on days strictly inside the episode<br/>revisions: Poisson, revisions_per_year × years open<br/>interim payments: Poisson, payments_per_year × years open,<br/>sharing (1 - share) × ultimate by Dirichlet(concentration) weights,<br/>share ~ Beta, mean settlement_share, settlement_concentration"]
     nextEvent{"next event,<br/>in date order"}
     revise["ESTIMATE moves the case to<br/>remaining cost × case_adequacy_mean ^ (u - 1)<br/>× LN(revision_sigma × (1 - u)),<br/>u = elapsed share of the episode"]
     pay["PAYMENT, then an ESTIMATE<br/>releasing the same amount<br/>(the case is topped up first if it is short)"]
@@ -232,25 +232,25 @@ flowchart TD
     nextEvent -- "close date" --> settle
 ```
 
-The claim opens at a case estimate drawn around its ultimate - `case_adequacy_mean` sets whether cases open deficient or redundant, which moves reserves and incurred development but never the loss cost - payments split the ultimate over the claim's life, and the case estimate is a noisy view of the remaining cost that settles as the claim ages. The opening bias decays over the claim's life rather than vanishing at the first revision, so incurred keeps developing in one direction - downward in the preset, whose cases open about 11% redundant - for incurred-based and IBNER methods to pick up. A nil episode draws revisions but no payments: its handler, who does not know it will pay nothing, revises the case around its current level, and the case is released to zero at close. A reopened claim's second episode opens at a reopen estimate drawn the same way as the opening case, and runs the same loop on the reopen's additional cost.
+The claim opens at a case estimate drawn around its ultimate - `case_adequacy_mean` sets whether cases open deficient or redundant, which moves reserves and incurred development but never the loss cost - payments split the ultimate over the claim's life, and the case estimate is a noisy view of the remaining cost that settles as the claim ages. The opening bias decays over the claim's life rather than vanishing at the first revision, so incurred keeps developing in one direction - upward in both presets, whose cases open deficient - for incurred-based and IBNER methods to pick up. A nil episode draws revisions but no payments: its handler, who does not know it will pay nothing, revises the case around its current level, and the case is released to zero at close. A reopened claim's second episode opens at a reopen estimate drawn the same way as the opening case, and runs the same loop on the reopen's additional cost.
 
 The ledger is a stream of events that every measure folds from. The first row of every claim is its initial case estimate on the report date, so the outstanding case at any time is the running sum of `ESTIMATE` amounts. Every payment carries a matching case reduction. At close the outstanding case is exactly zero and total paid equals the ultimate (zero for a nil claim that does not reopen), and no claim pays beyond its cover: the sum insured minus excess for own damage, the section's `limit` for a limited section. Gross paid is the sum of a claim's `PAYMENT` rows; net paid subtracts its `SALVAGE` and `SUBROGATION` rows; incurred is the outstanding case plus net paid.
 
-An illustrative own-damage claim with an ultimate of 4000.00 under the preset's `case_adequacy_mean` of 0.90. The amounts are made up, but they follow the rules above:
+An illustrative own-damage claim with an ultimate of 4000.00, an illustrative `case_adequacy_mean` of 0.90 and a drawn settlement share of 0.35. The amounts are made up, but they follow the rules above:
 
 | Date | Type | Amount | Outstanding case | Gross paid | What happened |
 | --- | --- | ---: | ---: | ---: | --- |
 | 2001-03-14 | ESTIMATE | 4800.00 | 4800.00 | 0.00 | reported: 4000 × noise 1.08 / 0.90 |
 | 2001-04-13 | ESTIMATE | -637.67 | 4162.33 | 0.00 | revision at u = 1/3: aims at 4000 × 0.90 ^ (-2/3), noise 0.97 |
-| 2001-04-28 | PAYMENT | 2400.00 | 4162.33 | 2400.00 | interim payment: the whole 60% pool in one payment |
-| 2001-04-28 | ESTIMATE | -2400.00 | 1762.33 | 2400.00 | the payment releases its own case |
-| 2001-05-23 | ESTIMATE | -108.05 | 1654.28 | 2400.00 | revision at u = 0.78: aims at 1600 × 0.90 ^ (-0.22), noise 1.01 |
-| 2001-06-12 | PAYMENT | 1600.00 | 1654.28 | 4000.00 | close: settles the remaining ultimate |
-| 2001-06-12 | ESTIMATE | -1600.00 | 54.28 | 4000.00 | the payment releases its own case |
-| 2001-06-12 | ESTIMATE | -54.28 | 0.00 | 4000.00 | the rest of the case is released to zero |
+| 2001-04-28 | PAYMENT | 2600.00 | 4162.33 | 2600.00 | interim payment: the whole 65% pool in one payment |
+| 2001-04-28 | ESTIMATE | -2600.00 | 1562.33 | 2600.00 | the payment releases its own case |
+| 2001-05-23 | ESTIMATE | -115.17 | 1447.16 | 2600.00 | revision at u = 0.78: aims at 1400 × 0.90 ^ (-0.22), noise 1.01 |
+| 2001-06-12 | PAYMENT | 1400.00 | 1447.16 | 4000.00 | close: settles the remaining ultimate |
+| 2001-06-12 | ESTIMATE | -1400.00 | 47.16 | 4000.00 | the payment releases its own case |
+| 2001-06-12 | ESTIMATE | -47.16 | 0.00 | 4000.00 | the rest of the case is released to zero |
 | 2001-12-09 | SUBROGATION | 3120.00 | 0.00 | 4000.00 | 180 days after close: net paid is now 880.00 |
 
-Incurred ends each of those days at 4800.00, 4162.33, 4162.33, 4054.28 and 4000.00 - drifting down, because the case opened redundant - and falls to 880.00 when the subrogation arrives.
+Incurred ends each of those days at 4800.00, 4162.33, 4162.33, 4047.16 and 4000.00 - drifting down, because the case opened redundant - and falls to 880.00 when the subrogation arrives.
 
 transactions.csv is emitted in claim-registration order, not date order: all of a claim's rows are written together, and because recovery rows can post-date a claim's close date, a later claim's rows can carry earlier dates. Sort by date yourself if your reserving tool expects a date-ordered ledger.
 
