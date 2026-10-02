@@ -140,6 +140,47 @@ func TestGenerateInvalidConfigNamesField(t *testing.T) {
 	}
 }
 
+// --preset motor-personal is the default, byte for byte.
+func TestGeneratePresetMatchesTheDefault(t *testing.T) {
+	outA := filepath.Join(t.TempDir(), "a")
+	outB := filepath.Join(t.TempDir(), "b")
+	var buf bytes.Buffer
+	if code := run([]string{"generate", "--out", outA, "--years", "2", "--initial-book-size", "100"}, &buf, &buf); code != 0 {
+		t.Fatalf("default run failed: %s", buf.String())
+	}
+	if code := run([]string{"generate", "--out", outB, "--years", "2", "--initial-book-size", "100", "--preset", "motor-personal"}, &buf, &buf); code != 0 {
+		t.Fatalf("preset run failed: %s", buf.String())
+	}
+	for _, name := range []string{"policies.csv", "claims.csv", "transactions.csv", "triangles.csv", "exposure.csv"} {
+		a, _ := os.ReadFile(filepath.Join(outA, name))
+		b, _ := os.ReadFile(filepath.Join(outB, name))
+		if !bytes.Equal(a, b) {
+			t.Errorf("%s differs between the default and --preset motor-personal", name)
+		}
+	}
+}
+
+func TestGenerateRejectsPresetWithConfig(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	path := filepath.Join("..", "..", "internal", "infrastructure", "config", "motor-personal.yaml")
+	if code := run([]string{"generate", "--preset", "motor-personal", "--config", path}, &stdout, &stderr); code == 0 {
+		t.Fatal("expected nonzero exit for --preset with --config")
+	}
+	if !strings.Contains(stderr.String(), "--preset") || !strings.Contains(stderr.String(), "--config") {
+		t.Errorf("stderr %q should name both flags", stderr.String())
+	}
+}
+
+func TestGenerateRejectsAnUnknownPreset(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := run([]string{"generate", "--preset", "marine-cargo"}, &stdout, &stderr); code == 0 {
+		t.Fatal("expected nonzero exit for an unknown preset")
+	}
+	if !strings.Contains(stderr.String(), "marine-cargo") {
+		t.Errorf("stderr %q should name the preset", stderr.String())
+	}
+}
+
 func TestUnknownCommandFails(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	if code := run([]string{"frobnicate"}, &stdout, &stderr); code == 0 {

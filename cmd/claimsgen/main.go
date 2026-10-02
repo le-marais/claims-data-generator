@@ -31,12 +31,15 @@ Commands:
   ui          serve the browser UI on localhost
 
 generate flags:
-  --config PATH            line of business YAML (default: embedded motor-personal preset)
+  --preset ID              embedded line of business: motor-personal or
+                           motor-commercial (default motor-personal)
+  --config PATH            line of business YAML, instead of a preset
   --seed N                 master random seed (default 1)
   --out DIR                output directory (default ./output)
   --start-year N           first calendar year of the book (default 1998)
   --years N                number of calendar years (default 10)
-  --initial-book-size N    policies written in the first year (default 20000)
+  --initial-book-size N    policies written in the first year, or fleets on a
+                           fleet book (default 20000)
   --origin-basis B         monthly triangle origin: accident or underwriting (default accident)
 
 ui flags:
@@ -66,6 +69,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 func runGenerate(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	preset := fs.String("preset", "", "embedded line of business preset")
 	configPath := fs.String("config", "", "line of business YAML file")
 	seed := fs.Uint64("seed", 1, "master random seed")
 	out := fs.String("out", "output", "output directory")
@@ -83,14 +87,21 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		return 1
 	}
 
+	if *preset != "" && *configPath != "" {
+		fmt.Fprintln(stderr, "claimsgen: --preset and --config cannot be combined")
+		return 2
+	}
 	var (
 		l   lob.LineOfBusiness
 		err error
 	)
-	if *configPath == "" {
-		l, err = config.MotorPersonal()
-	} else {
+	switch {
+	case *configPath != "":
 		l, err = config.LoadFile(*configPath)
+	case *preset != "":
+		l, err = config.Preset(*preset)
+	default:
+		l, err = config.MotorPersonal()
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "claimsgen: config: %v\n", err)
