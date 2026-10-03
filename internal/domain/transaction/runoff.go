@@ -123,10 +123,10 @@ func (s *RunoffSimulator) adequacyBias(u float64) float64 {
 //
 // With a payment delay, each payment has a bill that many days before it.
 // A bill above the case raises the case to the handler's view of the
-// remaining cost, and at least to the bill. A revision after the bill, up to
-// the payment, may lower the case but not below the payment, and may not
-// raise it, so every payment comes at least the delay after the case was
-// last raised.
+// remaining cost, and at least to the bill. A revision from the bill's day
+// to the payment keeps the case at or above the payment, and after the
+// bill's day may lower it but not raise it, so every payment comes at least
+// the delay after the case was last raised.
 func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, ep claim.Episode, st lob.SettlementParams) {
 	ultimate, isNil := ep.Ultimate, ep.Nil
 	base := shared.DaysBetween(e.report, ep.Open)
@@ -191,10 +191,16 @@ func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, ep cla
 			if target < shared.OneCent {
 				target = shared.OneCent // keep the case open so the terminal release lands on the close date
 			}
-			if delay > 0 && next < len(payments) && ev.offset > payments[next].offset-delay {
-				// Between a payment's bill and the payment: never raise
-				// the case, and keep it covering the payment.
-				target = max(min(target, e.outstanding), payments[next].amount)
+			if delay > 0 && next < len(payments) {
+				// From a payment's bill to the payment the case keeps
+				// covering the payment, so the bill has nothing to raise;
+				// after the bill's day it is never raised.
+				if bill := payments[next].offset - delay; ev.offset >= bill {
+					if ev.offset > bill {
+						target = min(target, e.outstanding)
+					}
+					target = max(target, payments[next].amount)
+				}
 			}
 			e.reviseTo(base+ev.offset, target)
 		}

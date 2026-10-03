@@ -355,6 +355,22 @@ func TestPaymentDelayFollowsEveryRaise(t *testing.T) {
 			t.Fatalf("claim %d: paid %v with %v outstanding at close, want %v and 0", c.ID, paid, outstanding, want)
 		}
 	}
+	// A revision on a bill's day must not take the case below the bill, for
+	// the bill to raise it straight back: no claim lowers its case and raises
+	// it again on the same day. A payment's own release is not a revision.
+	for id, rs := range grouped {
+		lowered := shared.Date{}
+		for i, tx := range rs {
+			if tx.Type != transaction.Estimate || (i > 0 && rs[i-1].Type == transaction.Payment && tx.Amount == -rs[i-1].Amount) {
+				continue
+			}
+			if tx.Amount < 0 {
+				lowered = tx.Date
+			} else if tx.Date == lowered {
+				t.Fatalf("claim %d: case lowered and raised again on %s", id, tx.Date)
+			}
+		}
+	}
 	// Without the delay the same claims break the rule, so the test can see it.
 	p.PaymentDelayDays = 0
 	plain := transaction.NewRunoffSimulator(p, sections(lob.SettlementParams{Share: 0.4, Concentration: 4})).Simulate(random.NewSource(10), claims)
