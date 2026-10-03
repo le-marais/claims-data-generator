@@ -177,6 +177,8 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"runoff.payments_per_year", func(l *LineOfBusiness) { l.Runoff.PaymentsPerYear = -1 }},
 		{"runoff.concentration", func(l *LineOfBusiness) { l.Runoff.Concentration = 0 }},
 		{"runoff.min_payment", func(l *LineOfBusiness) { l.Runoff.MinPayment = -1 }},
+		{"runoff.payment_delay_days", func(l *LineOfBusiness) { l.Runoff.PaymentDelayDays = -1 }},
+		{"runoff.payment_delay_days", func(l *LineOfBusiness) { l.Runoff.PaymentDelayDays = 2.5 }},
 		{"claims.sections[0].settlement.lump_sum_probability", func(l *LineOfBusiness) { l.Claims.Sections[0].Settlement.LumpSumProbability = -0.1 }},
 		{"claims.sections[0].settlement.lump_sum_probability", func(l *LineOfBusiness) { l.Claims.Sections[0].Settlement.LumpSumProbability = 1.5 }},
 		{"claims.sections[1].settlement.share", func(l *LineOfBusiness) { l.Claims.Sections[1].Settlement.Share = 0 }},

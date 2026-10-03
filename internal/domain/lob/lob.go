@@ -354,6 +354,12 @@ type RunoffParams struct {
 	// smaller one is held over and paid with the next, or with the final
 	// settlement. 0 switches it off.
 	MinPayment float64
+	// PaymentDelayDays is the fewest whole days between an ESTIMATE row that
+	// raises the case - the opening case, a reopen, an upward revision, or
+	// the top-up for a bill above the case - and a payment. A paying episode
+	// stays open at least this long, and its payments are at least this far
+	// apart. 0 switches it off.
+	PaymentDelayDays float64
 	// RevisionsPerYear is the Poisson intensity of pure case revisions.
 	RevisionsPerYear float64
 	// RevisionSigma is the initial sigma of revision noise; it decays as the
@@ -840,6 +846,7 @@ func (r RunoffParams) validate() error {
 		namedFloat{"runoff.payments_per_year", r.PaymentsPerYear},
 		namedFloat{"runoff.concentration", r.Concentration},
 		namedFloat{"runoff.min_payment", r.MinPayment},
+		namedFloat{"runoff.payment_delay_days", r.PaymentDelayDays},
 		namedFloat{"runoff.revisions_per_year", r.RevisionsPerYear},
 		namedFloat{"runoff.revision_sigma", r.RevisionSigma},
 	); err != nil {
@@ -859,6 +866,9 @@ func (r RunoffParams) validate() error {
 	}
 	if r.MinPayment < 0 {
 		return fmt.Errorf("runoff.min_payment: must not be negative, got %v", r.MinPayment)
+	}
+	if r.PaymentDelayDays < 0 || r.PaymentDelayDays != math.Trunc(r.PaymentDelayDays) {
+		return fmt.Errorf("runoff.payment_delay_days: must be a whole number of days, not negative, got %v", r.PaymentDelayDays)
 	}
 	if r.RevisionsPerYear < 0 {
 		return fmt.Errorf("runoff.revisions_per_year: must not be negative, got %v", r.RevisionsPerYear)
