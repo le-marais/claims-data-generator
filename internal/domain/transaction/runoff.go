@@ -73,14 +73,16 @@ func (s *RunoffSimulator) Simulate(src shared.RandomSource, claims []claim.Claim
 const (
 	kindRevision = 0
 	kindPayment  = 1
+	kindBill     = 2
 )
 
-// event is an interim payment or case revision strictly between report and
-// close. kindRevision sorts before kindPayment on the same day.
+// event is a case revision, a payment, or the bill a payment delay puts
+// before a payment, on a day of the episode. On the same day revisions come
+// first, then payments, then bills.
 type event struct {
 	offset int
 	kind   int
-	amount shared.Money // payments only
+	amount shared.Money // payments and bills only
 }
 
 // simulateClaim develops the claim's episodes in order, each settling the
@@ -118,20 +120,40 @@ func (s *RunoffSimulator) adequacyBias(u float64) float64 {
 // cost (ultimate - paid) times the adequacy bias; a nil episode, whose handler
 // does not know it will pay nothing, aims at the current case. Every target
 // is floored at one cent, so the case stays open until the close date.
+//
+// With a payment delay, each payment has a bill that many days before it.
+// A bill above the case raises the case to the handler's view of the
+// remaining cost, and at least to the bill. A revision after the bill, up to
+// the payment, may lower the case but not below the payment, and may not
+// raise it, so every payment comes at least the delay after the case was
+// last raised.
 func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, ep claim.Episode, st lob.SettlementParams) {
 	ultimate, isNil := ep.Ultimate, ep.Nil
 	base := shared.DaysBetween(e.report, ep.Open)
 	duration := shared.DaysBetween(ep.Open, ep.Close)
 	years := float64(duration) / 365
+	delay := int(s.params.PaymentDelayDays)
 
-	var interims []event
+	// payments are the interim payments and the final settlement, in date
+	// order.
+	var payments []event
 	if !isNil {
 		if ultimate < shared.OneCent {
 			ultimate = shared.OneCent // guards hand-built claims; generated claims always cost something
 		}
-		interims = s.drawInterimPayments(src, st, ultimate, duration, years)
+		payments = s.drawInterimPayments(src, st, ultimate, duration, years)
+		final := ultimate
+		for _, p := range payments {
+			final -= p.amount
+		}
+		payments = append(payments, event{offset: duration, kind: kindPayment, amount: final})
 	}
-	events := append(s.drawRevisions(src, duration, years), interims...)
+	events := append(s.drawRevisions(src, duration, years), payments...)
+	if delay > 0 {
+		for _, p := range payments {
+			events = append(events, event{offset: max(0, p.offset-delay), kind: kindBill, amount: p.amount})
+		}
+	}
 	sort.SliceStable(events, func(i, j int) bool {
 		if events[i].offset != events[j].offset {
 			return events[i].offset < events[j].offset
@@ -140,43 +162,60 @@ func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, ep cla
 	})
 
 	paid := shared.Money(0)
+	next := 0 // index of the next payment due
 	aim := func(u float64) float64 {
 		if isNil {
 			return e.outstanding.Dollars()
 		}
 		return (ultimate - paid).Dollars() * s.adequacyBias(u)
 	}
+	elapsed := func(offset int) float64 {
+		if duration == 0 {
+			return 1
+		}
+		return float64(offset) / float64(duration)
+	}
 	for _, ev := range events {
-		if ev.kind == kindPayment {
+		switch ev.kind {
+		case kindPayment:
 			e.pay(base+ev.offset, ev.amount)
 			paid += ev.amount
-			continue
+			next++
+		case kindBill:
+			if e.outstanding < ev.amount {
+				e.reviseTo(base+ev.offset, max(ev.amount, shared.FromDollars(aim(elapsed(ev.offset)))))
+			}
+		default:
+			u := elapsed(ev.offset)
+			target := shared.FromDollars(aim(u) * shared.MeanOneLogNormal(src, s.params.RevisionSigma*(1-u)))
+			if target < shared.OneCent {
+				target = shared.OneCent // keep the case open so the terminal release lands on the close date
+			}
+			if delay > 0 && next < len(payments) && ev.offset > payments[next].offset-delay {
+				// Between a payment's bill and the payment: never raise
+				// the case, and keep it covering the payment.
+				target = max(min(target, e.outstanding), payments[next].amount)
+			}
+			e.reviseTo(base+ev.offset, target)
 		}
-		u := float64(ev.offset) / float64(duration)
-		target := shared.FromDollars(aim(u) * shared.MeanOneLogNormal(src, s.params.RevisionSigma*(1-u)))
-		if target < shared.OneCent {
-			target = shared.OneCent // keep the case open so the terminal release lands on the close date
-		}
-		e.reviseTo(base+ev.offset, target)
 	}
-
-	// A paying episode's final settlement clears the remaining ultimate; then
-	// the case snaps to exactly zero.
-	if !isNil {
-		e.pay(base+duration, ultimate-paid)
-	}
+	// The final settlement has cleared the remaining ultimate; the case
+	// snaps to exactly zero.
 	e.reviseTo(base+duration, 0)
 }
 
 // drawInterimPayments draws an episode's interim payments, on days strictly
-// between report and close; the final settlement at close pays the rest. A
-// lump-sum episode, drawn at the settlement's LumpSumProbability, has none,
-// and so has an episode whose Poisson count is zero. Otherwise the payments
-// share (1 - settlement share) of the ultimate by Dirichlet weights, given
-// out in date order, and a payment below MinPayment is held over to the
-// next.
+// between open and close and at least the payment delay from both; the final
+// settlement at close pays the rest. A lump-sum episode, drawn at the
+// settlement's LumpSumProbability, has none, and so has an episode whose
+// Poisson count is zero. Otherwise the payments share (1 - settlement share)
+// of the ultimate by Dirichlet weights, given out in date order, and a
+// payment below MinPayment, or less than the payment delay after the
+// previous one, is held over to the next.
 func (s *RunoffSimulator) drawInterimPayments(src shared.RandomSource, st lob.SettlementParams, ultimate shared.Money, duration int, years float64) []event {
-	if duration < 2 {
+	delay := int(s.params.PaymentDelayDays)
+	edge := max(1, delay)
+	if duration < 2*edge {
 		return nil
 	}
 	if st.LumpSumProbability > 0 && src.Bernoulli(st.LumpSumProbability) {
@@ -199,21 +238,23 @@ func (s *RunoffSimulator) drawInterimPayments(src shared.RandomSource, st lob.Se
 	pool := ultimate.MulFloat(1 - settlementShare(src, st)).Dollars()
 	offsets := make([]int, n)
 	for i := range offsets {
-		offsets[i] = s.interiorOffset(src, duration)
+		offsets[i] = offsetBetween(src, edge, duration-edge)
 	}
 	sort.Ints(offsets)
 	minimum := shared.FromDollars(s.params.MinPayment)
 	events := make([]event, 0, n)
 	paid, held := shared.Money(0), shared.Money(0)
+	last := 0 // the previous payment's day; the episode opens on day 0
 	for i, w := range weights {
 		amount := shared.FromDollars(pool*w/total) + held
-		if amount <= 0 || amount < minimum {
-			held = amount // too small to pay on its own: paid with the next
+		if amount <= 0 || amount < minimum || offsets[i]-last < delay {
+			held = amount // too small or too soon to pay on its own: paid with the next
 			continue
 		}
 		events = append(events, event{offset: offsets[i], kind: kindPayment, amount: amount})
 		paid += amount
 		held = 0
+		last = offsets[i]
 	}
 	if paid >= ultimate {
 		// Rounding degenerate: fall back to settling everything at close.
@@ -247,7 +288,12 @@ func (s *RunoffSimulator) drawRevisions(src shared.RandomSource, duration int, y
 
 // interiorOffset draws a day strictly between report (0) and close (duration).
 func (s *RunoffSimulator) interiorOffset(src shared.RandomSource, duration int) int {
-	return 1 + int(src.Uniform()*float64(duration-1))
+	return offsetBetween(src, 1, duration-1)
+}
+
+// offsetBetween draws a day from lo to hi inclusive, uniformly.
+func offsetBetween(src shared.RandomSource, lo, hi int) int {
+	return lo + int(src.Uniform()*float64(hi-lo+1))
 }
 
 // emitter tracks the outstanding case estimate and appends transactions,

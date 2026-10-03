@@ -276,6 +276,93 @@ func TestClaimsSettleBySection(t *testing.T) {
 	}
 }
 
+// delayBreaches counts the payments that come less than delay days after
+// the last ESTIMATE row that raised their claim's case, or less than delay
+// days after the claim's previous payment.
+func delayBreaches(txs []transaction.Transaction, delay int) int {
+	n := 0
+	for _, rows := range byClaim(txs) {
+		var lastRaise, lastPay shared.Date
+		paid := false
+		for _, tx := range rows {
+			switch {
+			case tx.Type == transaction.Estimate && tx.Amount > 0:
+				lastRaise = tx.Date
+			case tx.Type == transaction.Payment:
+				if shared.DaysBetween(lastRaise, tx.Date) < delay || (paid && shared.DaysBetween(lastPay, tx.Date) < delay) {
+					n++
+				}
+				lastPay, paid = tx.Date, true
+			}
+		}
+	}
+	return n
+}
+
+// delayClaims are test claims that stay open at least delay days, opening at
+// half their cost so bills have to raise the case; every fourth also reopens
+// short of its additional cost.
+func delayClaims(n, delay int) []claim.Claim {
+	var claims []claim.Claim
+	for _, c := range testClaims(n) {
+		first := &c.Episodes[0]
+		if shared.DaysBetween(first.Open, first.Close) < delay {
+			continue
+		}
+		first.OpeningCase = first.Ultimate.MulFloat(0.5)
+		if c.ID%4 == 0 {
+			reopen := first.Close.AddDays(30)
+			c.Episodes = append(c.Episodes, claim.Episode{
+				Open:        reopen,
+				Close:       reopen.AddDays(delay + c.ID%90),
+				Ultimate:    first.Ultimate.MulFloat(0.3),
+				OpeningCase: first.Ultimate.MulFloat(0.1),
+			})
+		}
+		claims = append(claims, c)
+	}
+	return claims
+}
+
+func TestPaymentDelayFollowsEveryRaise(t *testing.T) {
+	claims := delayClaims(1000, 7)
+	p := params()
+	p.PaymentDelayDays = 7
+	p.Concentration = 4
+	txs := transaction.NewRunoffSimulator(p, sections(lob.SettlementParams{Share: 0.4, Concentration: 4})).Simulate(random.NewSource(10), claims)
+	if n := delayBreaches(txs, 7); n != 0 {
+		t.Errorf("%d payments within 7 days of a raise or of the previous payment", n)
+	}
+	grouped := byClaim(txs)
+	for _, c := range claims {
+		outstanding, paid := shared.Money(0), shared.Money(0)
+		for _, tx := range grouped[c.ID] {
+			switch tx.Type {
+			case transaction.Estimate:
+				outstanding += tx.Amount
+			case transaction.Payment:
+				paid += tx.Amount
+			}
+			if outstanding < 0 {
+				t.Fatalf("claim %d: outstanding went negative", c.ID)
+			}
+		}
+		want := shared.Money(0)
+		for _, ep := range c.Episodes {
+			want += ep.Ultimate
+		}
+		if paid != want || outstanding != 0 {
+			t.Fatalf("claim %d: paid %v with %v outstanding at close, want %v and 0", c.ID, paid, outstanding, want)
+		}
+	}
+	// Without the delay the same claims break the rule, so the test can see it.
+	p.PaymentDelayDays = 0
+	plain := transaction.NewRunoffSimulator(p, sections(lob.SettlementParams{Share: 0.4, Concentration: 4})).Simulate(random.NewSource(10), claims)
+	if delayBreaches(plain, 7) == 0 {
+		t.Fatal("no breaches without the delay: the test claims cannot show it")
+	}
+}
+
 func TestEveryPaymentHasMatchingEstimateReduction(t *testing.T) {
 	claims := testClaims(200)
 	sim := transaction.NewRunoffSimulator(params(), sections())
