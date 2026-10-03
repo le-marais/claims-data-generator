@@ -124,10 +124,11 @@ func (c Claim) TotalLoss() bool {
 
 // ClaimSimulator generates claim events for a policy book.
 type ClaimSimulator struct {
-	params      lob.ClaimParams
-	inflation   InflationIndex
-	windowStart shared.Date // zero value means no windowing
-	windowEnd   shared.Date // exclusive
+	params       lob.ClaimParams
+	inflation    InflationIndex
+	windowStart  shared.Date // zero value means no windowing
+	windowEnd    shared.Date // exclusive
+	paymentDelay int
 }
 
 // NewClaimSimulator builds a claim simulator from the claim parameters.
@@ -140,6 +141,15 @@ func NewClaimSimulator(p lob.ClaimParams) *ClaimSimulator {
 // call applies no inflation.
 func (s *ClaimSimulator) WithInflation(x InflationIndex) *ClaimSimulator {
 	s.inflation = x
+	return s
+}
+
+// WithPaymentDelay keeps every paying claim open at least days after report,
+// so its payment can be processed that long after the case opens: its close
+// lag is the delay plus the drawn lag. A nil claim, which pays nothing, keeps
+// its drawn lag. The default, 0, adds nothing.
+func (s *ClaimSimulator) WithPaymentDelay(days int) *ClaimSimulator {
+	s.paymentDelay = days
 	return s
 }
 
@@ -276,7 +286,7 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	// The close lag reads the cost in start-year dollars, so claims inflation
 	// does not lengthen settlement year on year (MR-5).
 	baseCost := cost / s.inflation.For(occurrence)
-	closeDate := report.AddDays(int(math.Round(drawCloseLag(src, sec.CloseLag, baseCost, pol.RiskFactor))))
+	closeLag := int(math.Round(drawCloseLag(src, sec.CloseLag, baseCost, pol.RiskFactor)))
 
 	// Nil claims draw their severity and probability independently of claim
 	// size; real withdrawn claims skew small, so this is a known simplification.
@@ -285,6 +295,10 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	// later claims on the same policy. This is the shift-free contract the reopen
 	// and recovery post-passes also uphold.
 	isNil := src.Bernoulli(s.params.NilProbability)
+	if !isNil {
+		closeLag += s.paymentDelay
+	}
+	closeDate := report.AddDays(closeLag)
 
 	return Claim{
 		PolicyID:       pol.ID,
