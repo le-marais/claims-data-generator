@@ -1,6 +1,7 @@
 package transaction_test
 
 import (
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -17,11 +18,24 @@ func params() lob.RunoffParams {
 		CaseAdequacyMean:  1.0,
 		CaseAdequacySigma: 0.35,
 		PaymentsPerYear:   2.5,
-		SettlementShare:   0.4,
 		Concentration:     1.0,
 		RevisionsPerYear:  4,
 		RevisionSigma:     0.3,
 	}
+}
+
+// sections returns one section of cover per settlement, in order, or one
+// section with a fixed settlement share of 0.4 when none is given. Claims
+// reach their section by index.
+func sections(settlements ...lob.SettlementParams) []lob.SectionParams {
+	if len(settlements) == 0 {
+		settlements = []lob.SettlementParams{{Share: 0.4}}
+	}
+	secs := make([]lob.SectionParams, len(settlements))
+	for i, st := range settlements {
+		secs[i] = lob.SectionParams{Name: fmt.Sprintf("section-%d", i), Settlement: st}
+	}
+	return secs
 }
 
 // testClaims builds n claims with varying sizes and durations, each opening
@@ -59,7 +73,7 @@ func byClaim(txs []transaction.Transaction) map[int][]transaction.Transaction {
 
 func TestRunoffInvariants(t *testing.T) {
 	claims := testClaims(500)
-	sim := transaction.NewRunoffSimulator(params())
+	sim := transaction.NewRunoffSimulator(params(), sections())
 	txs := sim.Simulate(random.NewSource(1), claims)
 	grouped := byClaim(txs)
 	if len(grouped) != len(claims) {
@@ -113,9 +127,261 @@ func TestRunoffInvariants(t *testing.T) {
 	}
 }
 
+// finalShares returns, for each claim with an interim payment, its final
+// payment as a share of its ultimate. Every test claim has one episode.
+func finalShares(claims []claim.Claim, txs []transaction.Transaction) []float64 {
+	grouped := byClaim(txs)
+	var shares []float64
+	for _, c := range claims {
+		var payments []shared.Money
+		for _, tx := range grouped[c.ID] {
+			if tx.Type == transaction.Payment {
+				payments = append(payments, tx.Amount)
+			}
+		}
+		if len(payments) < 2 {
+			continue
+		}
+		shares = append(shares, payments[len(payments)-1].Dollars()/c.Episodes[0].Ultimate.Dollars())
+	}
+	return shares
+}
+
+func TestSettlementShareIsFixedWithoutConcentration(t *testing.T) {
+	claims := testClaims(500)
+	txs := transaction.NewRunoffSimulator(params(), sections()).Simulate(random.NewSource(4), claims)
+	shares := finalShares(claims, txs)
+	if len(shares) < 50 {
+		t.Fatalf("only %d claims have an interim payment, want at least 50", len(shares))
+	}
+	for i, s := range shares {
+		// Interim payments round to the cent each, so allow a few cents.
+		if math.Abs(s-0.4) > 0.001 {
+			t.Fatalf("claim %d: final payment share = %v, want 0.4", i, s)
+		}
+	}
+}
+
+func TestSettlementShareVariesAroundItsMean(t *testing.T) {
+	claims := testClaims(2000)
+	sim := transaction.NewRunoffSimulator(params(), sections(lob.SettlementParams{Share: 0.4, Concentration: 4}))
+	txs := sim.Simulate(random.NewSource(5), claims)
+	shares := finalShares(claims, txs)
+	if len(shares) < 200 {
+		t.Fatalf("only %d claims have an interim payment, want at least 200", len(shares))
+	}
+	mean, sq := 0.0, 0.0
+	for _, s := range shares {
+		mean += s
+		sq += s * s
+	}
+	mean /= float64(len(shares))
+	sd := math.Sqrt(sq/float64(len(shares)) - mean*mean)
+	if math.Abs(mean-0.4) > 0.03 {
+		t.Errorf("mean final payment share = %.3f, want about 0.4", mean)
+	}
+	// Beta(1.6, 2.4) has a standard deviation of about 0.22.
+	if sd < 0.15 || sd > 0.3 {
+		t.Errorf("final payment share standard deviation = %.3f, want about 0.22", sd)
+	}
+}
+
+// paymentsByClaim returns each claim's payment amounts in date order.
+func paymentsByClaim(txs []transaction.Transaction) map[int][]shared.Money {
+	pays := map[int][]shared.Money{}
+	for _, tx := range txs {
+		if tx.Type == transaction.Payment {
+			pays[tx.ClaimID] = append(pays[tx.ClaimID], tx.Amount)
+		}
+	}
+	return pays
+}
+
+func TestLumpSumPaysInOneSettlement(t *testing.T) {
+	claims := testClaims(2000)
+	paysOnce := func(st lob.SettlementParams) float64 {
+		txs := transaction.NewRunoffSimulator(params(), sections(st)).Simulate(random.NewSource(6), claims)
+		n := 0
+		for _, pays := range paymentsByClaim(txs) {
+			if len(pays) == 1 {
+				n++
+			}
+		}
+		return float64(n) / float64(len(claims))
+	}
+	if got := paysOnce(lob.SettlementParams{LumpSumProbability: 1}); got != 1 {
+		t.Errorf("lump_sum_probability 1: %.3f of claims pay once, want all of them", got)
+	}
+	base := paysOnce(lob.SettlementParams{Share: 0.4})
+	half := paysOnce(lob.SettlementParams{LumpSumProbability: 0.5, Share: 0.4})
+	if want := base + (1-base)/2; math.Abs(half-want) > 0.03 {
+		t.Errorf("lump_sum_probability 0.5: %.3f of claims pay once, want about %.3f (%.3f without lump sums)", half, want, base)
+	}
+}
+
+func TestMinPaymentHoldsSmallPaymentsOver(t *testing.T) {
+	claims := testClaims(1000)
+	minimum := shared.FromDollars(500)
+	small := func(p lob.RunoffParams) int {
+		txs := transaction.NewRunoffSimulator(p, sections()).Simulate(random.NewSource(7), claims)
+		pays := paymentsByClaim(txs)
+		n := 0
+		for _, c := range claims {
+			total := shared.Money(0)
+			for i, a := range pays[c.ID] {
+				total += a
+				if i < len(pays[c.ID])-1 && a < minimum {
+					n++
+				}
+			}
+			if total != c.Episodes[0].Ultimate {
+				t.Fatalf("claim %d paid %v, want its ultimate %v", c.ID, total, c.Episodes[0].Ultimate)
+			}
+		}
+		return n
+	}
+	if n := small(params()); n == 0 {
+		t.Fatal("no interim payment below 500 without a minimum: the test claims cannot show the minimum")
+	}
+	p := params()
+	p.MinPayment = 500
+	if n := small(p); n != 0 {
+		t.Errorf("%d interim payments below the 500 minimum", n)
+	}
+}
+
+func TestClaimsSettleBySection(t *testing.T) {
+	claims := testClaims(1000)
+	for i := range claims {
+		claims[i].Section = i % 2
+	}
+	sim := transaction.NewRunoffSimulator(params(), sections(lob.SettlementParams{Share: 0.4}, lob.SettlementParams{Share: 0.7}))
+	txs := sim.Simulate(random.NewSource(8), claims)
+	for sec, want := range []float64{0.4, 0.7} {
+		var mine []claim.Claim
+		for _, c := range claims {
+			if c.Section == sec {
+				mine = append(mine, c)
+			}
+		}
+		shares := finalShares(mine, txs)
+		if len(shares) < 20 {
+			t.Fatalf("section %d: only %d claims have an interim payment", sec, len(shares))
+		}
+		for _, s := range shares {
+			if math.Abs(s-want) > 0.001 {
+				t.Fatalf("section %d: final payment share %v, want its section's %v", sec, s, want)
+			}
+		}
+	}
+}
+
+// delayBreaches counts the payments that come less than delay days after
+// the last ESTIMATE row that raised their claim's case, or less than delay
+// days after the claim's previous payment.
+func delayBreaches(txs []transaction.Transaction, delay int) int {
+	n := 0
+	for _, rows := range byClaim(txs) {
+		var lastRaise, lastPay shared.Date
+		paid := false
+		for _, tx := range rows {
+			switch {
+			case tx.Type == transaction.Estimate && tx.Amount > 0:
+				lastRaise = tx.Date
+			case tx.Type == transaction.Payment:
+				if shared.DaysBetween(lastRaise, tx.Date) < delay || (paid && shared.DaysBetween(lastPay, tx.Date) < delay) {
+					n++
+				}
+				lastPay, paid = tx.Date, true
+			}
+		}
+	}
+	return n
+}
+
+// delayClaims are test claims that stay open at least delay days, opening at
+// half their cost so bills have to raise the case; every fourth also reopens
+// short of its additional cost.
+func delayClaims(n, delay int) []claim.Claim {
+	var claims []claim.Claim
+	for _, c := range testClaims(n) {
+		first := &c.Episodes[0]
+		if shared.DaysBetween(first.Open, first.Close) < delay {
+			continue
+		}
+		first.OpeningCase = first.Ultimate.MulFloat(0.5)
+		if c.ID%4 == 0 {
+			reopen := first.Close.AddDays(30)
+			c.Episodes = append(c.Episodes, claim.Episode{
+				Open:        reopen,
+				Close:       reopen.AddDays(delay + c.ID%90),
+				Ultimate:    first.Ultimate.MulFloat(0.3),
+				OpeningCase: first.Ultimate.MulFloat(0.1),
+			})
+		}
+		claims = append(claims, c)
+	}
+	return claims
+}
+
+func TestPaymentDelayFollowsEveryRaise(t *testing.T) {
+	claims := delayClaims(1000, 7)
+	p := params()
+	p.PaymentDelayDays = 7
+	p.Concentration = 4
+	txs := transaction.NewRunoffSimulator(p, sections(lob.SettlementParams{Share: 0.4, Concentration: 4})).Simulate(random.NewSource(10), claims)
+	if n := delayBreaches(txs, 7); n != 0 {
+		t.Errorf("%d payments within 7 days of a raise or of the previous payment", n)
+	}
+	grouped := byClaim(txs)
+	for _, c := range claims {
+		outstanding, paid := shared.Money(0), shared.Money(0)
+		for _, tx := range grouped[c.ID] {
+			switch tx.Type {
+			case transaction.Estimate:
+				outstanding += tx.Amount
+			case transaction.Payment:
+				paid += tx.Amount
+			}
+			if outstanding < 0 {
+				t.Fatalf("claim %d: outstanding went negative", c.ID)
+			}
+		}
+		want := shared.Money(0)
+		for _, ep := range c.Episodes {
+			want += ep.Ultimate
+		}
+		if paid != want || outstanding != 0 {
+			t.Fatalf("claim %d: paid %v with %v outstanding at close, want %v and 0", c.ID, paid, outstanding, want)
+		}
+	}
+	// A revision on a bill's day must not take the case below the bill, for
+	// the bill to raise it straight back: no claim lowers its case and raises
+	// it again on the same day. A payment's own release is not a revision.
+	for id, rs := range grouped {
+		lowered := shared.Date{}
+		for i, tx := range rs {
+			if tx.Type != transaction.Estimate || (i > 0 && rs[i-1].Type == transaction.Payment && tx.Amount == -rs[i-1].Amount) {
+				continue
+			}
+			if tx.Amount < 0 {
+				lowered = tx.Date
+			} else if tx.Date == lowered {
+				t.Fatalf("claim %d: case lowered and raised again on %s", id, tx.Date)
+			}
+		}
+	}
+	// Without the delay the same claims break the rule, so the test can see it.
+	p.PaymentDelayDays = 0
+	plain := transaction.NewRunoffSimulator(p, sections(lob.SettlementParams{Share: 0.4, Concentration: 4})).Simulate(random.NewSource(10), claims)
+	if delayBreaches(plain, 7) == 0 {
+		t.Fatal("no breaches without the delay: the test claims cannot show it")
+	}
+}
+
 func TestEveryPaymentHasMatchingEstimateReduction(t *testing.T) {
 	claims := testClaims(200)
-	sim := transaction.NewRunoffSimulator(params())
+	sim := transaction.NewRunoffSimulator(params(), sections())
 	txs := sim.Simulate(random.NewSource(2), claims)
 	for i, tx := range txs {
 		if tx.Type != transaction.Payment {
@@ -137,7 +403,7 @@ func TestTotalPaidIsExactlyTheUltimate(t *testing.T) {
 	for i := range claims {
 		claims[i].Episodes[0].OpeningCase = claims[i].Episodes[0].Ultimate.MulFloat(0.5)
 	}
-	txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(3), claims)
+	txs := transaction.NewRunoffSimulator(params(), sections()).Simulate(random.NewSource(3), claims)
 	paid := map[int]shared.Money{}
 	for _, tx := range txs {
 		if tx.Type == transaction.Payment {
@@ -164,7 +430,7 @@ func TestSameDayCloseSettlesInFull(t *testing.T) {
 		}},
 		RiskFactor: 1.0,
 	}
-	sim := transaction.NewRunoffSimulator(params())
+	sim := transaction.NewRunoffSimulator(params(), sections())
 	txs := sim.Simulate(random.NewSource(4), []claim.Claim{c})
 	outstanding := shared.Money(0)
 	paid := shared.Money(0)
@@ -185,7 +451,7 @@ func TestSameDayCloseSettlesInFull(t *testing.T) {
 
 func TestTransactionIDsSequential(t *testing.T) {
 	claims := testClaims(100)
-	sim := transaction.NewRunoffSimulator(params())
+	sim := transaction.NewRunoffSimulator(params(), sections())
 	txs := sim.Simulate(random.NewSource(5), claims)
 	for i, tx := range txs {
 		if tx.ID != i+1 {
@@ -196,7 +462,7 @@ func TestTransactionIDsSequential(t *testing.T) {
 
 func TestRunoffIsDeterministic(t *testing.T) {
 	claims := testClaims(200)
-	sim := transaction.NewRunoffSimulator(params())
+	sim := transaction.NewRunoffSimulator(params(), sections())
 	a := sim.Simulate(random.NewSource(42), claims)
 	b := sim.Simulate(random.NewSource(42), claims)
 	if len(a) != len(b) {
@@ -211,7 +477,7 @@ func TestRunoffIsDeterministic(t *testing.T) {
 
 func TestLongClaimsReviseMoreThanShortClaims(t *testing.T) {
 	claims := testClaims(1000)
-	sim := transaction.NewRunoffSimulator(params())
+	sim := transaction.NewRunoffSimulator(params(), sections())
 	txs := sim.Simulate(random.NewSource(6), claims)
 	grouped := byClaim(txs)
 	var shortSum, shortN, longSum, longN float64
@@ -244,7 +510,7 @@ func TestNilClaimHasNoPaymentsAndClosesToZero(t *testing.T) {
 		}},
 		RiskFactor: 1.0,
 	}
-	sim := transaction.NewRunoffSimulator(params())
+	sim := transaction.NewRunoffSimulator(params(), sections())
 	txs := sim.Simulate(random.NewSource(1), []claim.Claim{c})
 
 	if len(txs) == 0 {
@@ -302,7 +568,7 @@ func reopenedClaim(isNil bool) claim.Claim {
 
 func TestReopenedClaimRunsTwoEpisodes(t *testing.T) {
 	c := reopenedClaim(false)
-	txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(11), []claim.Claim{c})
+	txs := transaction.NewRunoffSimulator(params(), sections()).Simulate(random.NewSource(11), []claim.Claim{c})
 
 	outstanding := shared.Money(0)
 	outstandingAtFirstClose := shared.Money(-1)
@@ -337,7 +603,7 @@ func TestReopenedClaimRunsTwoEpisodes(t *testing.T) {
 
 func TestReopenedNilClaimPaysOnlyInEpisodeTwo(t *testing.T) {
 	c := reopenedClaim(true)
-	txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(12), []claim.Claim{c})
+	txs := transaction.NewRunoffSimulator(params(), sections()).Simulate(random.NewSource(12), []claim.Claim{c})
 
 	paidBeforeReopen := shared.Money(0)
 	paidAfterReopen := shared.Money(0)
@@ -369,7 +635,7 @@ func TestReopenedClaimRowsChronological(t *testing.T) {
 			})
 		}
 	}
-	txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(13), claims)
+	txs := transaction.NewRunoffSimulator(params(), sections()).Simulate(random.NewSource(13), claims)
 	for id, rows := range byClaim(txs) {
 		for i := 1; i < len(rows); i++ {
 			if rows[i].Date.Before(rows[i-1].Date) {
@@ -384,7 +650,7 @@ func TestTinyReopenEstimateStillClosesOnFinalCloseDate(t *testing.T) {
 	c.Episodes[1].Ultimate = shared.Money(2) // two cents over a five-month episode
 	c.Episodes[1].OpeningCase = shared.Money(2)
 	for seed := uint64(1); seed <= 25; seed++ {
-		txs := transaction.NewRunoffSimulator(params()).Simulate(random.NewSource(seed), []claim.Claim{c})
+		txs := transaction.NewRunoffSimulator(params(), sections()).Simulate(random.NewSource(seed), []claim.Claim{c})
 		outstanding := shared.Money(0)
 		for _, tx := range txs {
 			if tx.Type == transaction.Estimate {
@@ -416,7 +682,7 @@ func TestNilClaimTinyEstimateStillClosesOnCloseDate(t *testing.T) {
 		}},
 		RiskFactor: 1.0,
 	}
-	sim := transaction.NewRunoffSimulator(params())
+	sim := transaction.NewRunoffSimulator(params(), sections())
 	// Try several seeds so at least one exercises revisions that round toward zero.
 	for seed := uint64(1); seed <= 25; seed++ {
 		txs := sim.Simulate(random.NewSource(seed), []claim.Claim{c})
@@ -492,7 +758,7 @@ func TestCaseAdequacyBiasDecaysOverTheClaimLife(t *testing.T) {
 	for _, mean := range []float64{0.8, 1.0} {
 		p.CaseAdequacyMean = mean
 		claims := claimsFor(mean)
-		txs := transaction.NewRunoffSimulator(p).Simulate(random.NewSource(9), claims)
+		txs := transaction.NewRunoffSimulator(p, sections()).Simulate(random.NewSource(9), claims)
 		prev := math.Inf(1)
 		for _, u := range []float64{0.25, 0.5, 0.75} {
 			got := incurredShare(txs, claims, int(u*duration))

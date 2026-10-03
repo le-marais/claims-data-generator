@@ -61,19 +61,24 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 	// Occurrences are constrained to the window (MF-2), so the inflation index
 	// only needs to span the window years.
 	inflation := claim.NewInflationIndex(src.Split("inflation"), req.LOB.Claims.Inflation, req.StartYear, req.Years)
+	// A paying claim stays open long enough for the runoff to keep its
+	// payments the payment delay after the case is raised.
+	delay := int(req.LOB.Runoff.PaymentDelayDays)
 	claims := claim.NewClaimSimulator(req.LOB.Claims).
 		WithInflation(inflation).
 		WithWindow(req.StartYear, req.Years).
+		WithPaymentDelay(delay).
 		Simulate(src.Split("claims"), book)
 	claims = claim.NewReopenSimulator(req.LOB.Claims).
 		WithInflation(inflation).
+		WithPaymentDelay(delay).
 		Apply(src.Split("reopening"), claims)
 	claims = transaction.NewCaseEstimator(req.LOB.Runoff).
 		Apply(src.Split("case-estimate"), claims)
 	if err := ctx.Err(); err != nil {
 		return Dataset{}, err
 	}
-	txs := transaction.NewRunoffSimulator(req.LOB.Runoff).
+	txs := transaction.NewRunoffSimulator(req.LOB.Runoff, req.LOB.Claims.Sections).
 		Simulate(src.Split("runoff"), claims)
 	if err := ctx.Err(); err != nil {
 		return Dataset{}, err

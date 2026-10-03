@@ -13,8 +13,9 @@ import (
 // sub-stream per claim so that enabling reopening never reshuffles the
 // draws of any other stage.
 type ReopenSimulator struct {
-	params    lob.ClaimParams
-	inflation InflationIndex
+	params       lob.ClaimParams
+	inflation    InflationIndex
+	paymentDelay int
 }
 
 // NewReopenSimulator builds a reopen simulator from the claim parameters.
@@ -27,6 +28,15 @@ func NewReopenSimulator(p lob.ClaimParams) *ReopenSimulator {
 // zero-value index (the default) leaves the cost nominal.
 func (s *ReopenSimulator) WithInflation(x InflationIndex) *ReopenSimulator {
 	s.inflation = x
+	return s
+}
+
+// WithPaymentDelay keeps every reopen episode open at least days, so its
+// payment can be processed that long after the case is re-raised: a reopen
+// always pays, so its close lag is the delay plus the drawn lag. The
+// default, 0, adds nothing.
+func (s *ReopenSimulator) WithPaymentDelay(days int) *ReopenSimulator {
+	s.paymentDelay = days
 	return s
 }
 
@@ -70,7 +80,7 @@ func (s *ReopenSimulator) Apply(src shared.RandomSource, claims []Claim) []Claim
 			}
 		}
 		baseSize := additional.Dollars() / s.inflation.For(c.OccurrenceDate)
-		closeLag := int(math.Round(drawCloseLag(stream, s.params.Sections[c.Section].CloseLag, baseSize, c.RiskFactor)))
+		closeLag := s.paymentDelay + int(math.Round(drawCloseLag(stream, s.params.Sections[c.Section].CloseLag, baseSize, c.RiskFactor)))
 		if closeLag < 1 {
 			closeLag = 1 // the second close is strictly after the reopen
 		}

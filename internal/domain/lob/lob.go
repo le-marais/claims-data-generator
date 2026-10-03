@@ -178,11 +178,31 @@ type SectionParams struct {
 	NoExcess  bool
 	ReportLag ReportLagParams
 	CloseLag  CloseLagParams
+	// Settlement shapes how the section's paying episodes split their cost
+	// between interim payments and the final settlement at close.
+	Settlement SettlementParams
 	// Recoveries makes the section's claims eligible for salvage and
 	// subrogation. Salvage further needs a total loss on a sum-insured
 	// severity: a liability claim settled at its Limit leaves no wreck to
 	// sell.
 	Recoveries bool
+}
+
+// SettlementParams parameterizes how a section's paying episode splits its
+// cost between interim payments and the final settlement at close.
+type SettlementParams struct {
+	// LumpSumProbability is the chance a paying episode pays its whole cost
+	// in one settlement at close, with no interim payments. An episode that
+	// draws no interim payments pays in one settlement too, so more claims
+	// than this pay once. 0 switches lump sums off.
+	LumpSumProbability float64
+	// Share is the mean fraction of its cost an episode with interim
+	// payments leaves for the final settlement.
+	Share float64
+	// Concentration is the Beta concentration of each such episode's
+	// settlement share around Share; higher keeps the share closer to it.
+	// 0 fixes the share at Share.
+	Concentration float64
 }
 
 // SeverityKind names a ground-up loss distribution.
@@ -326,12 +346,20 @@ type RunoffParams struct {
 	// PaymentsPerYear is the Poisson intensity of interim payments over the
 	// claim's open duration.
 	PaymentsPerYear float64
-	// SettlementShare is the fraction of ultimate reserved for the final
-	// settlement payment at close.
-	SettlementShare float64
-	// Concentration is the Dirichlet concentration splitting the remainder
-	// across interim payments.
+	// Concentration is the Dirichlet concentration splitting what an
+	// episode's interim payments share across them; higher splits it more
+	// evenly.
 	Concentration float64
+	// MinPayment is the smallest interim payment in nominal dollars: a
+	// smaller one is held over and paid with the next, or with the final
+	// settlement. 0 switches it off.
+	MinPayment float64
+	// PaymentDelayDays is the fewest whole days between an ESTIMATE row that
+	// raises the case - the opening case, a reopen, an upward revision, or
+	// the top-up for a bill above the case - and a payment. A paying episode
+	// stays open at least this long, and its payments are at least this far
+	// apart. 0 switches it off.
+	PaymentDelayDays float64
 	// RevisionsPerYear is the Poisson intensity of pure case revisions.
 	RevisionsPerYear float64
 	// RevisionSigma is the initial sigma of revision noise; it decays as the
@@ -606,7 +634,36 @@ func (s SectionParams) validate(prefix string) error {
 	if err := s.ReportLag.validate(prefix + ".report_lag"); err != nil {
 		return err
 	}
-	return s.CloseLag.validate(prefix + ".close_lag")
+	if err := s.CloseLag.validate(prefix + ".close_lag"); err != nil {
+		return err
+	}
+	return s.Settlement.validate(prefix + ".settlement")
+}
+
+func (s SettlementParams) validate(prefix string) error {
+	if err := checkFinite(
+		namedFloat{prefix + ".lump_sum_probability", s.LumpSumProbability},
+		namedFloat{prefix + ".share", s.Share},
+		namedFloat{prefix + ".concentration", s.Concentration},
+	); err != nil {
+		return err
+	}
+	if s.LumpSumProbability < 0 || s.LumpSumProbability > 1 {
+		return fmt.Errorf("%s.lump_sum_probability: must be in [0, 1], got %v", prefix, s.LumpSumProbability)
+	}
+	if s.LumpSumProbability == 1 {
+		return nil // every episode pays in one settlement: the share is never read
+	}
+	if s.Share <= 0 || s.Share > 1 {
+		return fmt.Errorf("%s.share: must be in (0, 1], got %v", prefix, s.Share)
+	}
+	if s.Concentration < 0 {
+		return fmt.Errorf("%s.concentration: must not be negative, got %v", prefix, s.Concentration)
+	}
+	if s.Concentration > 0 && s.Share == 1 {
+		return fmt.Errorf("%s.share: must be below 1 when concentration is above 0, got %v", prefix, s.Share)
+	}
+	return nil
 }
 
 func (i InflationParams) validate() error {
@@ -787,8 +844,9 @@ func (r RunoffParams) validate() error {
 		namedFloat{"runoff.case_adequacy_mean", r.CaseAdequacyMean},
 		namedFloat{"runoff.case_adequacy_sigma", r.CaseAdequacySigma},
 		namedFloat{"runoff.payments_per_year", r.PaymentsPerYear},
-		namedFloat{"runoff.settlement_share", r.SettlementShare},
 		namedFloat{"runoff.concentration", r.Concentration},
+		namedFloat{"runoff.min_payment", r.MinPayment},
+		namedFloat{"runoff.payment_delay_days", r.PaymentDelayDays},
 		namedFloat{"runoff.revisions_per_year", r.RevisionsPerYear},
 		namedFloat{"runoff.revision_sigma", r.RevisionSigma},
 	); err != nil {
@@ -803,11 +861,14 @@ func (r RunoffParams) validate() error {
 	if r.PaymentsPerYear < 0 {
 		return fmt.Errorf("runoff.payments_per_year: must not be negative, got %v", r.PaymentsPerYear)
 	}
-	if r.SettlementShare <= 0 || r.SettlementShare > 1 {
-		return fmt.Errorf("runoff.settlement_share: must be in (0, 1], got %v", r.SettlementShare)
-	}
 	if r.Concentration <= 0 {
 		return fmt.Errorf("runoff.concentration: must be positive, got %v", r.Concentration)
+	}
+	if r.MinPayment < 0 {
+		return fmt.Errorf("runoff.min_payment: must not be negative, got %v", r.MinPayment)
+	}
+	if r.PaymentDelayDays < 0 || r.PaymentDelayDays != math.Trunc(r.PaymentDelayDays) {
+		return fmt.Errorf("runoff.payment_delay_days: must be a whole number of days, not negative, got %v", r.PaymentDelayDays)
 	}
 	if r.RevisionsPerYear < 0 {
 		return fmt.Errorf("runoff.revisions_per_year: must not be negative, got %v", r.RevisionsPerYear)

@@ -13,46 +13,65 @@ IDs are **MR** (model review). Severity uses the `docs/todo.md` scale: **high**
 undermines the mission, **medium** worth addressing soon, **low** fix when
 touching the area.
 
-## 1. MR-19 (medium) - the final payment is always exactly 40% of the claim
+## 1. MR-21 (medium) - the case estimate jumps up and down around the true cost
 
-- Where: `internal/domain/transaction/runoff.go`, `drawInterimPayments` and
-  `runEpisode`.
-- When an episode draws any interim payments, they share exactly
-  `1 - settlement_share` of its cost and the final settlement pays the rest,
-  so the final payment is always `settlement_share` of the cost. An episode
-  with no interim payment pays 100% at close. The final payment's share takes
-  only those two values.
-- In the personal motor preset (seed 1, 1998-2000, 20,000 policies in the
-  first year), 2,036 of the 2,044 single-episode paying claims with two or
-  more payments have a final payment within $1.50 of 40% of their cost; 5,226
-  of the 8,182 claims pay once. Claims 3, 13, 18 and 48 of a 150-policy run on
-  the same seed split exactly 60/40.
-- The triangles barely notice, but anyone reading `transactions.csv` sees a
-  generated pattern, which undermines the transaction-level realism the
-  mission names as a differentiator.
-- Action: draw each episode's settlement share, for example a Beta with mean
-  `settlement_share`, so the final payment varies by claim; refresh the golden
-  hashes and re-check the realism gate.
+- Where: `internal/domain/transaction/runoff.go`, `runEpisode`;
+  `runoff.revision_sigma`.
+- Each revision sets the case to the remaining cost times the adequacy bias
+  times fresh mean-one lognormal noise. Consecutive revisions are independent
+  draws around the true cost, not a path that moves when information
+  arrives, so the case swings both ways. A real case reserve is sticky: it
+  steps when new information arrives, mostly in one direction. Revision days
+  are drawn independently too, so two revisions can fall on one day.
+- In the personal preset (seed 1, 1998-2000, 20,000 policies), the median
+  revision moves the case 23% on own damage, 21% on property damage and 14%
+  on injury. 47%, 43% and 31% of revisions move it more than 25%, and
+  consecutive revisions reverse direction 54%, 53% and 65% of the time. In
+  the 150-policy run on the same seed, injury claim 39 ($23,503) moved its
+  case from $26,485 to $36,100 on 2000-10-22, to $33,280 on 11-04 and to
+  $26,723 on 11-08; claim 35 raised its case twice on 2000-08-22.
+- The jumps show in `transactions.csv` and add noise to incurred
+  development, which case-based reserving methods read.
+- Action: model the case as a path that moves part of the way from its
+  current level toward the aim at each revision, with at most one revision
+  a day; re-check the incurred factors against the realism gate.
 
-## 2. MR-20 (low) - payment and revision timing is not tied to claim events
+## 2. MR-22 (low) - case estimates are set to the cent
 
-- Where: `internal/domain/transaction/runoff.go`, `drawInterimPayments` and
-  `drawRevisions`; `lob.RunoffParams`.
-- Interim payments and case revisions fall on uniformly random days of an
-  episode, at Poisson rates per year of its open duration. One `runoff` block
-  serves every section, so a small repair and a slow injury claim share
-  `payments_per_year` and `revisions_per_year`, and nothing ties a revision to
-  an event such as a repair estimate arriving.
-- In the 150-policy seed-1 run of MR-19: claim 13, a repair of about $500, paid
-  in two instalments over 88 days; claim 28, $5,532 of property damage, had
-  four case revisions in three and a half months; claim 33 left its case
-  untouched for four and a half months and revised it only on the close date.
-  Each is possible, but a real file shows them less often.
+- Where: `internal/domain/transaction/estimate.go`, `CaseEstimator.Apply`;
+  `internal/domain/transaction/runoff.go`, revision and bill targets.
+- Every case estimate a handler sets - the opening case, each revision, each
+  bill above the case - is a computed amount to the cent, such as $599.12,
+  $10,267.66 or $2,895.72. Handlers set reserves in round figures, and many
+  insurers open every claim of a type at a standard reserve. Payments to the
+  cent are realistic; case estimates to the cent are not.
+- Of the 8,682 case openings (first reports and reopens) in the personal
+  preset (seed 1, 1998-2000, 20,000 policies), none is a whole $100 and 13
+  are a whole $10.
+- Action: round each case estimate a handler sets to a step that grows with
+  its size, for example $50 under $1,000, $100 under $10,000 and $1,000
+  above, and consider a standard opening reserve per section. A case set to
+  a bill, payments and the release at close stay exact.
+
+## 3. MR-20 (low) - revision timing is not tied to claim events
+
+- Where: `internal/domain/transaction/runoff.go`, `drawRevisions` and
+  `drawInterimPayments`; `lob.RunoffParams`.
+- Case revisions fall on uniformly random days of an episode at a Poisson
+  rate per year of its open duration, and interim payments do too, within
+  the payment delay. One `runoff` block serves every section, so a small
+  repair and a slow injury claim share `payments_per_year` and
+  `revisions_per_year`. Apart from the bill before a payment, nothing ties a
+  revision to an event such as a repair estimate arriving.
+- In a 150-policy seed-1 run of the personal motor preset: claim 28, $5,532
+  of property damage, had four case revisions in three and a half months;
+  claim 33 left its case untouched for four and a half months. Each is
+  possible, but a real file shows them less often.
 - Action: when a class needs it, move the payment and revision rates onto
   `SectionParams`, and consider a revision soon after report, when the first
   estimate arrives.
 
-## 3. MR-12 (low) - one setting drives two kinds of variation
+## 4. MR-12 (low) - one setting drives two kinds of variation
 
 - Where: `internal/domain/policy/book.go`, `drawVehicle`.
 - `spread` sets both the sum-insured lognormal sigma and the risk-factor

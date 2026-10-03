@@ -6,6 +6,7 @@ import (
 
 	"github.com/le-marais/claimsgen/internal/domain/claim"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
+	"github.com/le-marais/claimsgen/internal/domain/shared"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 )
 
@@ -91,5 +92,34 @@ func TestReopenLeavesNonReopenedClaimsUntouched(t *testing.T) {
 		if !reflect.DeepEqual(applied[i], base[i]) {
 			t.Fatalf("non-reopened claim %d changed by the reopen pass", applied[i].ID)
 		}
+	}
+}
+
+// A reopen always pays, so its second episode takes the payment delay on
+// top of its drawn close lag.
+func TestPaymentDelayKeepsReopensOpen(t *testing.T) {
+	p := reopeningParams()
+	claims := claim.NewClaimSimulator(p).Simulate(random.NewSource(43), fixedBook(3000, 20000, 0, 1.0))
+	plain := claim.NewReopenSimulator(p).Apply(random.NewSource(43), append([]claim.Claim(nil), claims...))
+	delayed := claim.NewReopenSimulator(p).WithPaymentDelay(7).Apply(random.NewSource(43), append([]claim.Claim(nil), claims...))
+	reopened := 0
+	for i := range plain {
+		if plain[i].Reopened() != delayed[i].Reopened() {
+			t.Fatalf("claim %d: the delay changed whether it reopens", plain[i].ID)
+		}
+		if !plain[i].Reopened() {
+			continue
+		}
+		reopened++
+		a, b := plain[i].Episodes[1], delayed[i].Episodes[1]
+		plainDays, delayedDays := shared.DaysBetween(a.Open, a.Close), shared.DaysBetween(b.Open, b.Close)
+		// The plain lag is floored at one day, so a drawn lag of 0 shows as 1.
+		floored := plainDays == 1 && delayedDays == 7
+		if b.Open != a.Open || (delayedDays != plainDays+7 && !floored) {
+			t.Fatalf("claim %d: reopen open %s for %d days with the delay, want %s for %d + 7", plain[i].ID, b.Open, delayedDays, a.Open, plainDays)
+		}
+	}
+	if reopened == 0 {
+		t.Fatal("no reopened claims at probability 0.5")
 	}
 }

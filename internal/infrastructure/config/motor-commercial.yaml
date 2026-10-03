@@ -73,9 +73,12 @@ pricing:
   inflation_mean: 1.05
 claims:
   # Sections of cover, per vehicle-year. See motor-personal.yaml for how a
-  # section draws its claims, severity kinds, report and close lags and
-  # limits. no_excess: true makes a section take no excess, so every
-  # ground-up loss is reported and paid from the first dollar.
+  # section draws its claims, severity kinds, report and close lags, limits
+  # and settlement. no_excess: true makes a section take no excess, so every
+  # ground-up loss is reported and paid from the first dollar. Each
+  # section's settlement is personal motor's, a judgement value: about 90%
+  # of own-damage and 75% of property damage claims pay once, and injury
+  # claims end on a settlement of about 60% of the cost.
   sections:
     # Own damage (physical damage: collision and comprehensive), sized off
     # the vehicle's sum insured: a typical repair is about $2,800 on the
@@ -92,6 +95,7 @@ claims:
         size_reference: 3000
         size_elasticity: 0.2
         risk_loading: 0.3
+      settlement: {lump_sum_probability: 0.57, share: 0.25, concentration: 4}
       recoveries: true
     # Third-party property damage: the other party's vehicle and property,
     # larger than personal motor's because the insured vehicles are larger,
@@ -110,6 +114,7 @@ claims:
         size_reference: 2500
         size_elasticity: 0.2
         risk_loading: 0.3
+      settlement: {lump_sum_probability: 0.28, share: 0.3, concentration: 4}
     # Third-party bodily injury: rarer, larger than personal motor's,
     # reported later and settled slowly. Its lognormal_pareto severity has a
     # body with a median near $10,000 and a Pareto tail from $60,000 holding
@@ -136,6 +141,7 @@ claims:
         size_reference: 15000
         size_elasticity: 0.05
         risk_loading: 0.3
+      settlement: {lump_sum_probability: 0, share: 0.6, concentration: 4}
   # A little above personal motor's 4% a year; a judgement value.
   inflation:
     mean: 1.05
@@ -167,12 +173,14 @@ claims:
 # 1C's case incurred shows. 1.5 opens cases about a third below their true
 # cost, which gives case incurred factors of about 1.27, 1.06 and 1.02 at
 # ages 1-3, against Part 1C medians of 1.26, 1.08 and 1.05. The other runoff
-# values are judgement: fewer, larger interim payments than personal motor.
+# values are judgement: fewer interim payments than personal motor, with
+# its concentration, minimum payment and payment delay.
 runoff:
   case_adequacy_mean: 1.5
   case_adequacy_sigma: 0.4
   payments_per_year: 2.0
-  settlement_share: 0.5
-  concentration: 1.0
+  concentration: 4
+  min_payment: 50
+  payment_delay_days: 7
   revisions_per_year: 4
   revision_sigma: 0.3

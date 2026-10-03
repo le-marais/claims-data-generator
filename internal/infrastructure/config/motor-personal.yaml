@@ -85,12 +85,21 @@ claims:
   # start-year dollars (deflated by the claims inflation index) settles in
   # mean_days on average, and the mean scales by
   # (size / size_reference)^size_elasticity and risk factor^risk_loading,
-  # so larger and riskier claims take longer, smoothly.
+  # so larger and riskier claims take longer, smoothly. A claim that pays
+  # stays open runoff.payment_delay_days longer, so its payment can be
+  # processed.
   #
   # limit is the most the policy pays on one claim, reopen included, in
   # nominal dollars: a contract term, so claims inflation does not trend it.
   # 0 or absent is unlimited. A sum_insured_lognormal section leaves it at 0,
   # because its sum insured is its limit.
+  #
+  # settlement shapes how a paying claim's cost is paid. With chance
+  # lump_sum_probability it is paid in one settlement at close. Otherwise
+  # its interim payments (see runoff) share part of the cost and the final
+  # settlement pays the rest, a Beta-distributed share of the cost with mean
+  # share and concentration (0 fixes it at share). A claim that draws no
+  # interim payment is paid in one settlement too.
   #
   # recoveries: true makes the section's claims eligible for salvage and
   # subrogation.
@@ -99,8 +108,12 @@ claims:
     # days and settled in weeks. Its lags are judgement values, since no
     # 10-year physical damage reference exists to score them against. A
     # typical repair costs about size_reference and settles in about
-    # mean_days; the size elasticity has a $20,000 write-off take about 1.6
-    # times as long.
+    # mean_days plus the payment delay; the size elasticity has a $20,000 write-off take about 1.6
+    # times as long. Most own-damage claims pay once, to the repairer or as
+    # the total-loss payout: lump_sum_probability 0.57 takes the share paying
+    # once from about 77% to about 90%. A claim paid in instalments mostly
+    # ends on a small balance, such as a towing bill or a supplementary
+    # invoice (share 0.25). Its settlement is judgement.
     - name: own_damage
       base_frequency: 0.096
       severity: {kind: sum_insured_lognormal, median_fraction: 0.12, sigma: 1.0}
@@ -111,6 +124,7 @@ claims:
         size_reference: 2000
         size_elasticity: 0.2
         risk_loading: 0.3
+      settlement: {lump_sum_probability: 0.57, share: 0.25, concentration: 4}
       recoveries: true
     # Third-party property damage: the other party's vehicle and property.
     # The most common Schedule P Part 1B claim: reported within days, small,
@@ -122,7 +136,10 @@ claims:
     # injury, give a liability cost of about $175 per policy-year, injury
     # about half of it, and three property damage claims per injury claim.
     # limit 50000 is a common property damage liability limit; it rarely
-    # binds at this severity.
+    # binds at this severity. About three in four claims pay once
+    # (lump_sum_probability 0.28, from about 65%); the rest pay the repair
+    # and a separate bill, such as a hire car, and end on about 30% of the
+    # cost (share 0.3). Its settlement is judgement.
     - name: third_party_property
       base_frequency: 0.030
       severity: {kind: lognormal, median: 1800, sigma: 0.9}
@@ -135,6 +152,7 @@ claims:
         size_reference: 2000
         size_elasticity: 0.2
         risk_loading: 0.3
+      settlement: {lump_sum_probability: 0.28, share: 0.3, concentration: 4}
     # Third-party bodily injury: rarer, heavy-tailed, reported later (median
     # 20 days, about 3.5% more than a year after the accident, so the reported
     # counts and the incurred develop as late claims are reported) and
@@ -152,6 +170,10 @@ claims:
     # 100000 is a common per-person bodily injury limit on US personal auto
     # (the 100 in 100/300); it stops single claims in the millions that
     # personal auto limits do not pay.
+    # An injury claim pays as treatment and lost earnings come in and ends
+    # on its largest payment, the settlement of general damages, at about
+    # 60% of the cost (share 0.6); none is a lump sum by rule. Its settlement
+    # is judgement.
     # Re-run the realism gate after any change to either third-party section.
     - name: third_party_injury
       base_frequency: 0.010
@@ -165,6 +187,7 @@ claims:
         size_reference: 10000
         size_elasticity: 0.25
         risk_loading: 0.3
+      settlement: {lump_sum_probability: 0, share: 0.6, concentration: 4}
   # Claims inflation applied by occurrence date to every claim's ground-up
   # loss. Stochastic: each year's factor is `mean` times lognormal noise of
   # sigma `volatility`, compounded from 1.0 in the start year. The index sits
@@ -219,11 +242,21 @@ claims:
 # strengthen, the shape Schedule P Part 1B's case incurred shows (a median
 # factor of about 1.12 from age 1 to 2); it also keeps the incurred factor
 # at age 2-3 off the pool's low edge.
+# Interim payments fall at a Poisson rate of payments_per_year while a claim
+# is open, unless its section's settlement makes it a lump sum, and share
+# what the settlement leaves by Dirichlet weights. concentration 4 splits it
+# fairly evenly, where 1 often left one payment a few dollars, and
+# min_payment 50 holds a smaller payment over to the next.
+# payment_delay_days 7, about five working days, is the fewest days from an
+# event that raises the case - the report, a reopen, a revision up, or a bill
+# above the case - to a payment, so no claim is reported and paid the next
+# day and no bill is raised and paid on the same day. Judgement values.
 runoff:
   case_adequacy_mean: 1.05
   case_adequacy_sigma: 0.35
   payments_per_year: 2.5
-  settlement_share: 0.4
-  concentration: 1.0
+  concentration: 4
+  min_payment: 50
+  payment_delay_days: 7
   revisions_per_year: 4
   revision_sigma: 0.3

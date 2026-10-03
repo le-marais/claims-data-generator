@@ -430,3 +430,35 @@ func TestLognormalParetoClaimsHaveABody(t *testing.T) {
 		t.Errorf("share above the scale = %.4f, want about the 0.037 tail share", share)
 	}
 }
+
+// A paying claim stays open at least the payment delay: its close lag is the
+// delay plus the drawn lag, and nothing else about it moves. A nil claim,
+// which pays nothing, keeps its drawn lag.
+func TestPaymentDelayKeepsPayingClaimsOpen(t *testing.T) {
+	p := params()
+	p.NilProbability = 0.3
+	book := fixedBook(5000, 20000, 0, 1.0)
+	plain := claim.NewClaimSimulator(p).Simulate(random.NewSource(23), book)
+	delayed := claim.NewClaimSimulator(p).WithPaymentDelay(7).Simulate(random.NewSource(23), book)
+	if len(plain) == 0 || len(delayed) != len(plain) {
+		t.Fatalf("got %d claims with the delay and %d without, want the same non-zero count", len(delayed), len(plain))
+	}
+	nils := 0
+	for i := range plain {
+		a, b := plain[i].Episodes[0], delayed[i].Episodes[0]
+		if a.Open != b.Open || a.Nil != b.Nil || a.Ultimate != b.Ultimate {
+			t.Fatalf("claim %d: the delay moved more than the close date", plain[i].ID)
+		}
+		want := a.Close.AddDays(7)
+		if a.Nil {
+			want = a.Close
+			nils++
+		}
+		if b.Close != want {
+			t.Fatalf("claim %d (nil %v): close %s with the delay, want %s", plain[i].ID, a.Nil, b.Close, want)
+		}
+	}
+	if nils == 0 {
+		t.Fatal("no nil claims at probability 0.3")
+	}
+}
