@@ -12,7 +12,9 @@ import (
 
 // TestNilClaimsDoNotShiftOtherStages proves the nil knob is shift-free: the
 // nil Bernoulli is always drawn, so toggling NilProbability never reshuffles
-// the dates or severities of any claim. Only the Nil flag itself may change.
+// the dates or severities of any claim. Only the Nil flag itself may change,
+// and with it a nil claim's dates: it pays nothing, so it closes without the
+// payment delay, and a reopen follows that earlier close.
 func TestNilClaimsDoNotShiftOtherStages(t *testing.T) {
 	off := request(t)
 	off.LOB.Claims.NilProbability = 0
@@ -27,11 +29,23 @@ func TestNilClaimsDoNotShiftOtherStages(t *testing.T) {
 	if len(dsOn.Claims) != len(dsOff.Claims) {
 		t.Fatalf("claim count changed: %d vs %d", len(dsOn.Claims), len(dsOff.Claims))
 	}
-	// withoutNil copies a claim with every episode's nil flag cleared.
+	// withoutNil copies a claim with every episode's nil flag cleared and,
+	// when its first episode is nil, the payment delay it skipped added back
+	// to its dates.
+	delay := int(off.LOB.Runoff.PaymentDelayDays)
 	withoutNil := func(c claim.Claim) claim.Claim {
 		c.Episodes = slices.Clone(c.Episodes)
+		shift := 0
+		if c.Episodes[0].Nil {
+			shift = delay
+		}
 		for j := range c.Episodes {
-			c.Episodes[j].Nil = false
+			ep := &c.Episodes[j]
+			ep.Nil = false
+			if j > 0 {
+				ep.Open = ep.Open.AddDays(shift)
+			}
+			ep.Close = ep.Close.AddDays(shift)
 		}
 		return c
 	}

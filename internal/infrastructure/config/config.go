@@ -175,6 +175,7 @@ type RunoffParams struct {
 	PaymentsPerYear   float64 `yaml:"payments_per_year" json:"payments_per_year"`
 	Concentration     float64 `yaml:"concentration" json:"concentration"`
 	MinPayment        float64 `yaml:"min_payment" json:"min_payment"`
+	PaymentDelayDays  float64 `yaml:"payment_delay_days" json:"payment_delay_days"`
 	RevisionsPerYear  float64 `yaml:"revisions_per_year" json:"revisions_per_year"`
 	RevisionSigma     float64 `yaml:"revision_sigma" json:"revision_sigma"`
 }
@@ -369,6 +370,7 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			PaymentsPerYear:   d.Runoff.PaymentsPerYear,
 			Concentration:     d.Runoff.Concentration,
 			MinPayment:        d.Runoff.MinPayment,
+			PaymentDelayDays:  d.Runoff.PaymentDelayDays,
 			RevisionsPerYear:  d.Runoff.RevisionsPerYear,
 			RevisionSigma:     d.Runoff.RevisionSigma,
 		},

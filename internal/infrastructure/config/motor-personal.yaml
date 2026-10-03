@@ -85,7 +85,9 @@ claims:
   # start-year dollars (deflated by the claims inflation index) settles in
   # mean_days on average, and the mean scales by
   # (size / size_reference)^size_elasticity and risk factor^risk_loading,
-  # so larger and riskier claims take longer, smoothly.
+  # so larger and riskier claims take longer, smoothly. A claim that pays
+  # stays open runoff.payment_delay_days longer, so its payment can be
+  # processed.
   #
   # limit is the most the policy pays on one claim, reopen included, in
   # nominal dollars: a contract term, so claims inflation does not trend it.
@@ -106,7 +108,7 @@ claims:
     # days and settled in weeks. Its lags are judgement values, since no
     # 10-year physical damage reference exists to score them against. A
     # typical repair costs about size_reference and settles in about
-    # mean_days; the size elasticity has a $20,000 write-off take about 1.6
+    # mean_days plus the payment delay; the size elasticity has a $20,000 write-off take about 1.6
     # times as long. Most own-damage claims pay once, to the repairer or as
     # the total-loss payout: lump_sum_probability 0.57 takes the share paying
     # once from about 77% to about 90%. A claim paid in instalments mostly
@@ -244,12 +246,17 @@ claims:
 # is open, unless its section's settlement makes it a lump sum, and share
 # what the settlement leaves by Dirichlet weights. concentration 4 splits it
 # fairly evenly, where 1 often left one payment a few dollars, and
-# min_payment 50 holds a smaller payment over to the next. Judgement values.
+# min_payment 50 holds a smaller payment over to the next.
+# payment_delay_days 7, about five working days, is the fewest days from an
+# event that raises the case - the report, a reopen, a revision up, or a bill
+# above the case - to a payment, so no claim is reported and paid the next
+# day and no bill is raised and paid on the same day. Judgement values.
 runoff:
   case_adequacy_mean: 1.05
   case_adequacy_sigma: 0.35
   payments_per_year: 2.5
   concentration: 4
   min_payment: 50
+  payment_delay_days: 7
   revisions_per_year: 4
   revision_sigma: 0.3
