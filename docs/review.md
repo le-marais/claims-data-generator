@@ -13,21 +13,20 @@ IDs are **MR** (model review). Severity uses the `docs/todo.md` scale: **high**
 undermines the mission, **medium** worth addressing soon, **low** fix when
 touching the area.
 
-## 1. MR-20 (low) - payment and revision timing is not tied to claim events
+## 1. MR-20 (low) - revision timing is not tied to claim events
 
-- Where: `internal/domain/transaction/runoff.go`, `drawInterimPayments` and
-  `drawRevisions`; `lob.RunoffParams`.
-- Interim payments and case revisions fall on uniformly random days of an
-  episode, at Poisson rates per year of its open duration. One `runoff` block
-  serves every section, so a small repair and a slow injury claim share
-  `payments_per_year` and `revisions_per_year`, and nothing ties a revision to
-  an event such as a repair estimate arriving.
-- In a 150-policy seed-1 run of the personal motor preset: claim 13, a
-  repair of about $500, paid in two instalments over 88 days; claim 28,
-  $5,532 of property damage, had four case revisions in three and a half
-  months; claim 33 left its case untouched for four and a half months and
-  revised it only on the close date. Each is possible, but a real file shows
-  them less often.
+- Where: `internal/domain/transaction/runoff.go`, `drawRevisions` and
+  `drawInterimPayments`; `lob.RunoffParams`.
+- Case revisions fall on uniformly random days of an episode at a Poisson
+  rate per year of its open duration, and interim payments do too, within
+  the payment delay. One `runoff` block serves every section, so a small
+  repair and a slow injury claim share `payments_per_year` and
+  `revisions_per_year`. Apart from the bill before a payment, nothing ties a
+  revision to an event such as a repair estimate arriving.
+- In a 150-policy seed-1 run of the personal motor preset: claim 28, $5,532
+  of property damage, had four case revisions in three and a half months;
+  claim 33 left its case untouched for four and a half months. Each is
+  possible, but a real file shows them less often.
 - Action: when a class needs it, move the payment and revision rates onto
   `SectionParams`, and consider a revision soon after report, when the first
   estimate arrives.

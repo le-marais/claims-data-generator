@@ -114,7 +114,8 @@ func TestPaymentDelayKeepsReopensOpen(t *testing.T) {
 		a, b := plain[i].Episodes[1], delayed[i].Episodes[1]
 		plainDays, delayedDays := shared.DaysBetween(a.Open, a.Close), shared.DaysBetween(b.Open, b.Close)
 		// The plain lag is floored at one day, so a drawn lag of 0 shows as 1.
-		if b.Open != a.Open || (delayedDays != plainDays+7 && !(plainDays == 1 && delayedDays == 7)) {
+		floored := plainDays == 1 && delayedDays == 7
+		if b.Open != a.Open || (delayedDays != plainDays+7 && !floored) {
 			t.Fatalf("claim %d: reopen open %s for %d days with the delay, want %s for %d + 7", plain[i].ID, b.Open, delayedDays, a.Open, plainDays)
 		}
 	}

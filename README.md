@@ -166,7 +166,7 @@ flowchart TD
     ultimate["ultimate = loss - excess<br/>the claim's true cost"]
     limitCap["capped at the section's limit, if set"]
     closeDate["close date = report + gamma lag<br/>close_lag: shape, mean mean_days<br/>× (cost in start-year dollars / size_reference) ^ size_elasticity<br/>× risk factor ^ risk_loading"]
-    nilFlag["nil claim? probability nil_probability<br/>a nil claim's first episode pays nothing"]
+    nilFlag["nil claim? probability nil_probability<br/>a nil claim's first episode pays nothing;<br/>a paying claim closes runoff.payment_delay_days later"]
     count --> occurrence --> report --> kind
     kind -- "sum_insured_lognormal" --> siLoss
     kind -- "lognormal" --> lognormalLoss
@@ -221,13 +221,15 @@ Each episode turns the claim's true cost into a ledger of `ESTIMATE` and `PAYMEN
 %%{init: {"flowchart": {"wrappingWidth": 480}}}%%
 flowchart TD
     opening["report date: the case opens<br/>ESTIMATE = ultimate × LN(case_adequacy_sigma) / case_adequacy_mean"]
-    events["events on days strictly inside the episode<br/>revisions: Poisson, revisions_per_year × years open<br/>interim payments: none for a lump sum, chance settlement.lump_sum_probability;<br/>otherwise Poisson, payments_per_year × years open, sharing<br/>(1 - share) × ultimate by Dirichlet(concentration) weights in date order,<br/>share ~ Beta, mean settlement.share, settlement.concentration;<br/>a payment under min_payment is held over to the next"]
+    events["events on days strictly inside the episode<br/>revisions: Poisson, revisions_per_year × years open<br/>interim payments: none for a lump sum, chance settlement.lump_sum_probability;<br/>otherwise Poisson, payments_per_year × years open, sharing<br/>(1 - share) × ultimate by Dirichlet(concentration) weights in date order,<br/>share ~ Beta, mean settlement.share, settlement.concentration;<br/>a payment under min_payment is held over to the next;<br/>payments at least payment_delay_days from the open,<br/>the close and each other"]
     nextEvent{"next event,<br/>in date order"}
     revise["ESTIMATE moves the case to<br/>remaining cost × case_adequacy_mean ^ (u - 1)<br/>× LN(revision_sigma × (1 - u)),<br/>u = elapsed share of the episode"]
-    pay["PAYMENT, then an ESTIMATE<br/>releasing the same amount<br/>(the case is topped up first if it is short)"]
+    pay["PAYMENT, then an ESTIMATE<br/>releasing the same amount"]
+    bill["payment_delay_days before each payment: a case<br/>short of it is raised to cover it; until the payment,<br/>a revision may lower the case but not raise it"]
     settle["close date: a final PAYMENT of the remaining ultimate,<br/>then an ESTIMATE releasing the case to exactly zero"]
     opening --> events --> nextEvent
     nextEvent -- "revision" --> revise --> nextEvent
+    nextEvent -- "bill" --> bill --> nextEvent
     nextEvent -- "interim payment" --> pay --> nextEvent
     nextEvent -- "close date" --> settle
 ```
@@ -235,6 +237,8 @@ flowchart TD
 The claim opens at a case estimate drawn around its ultimate - `case_adequacy_mean` sets whether cases open deficient or redundant, which moves reserves and incurred development but never the loss cost - payments split the ultimate over the claim's life, and the case estimate is a noisy view of the remaining cost that settles as the claim ages. The opening bias decays over the claim's life rather than vanishing at the first revision, so incurred keeps developing in one direction - upward in both presets, whose cases open deficient - for incurred-based and IBNER methods to pick up. A nil episode draws revisions but no payments: its handler, who does not know it will pay nothing, revises the case around its current level, and the case is released to zero at close. A reopened claim's second episode opens at a reopen estimate drawn the same way as the opening case, and runs the same loop on the reopen's additional cost.
 
 How a claim is paid follows its section's `settlement`. With chance `lump_sum_probability` a paying episode is paid in one settlement at close, and so is one that draws no interim payment. Otherwise the final settlement is a Beta-distributed share of the cost, with mean `share`, and the interim payments split the rest. In the presets about nine in ten own-damage claims and three in four property damage claims pay once; one paid in instalments ends on a small balance, about a quarter of its cost on average. Injury claims rarely pay once and usually end on their largest payment, a settlement of about 60% of the cost on average. An interim payment below `min_payment` is held over to the next.
+
+Every payment comes at least `payment_delay_days` after the last `ESTIMATE` that raised the case: the opening case at report, a reopen, a revision up, or the bill for the payment itself. A case short of a bill is raised that many days before the payment, and no revision in between raises it. A paying claim and every reopen stay open that much longer, and payments come at least that far apart. The presets use 7 days, so no claim is paid within a week of being reported. With 0 there is no delay, and a payment above the case raises it on the day.
 
 The ledger is a stream of events that every measure folds from. The first row of every claim is its initial case estimate on the report date, so the outstanding case at any time is the running sum of `ESTIMATE` amounts. Every payment carries a matching case reduction. At close the outstanding case is exactly zero and total paid equals the ultimate (zero for a nil claim that does not reopen), and no claim pays beyond its cover: the sum insured minus excess for own damage, the section's `limit` for a limited section. Gross paid is the sum of a claim's `PAYMENT` rows; net paid subtracts its `SALVAGE` and `SUBROGATION` rows; incurred is the outstanding case plus net paid.
 
