@@ -55,7 +55,7 @@ Three read-only passes consume the `Dataset`:
 - `application.Summarize` and `application.ComputeDistributions` build the UI's per-year table and its severity and lag histograms.
 - `application.EvaluateRealism` builds `SectionComparison`, the annual triangles and premium of the scored sections taken together, and scores them with `triangle.CompareToReference` against a reference pool.
 
-The CLI writes the three dataset CSVs and, from `Aggregates`, `triangles.csv` and `exposure.csv`, into a directory. The web server returns the analytics as JSON and serves the same five files as a zip download, which regenerates the run from its seed and parameters.
+The CLI writes the three dataset CSVs and, from `Aggregates`, `triangles.csv` and `exposure.csv`, into a directory; with `--section-detail` it also writes `claim_sections.csv` and `exposure_sections.csv` (`WriteSectionDetail`), the latter from `MonthExposure.SectionPremiums`, which `ExposureByMonth` aggregates beside `Premium` with the same pro-rating. The web server returns the analytics as JSON and serves the same five files as a zip download, which regenerates the run from its seed and parameters.
 
 ## Domain packages
 

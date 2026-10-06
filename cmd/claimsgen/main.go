@@ -41,6 +41,9 @@ generate flags:
   --initial-book-size N    policies written in the first year, or fleets on a
                            fleet book (default 20000)
   --origin-basis B         monthly triangle origin: accident or underwriting (default accident)
+  --section-detail         also write claim_sections.csv and
+                           exposure_sections.csv, the section of cover of each
+                           claim and the premium by origin month and section
 
 ui flags:
   --port N                 port to listen on (default 8080)
@@ -77,6 +80,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	years := fs.Int("years", 10, "number of calendar years")
 	initialBookSize := fs.Int("initial-book-size", 20000, "policies in the first year")
 	originBasis := fs.String("origin-basis", "accident", "monthly triangle origin basis")
+	sectionDetail := fs.Bool("section-detail", false, "also write claim_sections.csv and exposure_sections.csv")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -132,6 +136,17 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	if err := csvout.WriteAggregates(*out, ag); err != nil {
 		fmt.Fprintf(stderr, "claimsgen: %v\n", err)
 		return 1
+	}
+
+	if *sectionDetail {
+		names := make([]string, len(l.Claims.Sections))
+		for i, sec := range l.Claims.Sections {
+			names[i] = sec.Name
+		}
+		if err := csvout.WriteSectionDetail(*out, names, ds, ag); err != nil {
+			fmt.Fprintf(stderr, "claimsgen: %v\n", err)
+			return 1
+		}
 	}
 
 	fmt.Fprintf(stdout, "%s: wrote %d policies, %d claims, %d transactions, %d triangle rows, %d exposure rows to %s (seed %d)\n",

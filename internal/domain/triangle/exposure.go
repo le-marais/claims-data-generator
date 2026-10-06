@@ -19,6 +19,12 @@ type MonthExposure struct {
 	Month         shared.Month
 	Premium       float64
 	ExposureUnits float64 // policy-years
+	// SectionPremiums splits Premium by section of cover, in the order of the
+	// line of business's sections, on the same basis and with the same
+	// pro-rating as Premium. It is empty when the policies carry no section
+	// split. Each policy's sections are rounded to the cent separately from its
+	// premium, so the split can differ from Premium by up to a cent per policy.
+	SectionPremiums []float64
 	// Policies is an in-force count on the accident basis - a policy counts
 	// in every month it covers, so the column does not sum to a policy count -
 	// and an inception count on the underwriting basis, where it does.
@@ -38,8 +44,13 @@ type MonthExposure struct {
 // that basis.
 func ExposureByMonth(policies []policy.Policy, startMonth shared.Month, months int, basis OriginBasis) []MonthExposure {
 	out := make([]MonthExposure, months)
+	sections := 0
+	for _, p := range policies {
+		sections = max(sections, len(p.SectionPremiums))
+	}
 	for i := range out {
 		out[i].Month = startMonth.Add(i)
+		out[i].SectionPremiums = make([]float64, sections)
 	}
 	for _, p := range policies {
 		termDays := shared.DaysBetween(p.CoverStart, p.CoverEnd) + 1
@@ -52,6 +63,9 @@ func ExposureByMonth(policies []policy.Policy, startMonth shared.Month, months i
 				continue
 			}
 			out[i].Premium += p.Premium.Dollars()
+			for s, sp := range p.SectionPremiums {
+				out[i].SectionPremiums[s] += sp.Dollars()
+			}
 			out[i].ExposureUnits += float64(termDays) / daysPerYear
 			out[i].Policies++
 			continue
@@ -75,6 +89,9 @@ func ExposureByMonth(policies []policy.Policy, startMonth shared.Month, months i
 				continue
 			}
 			out[i].Premium += perDay * float64(days)
+			for s, sp := range p.SectionPremiums {
+				out[i].SectionPremiums[s] += sp.Dollars() / float64(termDays) * float64(days)
+			}
 			out[i].ExposureUnits += float64(days) / daysPerYear
 			out[i].Policies++
 		}
