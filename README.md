@@ -10,6 +10,11 @@ One run produces five linked CSV datasets for a class of business:
 - **triangles.csv** - incremental monthly development triangles by origin month: paid, paid net of recoveries, incurred, and reported claim counts
 - **exposure.csv** - exposure by origin month: premium, exposure units in policy-years (vehicle-years on a fleet book), and a policy count that is an in-force count on the accident basis (so it does not sum to the book's policy count) and an inception count on the underwriting basis (so it does, apart from the warm-up year, which incepts before the window)
 
+With `--section-detail`, `generate` also writes two files that break the run down by section of cover (the browser UI and its zip stay at five files):
+
+- **claim_sections.csv** - one row per claim, in `claims.csv` order: `claim_id,section`, where `section` is the section's `name` in the line of business (for the presets `own_damage`, `third_party_property` and `third_party_injury`)
+- **exposure_sections.csv** - one row per origin month and section: `origin_month,section,premium`, origin months in `exposure.csv` order and sections in the line of business's order. `premium` is the month's premium for that section on the run's origin basis, aggregated as `exposure.csv`'s premium is but from each policy's premium for the section. A policy's sections are each rounded to the cent, so for a month they add up to `exposure.csv`'s premium to within about a cent per policy in force, not exactly
+
 ## Quickstart
 
 ```
@@ -28,7 +33,8 @@ claimsgen generate \
   --start-year 1998 \         # first calendar year of the book
   --years 10 \                # number of calendar years
   --initial-book-size 20000 \ # policies written in the first year, or fleets on a fleet book
-  --origin-basis accident     # monthly origin: accident or underwriting
+  --origin-basis accident \   # monthly origin: accident or underwriting
+  --section-detail            # also write claim_sections.csv and exposure_sections.csv
 ```
 
 ## Browser UI

@@ -2,8 +2,10 @@ package main
 
 import (
 	"bytes"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -241,5 +243,154 @@ func TestUnknownSubcommandPrintsUsage(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "usage") {
 		t.Fatalf("stderr = %q, want usage text", stderr.String())
+	}
+}
+
+// sectionDetailArgs is a small, fast run; extra flags are appended.
+func sectionDetailArgs(out string, extra ...string) []string {
+	args := []string{"generate", "--out", out, "--years", "2", "--initial-book-size", "100", "--seed", "7"}
+	return append(args, extra...)
+}
+
+func readCSV(t *testing.T, path string) [][]string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var rows [][]string
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		rows = append(rows, strings.Split(line, ","))
+	}
+	return rows
+}
+
+func TestGenerateWithoutSectionDetailWritesExactlyFiveFiles(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "output")
+	var buf bytes.Buffer
+	if code := run(sectionDetailArgs(out), &buf, &buf); code != 0 {
+		t.Fatalf("exit code = %d: %s", code, buf.String())
+	}
+	entries, err := os.ReadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, e := range entries {
+		got = append(got, e.Name())
+	}
+	want := []string{"claims.csv", "exposure.csv", "policies.csv", "transactions.csv", "triangles.csv"}
+	if strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Errorf("files = %v, want %v", got, want)
+	}
+}
+
+func TestGenerateSectionDetailLeavesTheFiveFilesUnchanged(t *testing.T) {
+	plain := filepath.Join(t.TempDir(), "plain")
+	detail := filepath.Join(t.TempDir(), "detail")
+	var buf bytes.Buffer
+	if code := run(sectionDetailArgs(plain), &buf, &buf); code != 0 {
+		t.Fatalf("plain run failed: %s", buf.String())
+	}
+	if code := run(sectionDetailArgs(detail, "--section-detail"), &buf, &buf); code != 0 {
+		t.Fatalf("detail run failed: %s", buf.String())
+	}
+	for _, name := range []string{"policies.csv", "claims.csv", "transactions.csv", "triangles.csv", "exposure.csv"} {
+		a, _ := os.ReadFile(filepath.Join(plain, name))
+		b, _ := os.ReadFile(filepath.Join(detail, name))
+		if !bytes.Equal(a, b) {
+			t.Errorf("%s changed when --section-detail was set", name)
+		}
+	}
+}
+
+func TestGenerateSectionDetailClaimSectionsMatchClaims(t *testing.T) {
+	known := map[string]bool{"own_damage": true, "third_party_property": true, "third_party_injury": true}
+	out := filepath.Join(t.TempDir(), "output")
+	var buf bytes.Buffer
+	if code := run(sectionDetailArgs(out, "--section-detail"), &buf, &buf); code != 0 {
+		t.Fatalf("exit code = %d: %s", code, buf.String())
+	}
+	claims := readCSV(t, filepath.Join(out, "claims.csv"))
+	sections := readCSV(t, filepath.Join(out, "claim_sections.csv"))
+	if strings.Join(sections[0], ",") != "claim_id,section" {
+		t.Errorf("header = %v", sections[0])
+	}
+	if len(sections) != len(claims) {
+		t.Fatalf("claim_sections.csv has %d rows, claims.csv has %d", len(sections), len(claims))
+	}
+	for i := 1; i < len(claims); i++ {
+		if sections[i][0] != claims[i][0] {
+			t.Fatalf("row %d: claim id %s, want %s", i, sections[i][0], claims[i][0])
+		}
+		if !known[sections[i][1]] {
+			t.Fatalf("row %d: unknown section %q", i, sections[i][1])
+		}
+	}
+}
+
+func TestGenerateSectionDetailExposureSectionsSumToExposure(t *testing.T) {
+	for _, basis := range []string{"accident", "underwriting"} {
+		t.Run(basis, func(t *testing.T) {
+			out := filepath.Join(t.TempDir(), "output")
+			var buf bytes.Buffer
+			if code := run(sectionDetailArgs(out, "--section-detail", "--origin-basis", basis), &buf, &buf); code != 0 {
+				t.Fatalf("exit code = %d: %s", code, buf.String())
+			}
+			exposure := readCSV(t, filepath.Join(out, "exposure.csv"))
+			detail := readCSV(t, filepath.Join(out, "exposure_sections.csv"))
+			if strings.Join(detail[0], ",") != "origin_month,section,premium" {
+				t.Errorf("header = %v", detail[0])
+			}
+			const sections = 3
+			if got, want := len(detail)-1, (len(exposure)-1)*sections; got != want {
+				t.Fatalf("exposure_sections.csv has %d rows, want %d", got, want)
+			}
+			wantOrder := []string{"own_damage", "third_party_property", "third_party_injury"}
+			for m := 1; m < len(exposure); m++ {
+				total := 0.0
+				for s := 0; s < sections; s++ {
+					row := detail[(m-1)*sections+s+1]
+					if row[0] != exposure[m][0] {
+						t.Fatalf("row for month %s section %d has origin_month %s", exposure[m][0], s, row[0])
+					}
+					if row[1] != wantOrder[s] {
+						t.Fatalf("month %s: section %d is %q, want %q", row[0], s, row[1], wantOrder[s])
+					}
+					p, err := strconv.ParseFloat(row[2], 64)
+					if err != nil {
+						t.Fatal(err)
+					}
+					total += p
+				}
+				premium, _ := strconv.ParseFloat(exposure[m][1], 64)
+				policies, _ := strconv.Atoi(exposure[m][3])
+				// A policy's sections are rounded to the cent separately from its
+				// premium (up to a cent apart, pro-rated by the days earned in the
+				// month), then each printed figure is rounded again.
+				tol := 0.01*float64(policies) + 0.01*sections
+				if math.Abs(total-premium) > tol {
+					t.Errorf("month %s: section premiums sum to %.2f, exposure premium %.2f (tolerance %.2f)", exposure[m][0], total, premium, tol)
+				}
+			}
+		})
+	}
+}
+
+func TestGenerateSectionDetailSameSeedSameBytes(t *testing.T) {
+	outA := filepath.Join(t.TempDir(), "a")
+	outB := filepath.Join(t.TempDir(), "b")
+	var buf bytes.Buffer
+	for _, out := range []string{outA, outB} {
+		if code := run(sectionDetailArgs(out, "--section-detail"), &buf, &buf); code != 0 {
+			t.Fatalf("run failed: %s", buf.String())
+		}
+	}
+	for _, name := range []string{"claim_sections.csv", "exposure_sections.csv"} {
+		a, _ := os.ReadFile(filepath.Join(outA, name))
+		b, _ := os.ReadFile(filepath.Join(outB, name))
+		if len(a) == 0 || !bytes.Equal(a, b) {
+			t.Errorf("%s is empty or differs across identical seeds", name)
+		}
 	}
 }

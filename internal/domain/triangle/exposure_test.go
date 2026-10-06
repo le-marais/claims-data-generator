@@ -156,3 +156,32 @@ func TestOriginBasisValidate(t *testing.T) {
 		t.Error("Validate(\"policy\") = nil, want an error naming the allowed values")
 	}
 }
+
+func TestExposureByMonthSplitsPremiumBySection(t *testing.T) {
+	p := dollarADayPolicy()
+	p.SectionPremiums = []shared.Money{shared.FromDollars(73), shared.FromDollars(292)}
+	for _, tc := range []struct {
+		name  string
+		basis triangle.OriginBasis
+		month int
+		want  []float64
+	}{
+		{"accident October earns 31 days", triangle.AccidentMonth, 9, []float64{6.2, 24.8}},
+		{"accident before cover", triangle.AccidentMonth, 8, []float64{0, 0}},
+		{"underwriting lands the whole split at inception", triangle.UnderwritingMonth, 9, []float64{73, 292}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			exposure := triangle.ExposureByMonth(
+				[]policy.Policy{p}, shared.NewMonth(1998, time.January), 24, tc.basis)
+			got := exposure[tc.month].SectionPremiums
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %d sections, want %d", len(got), len(tc.want))
+			}
+			for s := range tc.want {
+				if !approx(got[s], tc.want[s]) {
+					t.Errorf("section %d = %v, want %v", s, got[s], tc.want[s])
+				}
+			}
+		})
+	}
+}
