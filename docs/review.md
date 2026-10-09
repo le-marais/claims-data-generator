@@ -13,7 +13,38 @@ IDs are **MR** (model review). Severity uses the `docs/todo.md` scale: **high**
 undermines the mission, **medium** worth addressing soon, **low** fix when
 touching the area.
 
-## 1. MR-21 (medium) - the case estimate jumps up and down around the true cost
+## 1. MR-24 (medium) - moving a report date redraws other claims' case, runoff, reopen and recovery
+
+- Where: `internal/domain/claim/claim.go`, `Simulate` (claims sorted by
+  report date and numbered); the per-claim streams `case-estimate-claim-<id>`,
+  `runoff-claim-<id>`, `reopen-claim-<id>` and `recovery-claim-<id>`;
+  `seasonal_holiday.report_share` and `business_days.roll_reports`.
+- Claims are numbered in registration (report-date) order after the claim
+  stage, and every later stage draws from a stream keyed by that number. A
+  parameter that moves a report date - a seasonal holiday deferral, or rolling
+  reports to business days - changes the registration order, so the claims
+  reported between a moved report's old and new dates take new numbers and
+  with them new opening case estimates, case paths, payment splits, reopens
+  and recoveries. Occurrences, costs and the claim stage's own dates are
+  unaffected.
+- On the commercial preset (seed 1, 30,000 initial fleets, 1998-2007), 27,919
+  of 161,858 claims, matched by policy and occurrence date, have a different
+  claim number with the holiday on than off, and all but one of them a
+  different initial estimate; claims that keep their number are identical.
+  The redraws show as noise of about 1% in the holiday's monthly effect on
+  paid link ratios where the holiday cannot act: for February origins, paid
+  in May moves +0.9% and paid in June -1.3%.
+- It breaks the stated contract that switching a feature on moves only what
+  it governs, and it blurs any on-versus-off comparison, the way the
+  seasonality effect is inspected.
+- Action: key each claim's streams by an identity that does not depend on
+  registration order - its policy, its section and its sequence within that
+  policy's section from the claim stage - keeping the registration-order
+  number as the `claim_id` the CSVs show. Then test that toggling the holiday
+  or `roll_reports` leaves every claim's case estimates, payments and
+  recoveries unchanged apart from their dates. Every golden hash moves.
+
+## 2. MR-21 (medium) - the case estimate jumps up and down around the true cost
 
 - Where: `internal/domain/transaction/runoff.go`, `runEpisode`;
   `runoff.revision_sigma`.
@@ -36,7 +67,7 @@ touching the area.
   current level toward the aim at each revision, with at most one revision
   a day; re-check the incurred factors against the realism gate.
 
-## 2. MR-22 (low) - case estimates are set to the cent
+## 3. MR-22 (low) - case estimates are set to the cent
 
 - Where: `internal/domain/transaction/estimate.go`, `CaseEstimator.Apply`;
   `internal/domain/transaction/runoff.go`, revision and bill targets.
@@ -53,7 +84,7 @@ touching the area.
   above, and consider a standard opening reserve per section. A case set to
   a bill, payments and the release at close stay exact.
 
-## 3. MR-20 (low) - revision timing is not tied to claim events
+## 4. MR-20 (low) - revision timing is not tied to claim events
 
 - Where: `internal/domain/transaction/runoff.go`, `drawRevisions` and
   `drawInterimPayments`; `lob.RunoffParams`.
@@ -71,7 +102,7 @@ touching the area.
   `SectionParams`, and consider a revision soon after report, when the first
   estimate arrives.
 
-## 4. MR-12 (low) - one setting drives two kinds of variation
+## 5. MR-12 (low) - one setting drives two kinds of variation
 
 - Where: `internal/domain/policy/book.go`, `drawVehicle`.
 - `spread` sets both the sum-insured lognormal sigma and the risk-factor
