@@ -99,3 +99,34 @@ func TestRunoffWithoutACalendarIsUnchanged(t *testing.T) {
 		t.Fatal("an off calendar changed the runoff")
 	}
 }
+
+func TestRecoveriesFallOnBusinessDays(t *testing.T) {
+	cal := usCalendar(t)
+	claims := testClaims(300)
+	for i := range claims {
+		claims[i].Section = ownDamage
+	}
+	p := lob.RecoveryParams{Subrogation: lob.RecoveryTypeParams{Probability: 1, MeanShare: 0.5, Concentration: 5, LagMedianDays: 60, LagSigma: 1}}
+	txs := transaction.NewRunoffSimulator(params(), sections()).Simulate(random.NewSource(95), claims)
+	base := transaction.NewRecoverySimulator(withSections(p)).Apply(random.NewSource(95), claims, txs)
+	rolled := transaction.NewRecoverySimulator(withSections(p)).WithCalendar(cal).Apply(random.NewSource(95), claims, txs)
+	if len(base) != len(rolled) {
+		t.Fatalf("%d rows with a calendar, want %d", len(rolled), len(base))
+	}
+	moved := 0
+	for i, b := range base {
+		r := rolled[i]
+		if !b.Type.IsRecovery() {
+			continue
+		}
+		if want := cal.Following(b.Date); r.Date != want || r.Amount != b.Amount {
+			t.Fatalf("recovery on %v became %v %v, want %v %v", b.Date, r.Date, r.Amount, want, b.Amount)
+		}
+		if r.Date != b.Date {
+			moved++
+		}
+	}
+	if moved == 0 {
+		t.Fatal("no recovery fell on a non-business day; the test proves nothing")
+	}
+}
