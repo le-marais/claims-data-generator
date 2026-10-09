@@ -32,6 +32,8 @@ type LOBParams struct {
 	Pricing PricingParams `yaml:"pricing" json:"pricing"`
 	Claims  ClaimsParams  `yaml:"claims" json:"claims"`
 	Runoff  RunoffParams  `yaml:"runoff" json:"runoff"`
+
+	SeasonalHoliday SeasonalHolidayParams `yaml:"seasonal_holiday" json:"seasonal_holiday"`
 }
 
 // BookParams mirrors lob.BookParams for YAML/JSON.
@@ -178,6 +180,13 @@ type RunoffParams struct {
 	PaymentDelayDays  float64 `yaml:"payment_delay_days" json:"payment_delay_days"`
 	RevisionsPerYear  float64 `yaml:"revisions_per_year" json:"revisions_per_year"`
 	RevisionSigma     float64 `yaml:"revision_sigma" json:"revision_sigma"`
+}
+
+// SeasonalHolidayParams mirrors lob.SeasonalHolidayParams for YAML/JSON.
+type SeasonalHolidayParams struct {
+	Hemisphere   string  `yaml:"hemisphere" json:"hemisphere"`
+	ReportShare  float64 `yaml:"report_share" json:"report_share"`
+	PaymentShare float64 `yaml:"payment_share" json:"payment_share"`
 }
 
 func decode(r io.Reader) (LOBParams, error) {
@@ -373,6 +382,11 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			PaymentDelayDays:  d.Runoff.PaymentDelayDays,
 			RevisionsPerYear:  d.Runoff.RevisionsPerYear,
 			RevisionSigma:     d.Runoff.RevisionSigma,
+		},
+		SeasonalHoliday: lob.SeasonalHolidayParams{
+			Hemisphere:   lob.Hemisphere(d.SeasonalHoliday.Hemisphere),
+			ReportShare:  d.SeasonalHoliday.ReportShare,
+			PaymentShare: d.SeasonalHoliday.PaymentShare,
 		},
 	}
 }
