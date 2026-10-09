@@ -129,6 +129,7 @@ type ClaimSimulator struct {
 	windowStart  shared.Date // zero value means no windowing
 	windowEnd    shared.Date // exclusive
 	paymentDelay int
+	holiday      lob.SeasonalHolidayParams
 }
 
 // NewClaimSimulator builds a claim simulator from the claim parameters.
@@ -150,6 +151,15 @@ func (s *ClaimSimulator) WithInflation(x InflationIndex) *ClaimSimulator {
 // its drawn lag. The default, 0, adds nothing.
 func (s *ClaimSimulator) WithPaymentDelay(days int) *ClaimSimulator {
 	s.paymentDelay = days
+	return s
+}
+
+// WithSeasonalHoliday defers a share of the reports, and of the paying
+// closes, dated in the holiday window to the same day of the next month. A
+// deferred report moves the claim's whole timeline back. The default, off,
+// takes no draws.
+func (s *ClaimSimulator) WithSeasonalHoliday(h lob.SeasonalHolidayParams) *ClaimSimulator {
+	s.holiday = h
 	return s
 }
 
@@ -213,9 +223,13 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 		exposed := s.exposedFraction(pol)
 		for i, sec := range s.params.Sections {
 			sectionStream := stream.Split(sec.Name)
+			var holiday shared.RandomSource
+			if s.holiday.Enabled() {
+				holiday = sectionStream.Split("seasonal-holiday")
+			}
 			n := sectionStream.Poisson(sec.BaseFrequency * pol.RiskFactor * exposed)
 			for range n {
-				if c, ok := s.simulateClaim(sectionStream, pol, i); ok {
+				if c, ok := s.simulateClaim(sectionStream, holiday, pol, i); ok {
 					claims = append(claims, c)
 				}
 			}
@@ -242,12 +256,20 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 // The severity draw is the first episode's true cost (Ultimate); the case
 // estimate is a separate, later view of it. Every claim takes the same draws
 // in the same order, reportable or not.
-func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Policy, section int) (Claim, bool) {
+//
+// holiday is the section's seasonal-holiday stream, nil when the holiday is
+// off. Every claim takes two draws from it, one for its report and one for
+// its close, so the holiday never moves a draw of src.
+func (s *ClaimSimulator) simulateClaim(src, holiday shared.RandomSource, pol policy.Policy, section int) (Claim, bool) {
+	uReport, uClose := 1.0, 1.0 // 1 never defers
+	if holiday != nil {
+		uReport, uClose = holiday.Uniform(), holiday.Uniform()
+	}
 	sec := s.params.Sections[section]
 	first, span := s.occurrenceSpan(pol)
 	occurrence := first.AddDays(int(src.Uniform() * float64(span)))
 	lag := src.LogNormal(math.Log(sec.ReportLag.Median), sec.ReportLag.Sigma)
-	report := occurrence.AddDays(int(math.Round(lag)))
+	report := s.holiday.Defer(occurrence.AddDays(int(math.Round(lag))), uReport, s.holiday.ReportShare)
 
 	// Losses are drawn in start-year dollars and trended by the claims index
 	// at the occurrence date. A sum-insured loss is then capped at the drifted
@@ -295,10 +317,12 @@ func (s *ClaimSimulator) simulateClaim(src shared.RandomSource, pol policy.Polic
 	// later claims on the same policy. This is the shift-free contract the reopen
 	// and recovery post-passes also uphold.
 	isNil := src.Bernoulli(s.params.NilProbability)
-	if !isNil {
-		closeLag += s.paymentDelay
-	}
 	closeDate := report.AddDays(closeLag)
+	if !isNil {
+		// The close carries the final settlement, so a paying close can be
+		// deferred; a nil close pays nothing and stays.
+		closeDate = s.holiday.Defer(closeDate.AddDays(s.paymentDelay), uClose, s.holiday.PaymentShare)
+	}
 
 	return Claim{
 		PolicyID:       pol.ID,
