@@ -17,6 +17,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/le-marais/claimsgen/internal/domain/calendar"
 	"github.com/le-marais/claimsgen/internal/domain/claim"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/domain/shared"
@@ -45,6 +46,7 @@ type RunoffSimulator struct {
 	// settlement is each section's settlement, by section index.
 	settlement []lob.SettlementParams
 	holiday    lob.SeasonalHolidayParams
+	calendar   calendar.Calendar
 }
 
 // NewRunoffSimulator builds a runoff simulator from the runoff parameters
@@ -65,6 +67,29 @@ func NewRunoffSimulator(p lob.RunoffParams, sections []lob.SectionParams) *Runof
 func (s *RunoffSimulator) WithSeasonalHoliday(h lob.SeasonalHolidayParams) *RunoffSimulator {
 	s.holiday = h
 	return s
+}
+
+// WithCalendar puts the runoff on business days: revisions and payments roll
+// to the next business day, a revision rolled onto the close is dropped, and
+// a payment's bill rolls back to the business day before, so it stays at
+// least the payment delay ahead. Episodes must open and close on business
+// days, as the claim and reopen stages place them. The default, an off
+// calendar, moves nothing.
+func (s *RunoffSimulator) WithCalendar(c calendar.Calendar) *RunoffSimulator {
+	s.calendar = c
+	return s
+}
+
+// roll is the offset from open of the business day on or after offset.
+func (s *RunoffSimulator) roll(open shared.Date, offset int) int {
+	return shared.DaysBetween(open, s.calendar.Following(open.AddDays(offset)))
+}
+
+// billOffset is the day of a payment's bill: the payment delay before it,
+// rolled back to a business day and never before the open.
+func (s *RunoffSimulator) billOffset(open shared.Date, payment int) int {
+	bill := max(0, payment-int(s.params.PaymentDelayDays))
+	return max(0, shared.DaysBetween(open, s.calendar.Preceding(open.AddDays(bill))))
 }
 
 // Simulate produces every claim's transactions in claim order, each claim's
@@ -166,10 +191,10 @@ func (s *RunoffSimulator) runEpisode(src, holiday shared.RandomSource, e *emitte
 		}
 		payments = append(payments, event{offset: duration, kind: kindPayment, amount: final})
 	}
-	events := append(s.drawRevisions(src, duration, years), payments...)
+	events := append(s.drawRevisions(src, ep.Open, duration, years), payments...)
 	if delay > 0 {
 		for _, p := range payments {
-			events = append(events, event{offset: max(0, p.offset-delay), kind: kindBill, amount: p.amount})
+			events = append(events, event{offset: s.billOffset(ep.Open, p.offset), kind: kindBill, amount: p.amount})
 		}
 	}
 	sort.SliceStable(events, func(i, j int) bool {
@@ -203,7 +228,7 @@ func (s *RunoffSimulator) runEpisode(src, holiday shared.RandomSource, e *emitte
 		if rest <= 0 {
 			return p.amount
 		}
-		return p.amount + max(shared.OneCent, shared.FromDollars(rest.Dollars()*s.adequacyBias(elapsed(max(0, p.offset-delay)))))
+		return p.amount + max(shared.OneCent, shared.FromDollars(rest.Dollars()*s.adequacyBias(elapsed(s.billOffset(ep.Open, p.offset)))))
 	}
 	for _, ev := range events {
 		switch ev.kind {
@@ -231,7 +256,7 @@ func (s *RunoffSimulator) runEpisode(src, holiday shared.RandomSource, e *emitte
 				// covering the payment and what remains after it, so the
 				// bill has nothing to raise; after the bill's day it is
 				// never raised.
-				if bill := payments[next].offset - delay; ev.offset >= bill {
+				if bill := s.billOffset(ep.Open, payments[next].offset); ev.offset >= bill {
 					if ev.offset > bill {
 						target = min(target, e.outstanding)
 					}
@@ -293,6 +318,9 @@ func (s *RunoffSimulator) drawInterimPayments(src, holiday shared.RandomSource, 
 			offsets[i] = shared.DaysBetween(open, deferred)
 		}
 	}
+	for i, off := range offsets {
+		offsets[i] = s.roll(open, off) // one rolled past the last interim day is held over below
+	}
 	sort.Ints(offsets)
 	minimum := shared.FromDollars(s.params.MinPayment)
 	events := make([]event, 0, n)
@@ -333,14 +361,20 @@ func settlementShare(src shared.RandomSource, st lob.SettlementParams) float64 {
 	return src.Beta(m*k, (1-m)*k)
 }
 
-func (s *RunoffSimulator) drawRevisions(src shared.RandomSource, duration int, years float64) []event {
+// drawRevisions draws an episode's pure case revisions, on days strictly
+// between open and close, each rolled to a business day; one rolled onto
+// the close is dropped. Every revision is drawn either way, so dropping one
+// moves no other draw.
+func (s *RunoffSimulator) drawRevisions(src shared.RandomSource, open shared.Date, duration int, years float64) []event {
 	if duration < 2 {
 		return nil
 	}
 	n := src.Poisson(s.params.RevisionsPerYear * years)
-	events := make([]event, n)
-	for i := range events {
-		events[i] = event{offset: s.interiorOffset(src, duration), kind: kindRevision}
+	events := make([]event, 0, n)
+	for range n {
+		if off := s.roll(open, s.interiorOffset(src, duration)); off < duration {
+			events = append(events, event{offset: off, kind: kindRevision})
+		}
 	}
 	return events
 }
