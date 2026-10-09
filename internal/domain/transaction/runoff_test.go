@@ -356,9 +356,17 @@ func TestPaymentDelayFollowsEveryRaise(t *testing.T) {
 		}
 	}
 	// A revision on a bill's day must not take the case below the bill, for
-	// the bill to raise it straight back: no claim lowers its case and raises
-	// it again on the same day. A payment's own release is not a revision.
+	// the bill to raise it straight back: no claim lowers its case and has a
+	// bill raise it again on the same day. A bill's raise is one a payment
+	// follows exactly the delay later; a payment's own release is not a
+	// revision. (Two revisions can still share a day, MR-21.)
 	for id, rs := range grouped {
+		paidOn := map[shared.Date]bool{}
+		for _, tx := range rs {
+			if tx.Type == transaction.Payment {
+				paidOn[tx.Date] = true
+			}
+		}
 		lowered := shared.Date{}
 		for i, tx := range rs {
 			if tx.Type != transaction.Estimate || (i > 0 && rs[i-1].Type == transaction.Payment && tx.Amount == -rs[i-1].Amount) {
@@ -366,8 +374,8 @@ func TestPaymentDelayFollowsEveryRaise(t *testing.T) {
 			}
 			if tx.Amount < 0 {
 				lowered = tx.Date
-			} else if tx.Date == lowered {
-				t.Fatalf("claim %d: case lowered and raised again on %s", id, tx.Date)
+			} else if tx.Date == lowered && paidOn[tx.Date.AddDays(7)] {
+				t.Fatalf("claim %d: case lowered and raised again by a bill on %s", id, tx.Date)
 			}
 		}
 	}

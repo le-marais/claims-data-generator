@@ -246,7 +246,8 @@ claims:
 # is open, unless its section's settlement makes it a lump sum, and share
 # what the settlement leaves by Dirichlet weights. concentration 4 splits it
 # fairly evenly, where 1 often left one payment a few dollars, and
-# min_payment 50 holds a smaller payment over to the next.
+# min_payment 50 holds a smaller payment over to the next and keeps the final
+# settlement from being a token amount.
 # payment_delay_days 7, about five working days, is the fewest days from an
 # event that raises the case - the report, a reopen, a revision up, or a bill
 # above the case - to a payment, so no claim is reported and paid the next

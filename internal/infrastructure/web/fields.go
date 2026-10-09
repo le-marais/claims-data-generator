@@ -131,7 +131,7 @@ var formFields = []fieldGroup{
 			{Path: []string{"runoff", "case_adequacy_sigma"}, Label: "Case adequacy sigma", Tip: "Noise on each opening case estimate: how wrong individual estimates are."},
 			{Path: []string{"runoff", "payments_per_year"}, Label: "Payments per year", Tip: "Poisson intensity of interim payments."},
 			{Path: []string{"runoff", "concentration"}, Label: "Concentration", Tip: "Dirichlet concentration splitting the interim payments' share; higher splits it more evenly."},
-			{Path: []string{"runoff", "min_payment"}, Label: "Minimum payment", Tip: "Smallest interim payment in dollars; a smaller one is held over to the next payment. 0 switches it off."},
+			{Path: []string{"runoff", "min_payment"}, Label: "Minimum payment", Tip: "Smallest interim payment, and final settlement after instalments, in dollars; a smaller one is held over to the next payment. 0 switches it off."},
 			{Path: []string{"runoff", "payment_delay_days"}, Label: "Payment delay days", Tip: "Fewest whole days from raising the case (report, reopen, a revision up, or a bill above the case) to a payment; paying claims stay open at least this long. 0 switches it off."},
 			{Path: []string{"runoff", "revisions_per_year"}, Label: "Revisions per year", Tip: "Poisson intensity of pure case revisions."},
 			{Path: []string{"runoff", "revision_sigma"}, Label: "Revision sigma", Tip: "Initial sigma of revision noise."},

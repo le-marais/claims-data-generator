@@ -4,7 +4,7 @@ Where claimsgen is heading, in recommended order. It lists outstanding direction
 
 ## Next
 
-- **Business-day processing calendar** - after MR-23. Transactions and processing events (case estimates, payments, closes, reopens) fall on business days only, never on a weekend or public holiday. Report dates stay on any day by default, as they do for personal lines, where policyholders report at weekends; an optional setting moves reports to business days too, as is more usual for some commercial lines. Needs a holiday calendar per market and must keep the payment delay and the ledger invariants.
+- **Business-day processing calendar** - Transactions and processing events (case estimates, payments, closes, reopens) fall on business days only, never on a weekend or public holiday. Report dates stay on any day by default, as they do for personal lines, where policyholders report at weekends; an optional setting moves reports to business days too, as is more usual for some commercial lines. Needs a holiday calendar per market and must keep the payment delay and the ledger invariants.
 
 ## Longer term
 
