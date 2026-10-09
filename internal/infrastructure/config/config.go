@@ -34,6 +34,7 @@ type LOBParams struct {
 	Runoff  RunoffParams  `yaml:"runoff" json:"runoff"`
 
 	SeasonalHoliday SeasonalHolidayParams `yaml:"seasonal_holiday" json:"seasonal_holiday"`
+	BusinessDays    BusinessDayParams     `yaml:"business_days" json:"business_days"`
 }
 
 // BookParams mirrors lob.BookParams for YAML/JSON.
@@ -187,6 +188,12 @@ type SeasonalHolidayParams struct {
 	Hemisphere   string  `yaml:"hemisphere" json:"hemisphere"`
 	ReportShare  float64 `yaml:"report_share" json:"report_share"`
 	PaymentShare float64 `yaml:"payment_share" json:"payment_share"`
+}
+
+// BusinessDayParams mirrors lob.BusinessDayParams for YAML/JSON.
+type BusinessDayParams struct {
+	Calendar    string `yaml:"calendar" json:"calendar"`
+	RollReports bool   `yaml:"roll_reports" json:"roll_reports"`
 }
 
 func decode(r io.Reader) (LOBParams, error) {
@@ -387,6 +394,10 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			Hemisphere:   lob.Hemisphere(d.SeasonalHoliday.Hemisphere),
 			ReportShare:  d.SeasonalHoliday.ReportShare,
 			PaymentShare: d.SeasonalHoliday.PaymentShare,
+		},
+		BusinessDays: lob.BusinessDayParams{
+			Calendar:    d.BusinessDays.Calendar,
+			RollReports: d.BusinessDays.RollReports,
 		},
 	}
 }

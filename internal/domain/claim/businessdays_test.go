@@ -7,6 +7,7 @@ import (
 	"github.com/le-marais/claimsgen/internal/domain/calendar"
 	"github.com/le-marais/claimsgen/internal/domain/claim"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
+	"github.com/le-marais/claimsgen/internal/domain/shared"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 )
 
@@ -57,8 +58,15 @@ func TestBusinessDaysRollClosesAndReopens(t *testing.T) {
 				}
 			}
 		}
-		if r.Episodes[0].Close != cal.Following(b.Episodes[0].Close) {
-			t.Fatalf("close %v rolled to %v, want %v", b.Episodes[0].Close, r.Episodes[0].Close, cal.Following(b.Episodes[0].Close))
+		// The claim opens on the next business day and the close lag runs
+		// from the opening.
+		open := cal.Following(b.ReportDate())
+		if r.Episodes[0].Open != open {
+			t.Fatalf("report %v opened on %v, want %v", b.ReportDate(), r.Episodes[0].Open, open)
+		}
+		lag := shared.DaysBetween(b.Episodes[0].Open, b.Episodes[0].Close)
+		if want := cal.Following(open.AddDays(lag)); r.Episodes[0].Close != want {
+			t.Fatalf("close %v rolled to %v, want %v", b.Episodes[0].Close, r.Episodes[0].Close, want)
 		}
 	}
 	if reopens == 0 || movedReports == 0 {
