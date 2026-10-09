@@ -207,7 +207,7 @@ stateDiagram-v2
     [*] --> Unreported: occurrence date
     Unreported --> FirstEpisode: report date, the case opens
     FirstEpisode --> reopens: close date, the case released to zero
-    reopens --> SecondEpisode: reopening.probability, after a lognormal lag
+    reopens --> SecondEpisode: reopening.probability, after a lognormal lag,<br/>deferred a month at seasonal_holiday.report_share in the holiday
     reopens --> Settled: otherwise
     SecondEpisode --> Settled: second close date, the case released to zero
     Settled --> Recovered: sections with recoveries, after a lognormal lag
@@ -270,10 +270,10 @@ transactions.csv is emitted in claim-registration order, not date order: all of 
 
 Claims handling slows over the summer holiday. The `seasonal_holiday` block takes a share of the reports and payments the simulation dates in the holiday window and moves each to the same day of the next month, on top of what that month already holds. The window is 15 July to 14 August for `hemisphere: northern` and 15 December to 14 January for `southern`; `none`, the default, switches it off.
 
-- A report in the window moves with chance `report_share`. The close lag runs from the report, so the claim's whole timeline moves back with it.
+- A report in the window moves with chance `report_share`. The close lag runs from the report, so the claim's whole timeline moves back with it. A reopen in the window moves the same way, and its episode with it, so fewer claims reopen during the holiday and more just after it.
 - A payment in the window moves with chance `payment_share`: an interim payment, or a final settlement together with the close date it lands on. A nil claim's close pays nothing and stays. An interim payment moved past the claim's last day for one is paid with the final settlement instead.
 
-A moved date always lands outside the window, so nothing moves twice, and no claim's cost changes. Both presets use the northern summer, with 10% of reports and 15% of payments moved; these are judgement values, since Schedule P is annual and says nothing about months. Northern moves stay within the calendar year, so they show in the monthly triangles and leave the annual ones almost unchanged. Southern moves from late December cross the year end.
+A moved date always lands outside the window, so nothing moves twice, and no claim's cost changes. Both presets use the northern summer, with 30% of reports and reopens and 40% of payments moved, enough that the slowdown shows in single claim ledgers as well as monthly totals; these are judgement values, since Schedule P is annual and says nothing about months. Northern moves stay within the calendar year, so they show in the monthly triangles and leave the annual ones almost unchanged. Southern moves from late December cross the year end.
 
 ### Recoveries
 

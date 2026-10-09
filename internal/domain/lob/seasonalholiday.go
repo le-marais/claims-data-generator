@@ -23,14 +23,15 @@ const (
 // closes the day before the same day of the next month.
 const holidayStartDay = 15
 
-// SeasonalHolidayParams defers a share of the reports and payments dated in
+// SeasonalHolidayParams defers a share of the reports, reopens and payments dated in
 // the summer holiday window to the same day of the next month, where they
 // land on top of that month's own. A deferred date is always outside the
 // window, so nothing is deferred twice. The zero value is off.
 type SeasonalHolidayParams struct {
 	Hemisphere Hemisphere
-	// ReportShare is the share of reports dated in the window that are
-	// deferred. A deferred report moves the claim's whole timeline back.
+	// ReportShare is the share of reports, and of reopens, dated in the
+	// window that are deferred. A deferred report or reopen moves the rest of
+	// the claim, or of its reopen episode, back with it.
 	ReportShare float64
 	// PaymentShare is the share of payments dated in the window that are
 	// deferred: interim payments, and the final settlement with the close

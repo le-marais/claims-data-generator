@@ -13,7 +13,31 @@ IDs are **MR** (model review). Severity uses the `docs/todo.md` scale: **high**
 undermines the mission, **medium** worth addressing soon, **low** fix when
 touching the area.
 
-## 1. MR-21 (medium) - the case estimate jumps up and down around the true cost
+## 1. MR-23 (medium) - an instalment claim can end on a token final settlement
+
+- Where: `internal/domain/transaction/runoff.go`, `drawInterimPayments`,
+  `settlementShare` and `runEpisode`; `lob.SettlementParams`,
+  `runoff.min_payment`.
+- An episode paid in instalments leaves its final settlement a
+  Beta-distributed share of the cost. When the draw is near 0, the interim
+  payments pay almost everything and the final settlement is a few cents or
+  dollars. `min_payment` holds only interim payments over, never the final
+  settlement. The interim payment can also clear the case to zero, so the
+  case sits at zero on an open claim until the bill for the token settlement
+  raises it again.
+- In the 150-policy story run (personal preset, seed 1, 1998-2000), claim
+  51's reopen pays $489.87 on 2001-08-13, releasing the case to zero, then
+  raises the case by $2.75 on 09-07 and pays $2.75 on 09-14; claim 38 pays
+  $1,333.70 and then settles for $16.58. In the personal preset at 20,000
+  policies on the same seed, 64 of 609 own-damage and 25 of 478
+  property-damage episodes paid in instalments end on a final settlement
+  under $50, the smallest $0.12; in 42 and 12 of them the case falls to zero
+  before the close. Injury episodes have none.
+- Action: give the final settlement the same floor as an interim payment:
+  fold an interim payment into the settlement when it would leave less than
+  `min_payment` for close, and keep the case open above zero until the close.
+
+## 2. MR-21 (medium) - the case estimate jumps up and down around the true cost
 
 - Where: `internal/domain/transaction/runoff.go`, `runEpisode`;
   `runoff.revision_sigma`.
@@ -36,7 +60,7 @@ touching the area.
   current level toward the aim at each revision, with at most one revision
   a day; re-check the incurred factors against the realism gate.
 
-## 2. MR-22 (low) - case estimates are set to the cent
+## 3. MR-22 (low) - case estimates are set to the cent
 
 - Where: `internal/domain/transaction/estimate.go`, `CaseEstimator.Apply`;
   `internal/domain/transaction/runoff.go`, revision and bill targets.
@@ -53,7 +77,7 @@ touching the area.
   above, and consider a standard opening reserve per section. A case set to
   a bill, payments and the release at close stay exact.
 
-## 3. MR-20 (low) - revision timing is not tied to claim events
+## 4. MR-20 (low) - revision timing is not tied to claim events
 
 - Where: `internal/domain/transaction/runoff.go`, `drawRevisions` and
   `drawInterimPayments`; `lob.RunoffParams`.
@@ -71,7 +95,7 @@ touching the area.
   `SectionParams`, and consider a revision soon after report, when the first
   estimate arrives.
 
-## 4. MR-12 (low) - one setting drives two kinds of variation
+## 5. MR-12 (low) - one setting drives two kinds of variation
 
 - Where: `internal/domain/policy/book.go`, `drawVehicle`.
 - `spread` sets both the sum-insured lognormal sigma and the risk-factor

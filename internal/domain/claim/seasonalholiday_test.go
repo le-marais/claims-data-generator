@@ -144,3 +144,38 @@ func TestSeasonalHolidayDefersWindowReopenCloses(t *testing.T) {
 		t.Fatal("no reopen closed in the window; the test proves nothing")
 	}
 }
+
+func TestSeasonalHolidayDefersWindowReopens(t *testing.T) {
+	p := reopeningParams()
+	h := lob.SeasonalHolidayParams{Hemisphere: lob.Northern, ReportShare: 1}
+	claims := claim.NewClaimSimulator(p).Simulate(random.NewSource(64), fixedBook(6000, 20000, 0, 1.0))
+	base := claim.NewReopenSimulator(p).Apply(random.NewSource(64), append([]claim.Claim(nil), claims...))
+	deferred := claim.NewReopenSimulator(p).WithSeasonalHoliday(h).Apply(random.NewSource(64), append([]claim.Claim(nil), claims...))
+	moved := 0
+	for i, b := range base {
+		d := deferred[i]
+		if len(b.Episodes) != len(d.Episodes) {
+			t.Fatalf("claim %d: deferral changed whether it reopens", b.ID)
+		}
+		if !b.Reopened() {
+			continue
+		}
+		bo, do := b.Episodes[1], d.Episodes[1]
+		want := bo.Open
+		if h.InWindow(want) {
+			want = want.AddMonths(1)
+			moved++
+		}
+		if do.Open != want {
+			t.Fatalf("claim %d: reopen %v became %v, want %v", b.ID, bo.Open, do.Open, want)
+		}
+		// The second close lag runs from the reopen, so the episode moves
+		// with it and its cost stays.
+		if shared.DaysBetween(do.Open, do.Close) != shared.DaysBetween(bo.Open, bo.Close) || do.Ultimate != bo.Ultimate {
+			t.Fatalf("claim %d: reopen episode changed beyond its dates", b.ID)
+		}
+	}
+	if moved == 0 {
+		t.Fatal("no reopen fell in the window; the test proves nothing")
+	}
+}
