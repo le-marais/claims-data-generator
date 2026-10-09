@@ -274,3 +274,12 @@ seasonal_holiday:
   hemisphere: northern
   report_share: 0.30
   payment_share: 0.40
+# Business days. Claims are processed on US federal business days: every
+# case estimate, payment, close, reopen and recovery rolls to the next
+# business day, and a claim reported at a weekend or on a holiday is opened
+# on the next one. Reports keep the day they are made - policyholders report
+# motor claims at weekends - so roll_reports is off. The calendar is "none"
+# (off), "weekends", "us", "uk" or "za".
+business_days:
+  calendar: us
+  roll_reports: false

@@ -2,10 +2,6 @@
 
 Where claimsgen is heading, in recommended order. It lists outstanding direction only: when an item ships, delete it. `docs/architecture.md` describes what exists today.
 
-## Next
-
-- **Business-day processing calendar** - Transactions and processing events (case estimates, payments, closes, reopens) fall on business days only, never on a weekend or public holiday. Report dates stay on any day by default, as they do for personal lines, where policyholders report at weekends; an optional setting moves reports to business days too, as is more usual for some commercial lines. Needs a holiday calendar per market and must keep the payment delay and the ledger invariants.
-
 ## Longer term
 
 - **Valuation-date extract** - every claim runs to closure for out-of-sample testing. A cut at a chosen valuation date (open claims, outstanding case, nothing known after the date) would hand users a reserving data set they can use without manual fixes, the mission's success criterion. `triangles.csv` already supports the triangle side by filtering on `origin_month + dev_month - 1`; the claim and transaction extracts remain.
