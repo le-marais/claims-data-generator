@@ -184,3 +184,16 @@ runoff:
   payment_delay_days: 7
   revisions_per_year: 4
   revision_sigma: 0.3
+# Summer holiday slowdown. A share of the reports and reopens, and of the
+# payments, dated from 15 July to 14 August (northern; southern is 15
+# December to 14 January) move to the same day of the next month, on top of
+# that month's own; a deferred report or reopen moves the rest of the claim
+# back with it, and a deferred final settlement moves the close. The book is
+# a US Schedule P line, so it takes the northern summer. The shares are
+# judgement values, set high enough that the slowdown shows in single claim
+# ledgers as well as in monthly totals: Schedule P is annual and says nothing
+# about monthly timing. "none" switches it off.
+seasonal_holiday:
+  hemisphere: northern
+  report_share: 0.30
+  payment_share: 0.40

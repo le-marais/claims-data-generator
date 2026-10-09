@@ -137,4 +137,11 @@ var formFields = []fieldGroup{
 			{Path: []string{"runoff", "revision_sigma"}, Label: "Revision sigma", Tip: "Initial sigma of revision noise."},
 		},
 	},
+	{
+		Label: "Seasonal holiday",
+		Fields: []formField{
+			{Path: []string{"seasonal_holiday", "report_share"}, Label: "Holiday report share", Tip: "Share of reports and reopens dated in the summer holiday (15 July to 14 August northern, 15 December to 14 January southern) moved to the same day next month. The hemisphere is set in the YAML."},
+			{Path: []string{"seasonal_holiday", "payment_share"}, Label: "Holiday payment share", Tip: "Share of payments, and of paying closes, dated in the summer holiday moved to the same day next month."},
+		},
+	},
 }

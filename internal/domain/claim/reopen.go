@@ -16,6 +16,7 @@ type ReopenSimulator struct {
 	params       lob.ClaimParams
 	inflation    InflationIndex
 	paymentDelay int
+	holiday      lob.SeasonalHolidayParams
 }
 
 // NewReopenSimulator builds a reopen simulator from the claim parameters.
@@ -37,6 +38,16 @@ func (s *ReopenSimulator) WithInflation(x InflationIndex) *ReopenSimulator {
 // default, 0, adds nothing.
 func (s *ReopenSimulator) WithPaymentDelay(days int) *ReopenSimulator {
 	s.paymentDelay = days
+	return s
+}
+
+// WithSeasonalHoliday defers reopens and reopen closes dated in the holiday
+// window to the same day of the next month: a reopen at the report share, as
+// the claimant coming back, and its close at the payment share, as a reopen
+// always pays and its close carries the settlement. The default, off, takes
+// no draws.
+func (s *ReopenSimulator) WithSeasonalHoliday(h lob.SeasonalHolidayParams) *ReopenSimulator {
+	s.holiday = h
 	return s
 }
 
@@ -85,9 +96,20 @@ func (s *ReopenSimulator) Apply(src shared.RandomSource, claims []Claim) []Claim
 			closeLag = 1 // the second close is strictly after the reopen
 		}
 		reopen := first.Close.AddDays(lag)
+		var holiday shared.RandomSource
+		if s.holiday.Enabled() {
+			holiday = stream.Split("seasonal-holiday")
+			// A reopen is the claimant coming back, so it is deferred like a
+			// report; the second close lag then runs from the deferred date.
+			reopen = s.holiday.Defer(reopen, holiday.Uniform(), s.holiday.ReportShare)
+		}
+		secondClose := reopen.AddDays(closeLag)
+		if holiday != nil {
+			secondClose = s.holiday.Defer(secondClose, holiday.Uniform(), s.holiday.PaymentShare)
+		}
 		// The capped slice makes append copy, so a copy of the claim taken
 		// before this pass keeps its single episode.
-		c.Episodes = append(c.Episodes[:1:1], Episode{Open: reopen, Close: reopen.AddDays(closeLag), Ultimate: additional})
+		c.Episodes = append(c.Episodes[:1:1], Episode{Open: reopen, Close: secondClose, Ultimate: additional})
 	}
 	return claims
 }

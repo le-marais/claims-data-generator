@@ -68,10 +68,12 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 		WithInflation(inflation).
 		WithWindow(req.StartYear, req.Years).
 		WithPaymentDelay(delay).
+		WithSeasonalHoliday(req.LOB.SeasonalHoliday).
 		Simulate(src.Split("claims"), book)
 	claims = claim.NewReopenSimulator(req.LOB.Claims).
 		WithInflation(inflation).
 		WithPaymentDelay(delay).
+		WithSeasonalHoliday(req.LOB.SeasonalHoliday).
 		Apply(src.Split("reopening"), claims)
 	claims = transaction.NewCaseEstimator(req.LOB.Runoff).
 		Apply(src.Split("case-estimate"), claims)
@@ -79,6 +81,7 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 		return Dataset{}, err
 	}
 	txs := transaction.NewRunoffSimulator(req.LOB.Runoff, req.LOB.Claims.Sections).
+		WithSeasonalHoliday(req.LOB.SeasonalHoliday).
 		Simulate(src.Split("runoff"), claims)
 	if err := ctx.Err(); err != nil {
 		return Dataset{}, err

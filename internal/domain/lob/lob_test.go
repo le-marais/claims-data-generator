@@ -119,6 +119,16 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 			l.Claims.Sections[1].Severity = SeverityParams{Kind: LognormalPareto, Median: 4000, Sigma: 1, Scale: 25000, Alpha: 1}
 		}},
 		{"book.growth_factor", func(l *LineOfBusiness) { l.Book.GrowthFactor = 0 }},
+		{"seasonal_holiday.hemisphere", func(l *LineOfBusiness) { l.SeasonalHoliday.Hemisphere = "eastern" }},
+		{"seasonal_holiday.report_share", func(l *LineOfBusiness) {
+			l.SeasonalHoliday = SeasonalHolidayParams{Hemisphere: Northern, ReportShare: 1.1}
+		}},
+		{"seasonal_holiday.payment_share", func(l *LineOfBusiness) {
+			l.SeasonalHoliday = SeasonalHolidayParams{Hemisphere: Southern, PaymentShare: -0.1}
+		}},
+		{"seasonal_holiday.report_share", func(l *LineOfBusiness) {
+			l.SeasonalHoliday = SeasonalHolidayParams{Hemisphere: Northern, ReportShare: math.NaN()}
+		}},
 		{"book.size_volatility", func(l *LineOfBusiness) { l.Book.SizeVolatility = -0.1 }},
 		{"book.spread", func(l *LineOfBusiness) { l.Book.Spread = 0 }},
 		{"book.sum_insured_median", func(l *LineOfBusiness) { l.Book.SumInsuredMedian = 0 }},
@@ -290,6 +300,12 @@ func TestValidateSkipsSwitchedOffBlocks(t *testing.T) {
 		{"lognormal third party", func(l *LineOfBusiness) {
 			l.Claims.Sections[1].Severity = SeverityParams{Kind: Lognormal, Median: 2000, Sigma: 0.8}
 			l.Pricing.Sections[1].Severity = SeverityParams{Kind: Lognormal, Median: 2000, Sigma: 0.8}
+		}},
+		{"seasonal holiday off with stray shares", func(l *LineOfBusiness) {
+			l.SeasonalHoliday = SeasonalHolidayParams{Hemisphere: NoHoliday, ReportShare: 5, PaymentShare: math.NaN()}
+		}},
+		{"seasonal holiday on", func(l *LineOfBusiness) {
+			l.SeasonalHoliday = SeasonalHolidayParams{Hemisphere: Northern, ReportShare: 0.1, PaymentShare: 1}
 		}},
 		{"salvage off", func(l *LineOfBusiness) {
 			l.Claims.Recoveries.Salvage = RecoveryTypeParams{}

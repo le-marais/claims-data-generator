@@ -7,6 +7,7 @@ import (
 
 	"github.com/le-marais/claimsgen/internal/application"
 	"github.com/le-marais/claimsgen/internal/domain/claim"
+	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/infrastructure/random"
 )
 
@@ -16,13 +17,18 @@ import (
 // and with it a nil claim's dates: it pays nothing, so it closes without the
 // payment delay, and a reopen follows that earlier close.
 func TestNilClaimsDoNotShiftOtherStages(t *testing.T) {
-	off := request(t)
+	// The seasonal holiday may defer a paying close but never a nil one, so
+	// a nil claim and its paying twin can differ by a month as well as the
+	// payment delay; the test switches it off to compare them.
+	on := request(t)
+	on.LOB.SeasonalHoliday = lob.SeasonalHolidayParams{}
+	off := on
 	off.LOB.Claims.NilProbability = 0
 	dsOff, err := application.GenerateDataset(t.Context(), random.NewSource(13), off)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dsOn, err := application.GenerateDataset(t.Context(), random.NewSource(13), request(t))
+	dsOn, err := application.GenerateDataset(t.Context(), random.NewSource(13), on)
 	if err != nil {
 		t.Fatal(err)
 	}

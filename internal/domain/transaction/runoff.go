@@ -44,6 +44,7 @@ type RunoffSimulator struct {
 	params lob.RunoffParams
 	// settlement is each section's settlement, by section index.
 	settlement []lob.SettlementParams
+	holiday    lob.SeasonalHolidayParams
 }
 
 // NewRunoffSimulator builds a runoff simulator from the runoff parameters
@@ -55,6 +56,15 @@ func NewRunoffSimulator(p lob.RunoffParams, sections []lob.SectionParams) *Runof
 		settlement[i] = sec.Settlement
 	}
 	return &RunoffSimulator{params: p, settlement: settlement}
+}
+
+// WithSeasonalHoliday defers a share of the interim payments dated in the
+// holiday window to the same day of the next month. One that then falls past
+// the episode's last interim day is paid with the final settlement. The
+// default, off, takes no draws.
+func (s *RunoffSimulator) WithSeasonalHoliday(h lob.SeasonalHolidayParams) *RunoffSimulator {
+	s.holiday = h
+	return s
 }
 
 // Simulate produces every claim's transactions in claim order, each claim's
@@ -89,12 +99,17 @@ type event struct {
 // way the claim's section does. Each opens by moving the case to the
 // episode's opening case on its open date: on the report date that is the
 // claim's first ESTIMATE row, and on a reopen it re-raises the case from
-// zero.
+// zero. With a seasonal holiday, the claim's deferral draws come from its
+// own seasonal-holiday stream, so they never move a runoff draw.
 func (s *RunoffSimulator) simulateClaim(src shared.RandomSource, c claim.Claim) []Transaction {
 	e := &emitter{claimID: c.ID, report: c.ReportDate()}
+	var holiday shared.RandomSource
+	if s.holiday.Enabled() {
+		holiday = src.Split("seasonal-holiday")
+	}
 	for _, ep := range c.Episodes {
 		e.reviseTo(shared.DaysBetween(e.report, ep.Open), ep.OpeningCase)
-		s.runEpisode(src, e, ep, s.settlement[c.Section])
+		s.runEpisode(src, holiday, e, ep, s.settlement[c.Section])
 	}
 	return e.txs
 }
@@ -127,7 +142,10 @@ func (s *RunoffSimulator) adequacyBias(u float64) float64 {
 // to the payment keeps the case at or above the payment, and after the
 // bill's day may lower it but not raise it, so every payment comes at least
 // the delay after the case was last raised.
-func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, ep claim.Episode, st lob.SettlementParams) {
+//
+// holiday, nil when the seasonal holiday is off, draws the interim payments'
+// deferrals.
+func (s *RunoffSimulator) runEpisode(src, holiday shared.RandomSource, e *emitter, ep claim.Episode, st lob.SettlementParams) {
 	ultimate, isNil := ep.Ultimate, ep.Nil
 	base := shared.DaysBetween(e.report, ep.Open)
 	duration := shared.DaysBetween(ep.Open, ep.Close)
@@ -141,7 +159,7 @@ func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, ep cla
 		if ultimate < shared.OneCent {
 			ultimate = shared.OneCent // guards hand-built claims; generated claims always cost something
 		}
-		payments = s.drawInterimPayments(src, st, ultimate, duration, years)
+		payments = s.drawInterimPayments(src, holiday, st, ep.Open, ultimate, duration, years)
 		final := ultimate
 		for _, p := range payments {
 			final -= p.amount
@@ -218,7 +236,11 @@ func (s *RunoffSimulator) runEpisode(src shared.RandomSource, e *emitter, ep cla
 // of the ultimate by Dirichlet weights, given out in date order, and a
 // payment below MinPayment, or less than the payment delay after the
 // previous one, is held over to the next.
-func (s *RunoffSimulator) drawInterimPayments(src shared.RandomSource, st lob.SettlementParams, ultimate shared.Money, duration int, years float64) []event {
+//
+// With a seasonal holiday, each payment day in the window may first be
+// deferred a month, taking one draw from holiday per payment; one deferred
+// past the last interim day is held over to the final settlement.
+func (s *RunoffSimulator) drawInterimPayments(src, holiday shared.RandomSource, st lob.SettlementParams, open shared.Date, ultimate shared.Money, duration int, years float64) []event {
 	delay := int(s.params.PaymentDelayDays)
 	edge := max(1, delay)
 	if duration < 2*edge {
@@ -246,6 +268,12 @@ func (s *RunoffSimulator) drawInterimPayments(src shared.RandomSource, st lob.Se
 	for i := range offsets {
 		offsets[i] = offsetBetween(src, edge, duration-edge)
 	}
+	if holiday != nil {
+		for i, off := range offsets {
+			deferred := s.holiday.Defer(open.AddDays(off), holiday.Uniform(), s.holiday.PaymentShare)
+			offsets[i] = shared.DaysBetween(open, deferred)
+		}
+	}
 	sort.Ints(offsets)
 	minimum := shared.FromDollars(s.params.MinPayment)
 	events := make([]event, 0, n)
@@ -253,8 +281,8 @@ func (s *RunoffSimulator) drawInterimPayments(src shared.RandomSource, st lob.Se
 	last := 0 // the previous payment's day; the episode opens on day 0
 	for i, w := range weights {
 		amount := shared.FromDollars(pool*w/total) + held
-		if amount <= 0 || amount < minimum || offsets[i]-last < delay {
-			held = amount // too small or too soon to pay on its own: paid with the next
+		if amount <= 0 || amount < minimum || offsets[i]-last < delay || offsets[i] > duration-edge {
+			held = amount // too small, too soon or too late to pay on its own: paid with the next, or at close
 			continue
 		}
 		events = append(events, event{offset: offsets[i], kind: kindPayment, amount: amount})
