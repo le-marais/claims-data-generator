@@ -15,6 +15,13 @@ func (d Date) AddDays(n int) Date {
 	return Date{d.t.AddDate(0, 0, n)}
 }
 
+// AddMonths moves the date to the same day n months on, clamped to the last
+// day of the target month: 31 January plus one month is 28 or 29 February.
+func (d Date) AddMonths(n int) Date {
+	target := d.Month().Add(n)
+	return NewDate(target.Year(), target.Month(), min(d.t.Day(), target.End().t.Day()))
+}
+
 func (d Date) Before(other Date) bool {
 	return d.t.Before(other.t)
 }

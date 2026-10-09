@@ -62,3 +62,23 @@ func TestTrendYears(t *testing.T) {
 		}
 	}
 }
+
+func TestDateAddMonths(t *testing.T) {
+	tests := []struct {
+		from Date
+		n    int
+		want string
+	}{
+		{NewDate(2001, 7, 15), 1, "2001-08-15"},
+		{NewDate(2001, 1, 31), 1, "2001-02-28"},
+		{NewDate(2000, 1, 31), 1, "2000-02-29"},
+		{NewDate(2001, 8, 31), 1, "2001-09-30"},
+		{NewDate(2001, 12, 20), 1, "2002-01-20"},
+		{NewDate(2001, 3, 31), -1, "2001-02-28"},
+	}
+	for _, tt := range tests {
+		if got := tt.from.AddMonths(tt.n).String(); got != tt.want {
+			t.Errorf("%v.AddMonths(%d) = %s, want %s", tt.from, tt.n, got, tt.want)
+		}
+	}
+}
