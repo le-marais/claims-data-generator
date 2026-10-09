@@ -345,7 +345,7 @@ flowchart LR
     seed --> recovery --> recoveryStreams --> recoveryKinds
 ```
 
-The same seed and config therefore produce byte-identical output, and toggling a knob is invisible to unrelated draws: changing one section, or turning nil claims, reopening, salvage, subrogation or the summer holiday on or off, never reshuffles the dates or severities of any other claim or stage. (Salvage and subrogation amounts remain linked through the rule that a claim's total recovered stays below its gross paid, which is an accounting constraint, not a random draw.)
+The same seed and config therefore produce byte-identical output, and toggling a knob is invisible to unrelated draws: changing one section, or turning nil claims, reopening, salvage or subrogation on or off, never reshuffles the dates or severities of any other claim or stage. A setting that moves report dates - the summer holiday's report share, or rolling reports to business days - is the exception for now: it changes the order claims are numbered in, and the case estimates, payments, reopens and recoveries of the claims whose number changes are redrawn (MR-24). (Salvage and subrogation amounts remain linked through the rule that a claim's total recovered stays below its gross paid, which is an accounting constraint, not a random draw.)
 
 ### Monthly triangles and exposure
 
