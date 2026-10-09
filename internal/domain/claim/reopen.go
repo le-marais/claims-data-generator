@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/le-marais/claimsgen/internal/domain/calendar"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/domain/shared"
 )
@@ -17,6 +18,7 @@ type ReopenSimulator struct {
 	inflation    InflationIndex
 	paymentDelay int
 	holiday      lob.SeasonalHolidayParams
+	calendar     calendar.Calendar
 }
 
 // NewReopenSimulator builds a reopen simulator from the claim parameters.
@@ -48,6 +50,13 @@ func (s *ReopenSimulator) WithPaymentDelay(days int) *ReopenSimulator {
 // no draws.
 func (s *ReopenSimulator) WithSeasonalHoliday(h lob.SeasonalHolidayParams) *ReopenSimulator {
 	s.holiday = h
+	return s
+}
+
+// WithCalendar rolls every reopen and second close to the calendar's next
+// business day. The default, an off calendar, moves nothing.
+func (s *ReopenSimulator) WithCalendar(c calendar.Calendar) *ReopenSimulator {
+	s.calendar = c
 	return s
 }
 
@@ -103,10 +112,12 @@ func (s *ReopenSimulator) Apply(src shared.RandomSource, claims []Claim) []Claim
 			// report; the second close lag then runs from the deferred date.
 			reopen = s.holiday.Defer(reopen, holiday.Uniform(), s.holiday.ReportShare)
 		}
+		reopen = s.calendar.Following(reopen)
 		secondClose := reopen.AddDays(closeLag)
 		if holiday != nil {
 			secondClose = s.holiday.Defer(secondClose, holiday.Uniform(), s.holiday.PaymentShare)
 		}
+		secondClose = s.calendar.Following(secondClose)
 		// The capped slice makes append copy, so a copy of the claim taken
 		// before this pass keeps its single episode.
 		c.Episodes = append(c.Episodes[:1:1], Episode{Open: reopen, Close: secondClose, Ultimate: additional})

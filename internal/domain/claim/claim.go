@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/le-marais/claimsgen/internal/domain/calendar"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/domain/policy"
 	"github.com/le-marais/claimsgen/internal/domain/shared"
@@ -130,6 +131,8 @@ type ClaimSimulator struct {
 	windowEnd    shared.Date // exclusive
 	paymentDelay int
 	holiday      lob.SeasonalHolidayParams
+	calendar     calendar.Calendar
+	rollReports  bool
 }
 
 // NewClaimSimulator builds a claim simulator from the claim parameters.
@@ -160,6 +163,14 @@ func (s *ClaimSimulator) WithPaymentDelay(days int) *ClaimSimulator {
 // takes no draws.
 func (s *ClaimSimulator) WithSeasonalHoliday(h lob.SeasonalHolidayParams) *ClaimSimulator {
 	s.holiday = h
+	return s
+}
+
+// WithBusinessDays rolls every close to the calendar's next business day,
+// and every report too when rollReports is set; the close lag runs from the
+// rolled report. The default, an off calendar, moves nothing.
+func (s *ClaimSimulator) WithBusinessDays(c calendar.Calendar, rollReports bool) *ClaimSimulator {
+	s.calendar, s.rollReports = c, rollReports
 	return s
 }
 
@@ -270,6 +281,9 @@ func (s *ClaimSimulator) simulateClaim(src, holiday shared.RandomSource, pol pol
 	occurrence := first.AddDays(int(src.Uniform() * float64(span)))
 	lag := src.LogNormal(math.Log(sec.ReportLag.Median), sec.ReportLag.Sigma)
 	report := s.holiday.Defer(occurrence.AddDays(int(math.Round(lag))), uReport, s.holiday.ReportShare)
+	if s.rollReports {
+		report = s.calendar.Following(report)
+	}
 
 	// Losses are drawn in start-year dollars and trended by the claims index
 	// at the occurrence date. A sum-insured loss is then capped at the drifted
@@ -323,6 +337,7 @@ func (s *ClaimSimulator) simulateClaim(src, holiday shared.RandomSource, pol pol
 		// deferred; a nil close pays nothing and stays.
 		closeDate = s.holiday.Defer(closeDate.AddDays(s.paymentDelay), uClose, s.holiday.PaymentShare)
 	}
+	closeDate = s.calendar.Following(closeDate) // a close is processed on a business day
 
 	return Claim{
 		PolicyID:       pol.ID,
