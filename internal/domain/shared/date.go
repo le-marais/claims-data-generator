@@ -37,6 +37,9 @@ func (d Date) Year() int {
 // Day is the day of the month, 1 to 31.
 func (d Date) Day() int { return d.t.Day() }
 
+// Weekday is the day of the week.
+func (d Date) Weekday() time.Weekday { return d.t.Weekday() }
+
 // IsZero reports whether the date is the zero value.
 func (d Date) IsZero() bool { return d.t.IsZero() }
 

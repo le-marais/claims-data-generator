@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/le-marais/claimsgen/internal/domain/calendar"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/domain/policy"
 	"github.com/le-marais/claimsgen/internal/domain/shared"
@@ -18,8 +19,9 @@ import (
 // valuation date and every claim develops fully.
 //
 // A claim's life is a sequence of episodes, each open from a start date to a
-// close date: the first runs from the report date to the first close, and a
-// reopened claim has a second. The claim stage writes the first episode and
+// close date: the first runs from the day the claim is opened - the report
+// date, or with a business-day calendar the next business day - to the first
+// close, and a reopened claim has a second. The claim stage writes the first episode and
 // the reopen stage appends the second; no stage rewrites an episode's dates or
 // cost. The other fields are what the simulation knows about the claim from
 // its policy, which later stages need. Record is the claims.csv view of it.
@@ -27,7 +29,11 @@ type Claim struct {
 	ID             int
 	PolicyID       int
 	OccurrenceDate shared.Date
-	Episodes       []Episode
+	// Reported is the day the claim was reported. The first episode opens on
+	// it, or on the next business day when the calendar closes on it. Zero
+	// means the first episode's open, as on a hand-built claim.
+	Reported shared.Date
+	Episodes []Episode
 	// Section is the index of the claim's section of cover in the line of
 	// business's sections.
 	Section int
@@ -91,8 +97,14 @@ func (c Claim) Record() Record {
 	}
 }
 
-// ReportDate is the day the claim was reported, when its first episode opens.
-func (c Claim) ReportDate() shared.Date { return c.Episodes[0].Open }
+// ReportDate is the day the claim was reported. Its first episode opens, with
+// the case, on that day or the next business day.
+func (c Claim) ReportDate() shared.Date {
+	if c.Reported.IsZero() {
+		return c.Episodes[0].Open
+	}
+	return c.Reported
+}
 
 // CloseDate is the claim's final close, after any reopen.
 func (c Claim) CloseDate() shared.Date { return c.Episodes[len(c.Episodes)-1].Close }
@@ -130,6 +142,8 @@ type ClaimSimulator struct {
 	windowEnd    shared.Date // exclusive
 	paymentDelay int
 	holiday      lob.SeasonalHolidayParams
+	calendar     calendar.Calendar
+	rollReports  bool
 }
 
 // NewClaimSimulator builds a claim simulator from the claim parameters.
@@ -160,6 +174,15 @@ func (s *ClaimSimulator) WithPaymentDelay(days int) *ClaimSimulator {
 // takes no draws.
 func (s *ClaimSimulator) WithSeasonalHoliday(h lob.SeasonalHolidayParams) *ClaimSimulator {
 	s.holiday = h
+	return s
+}
+
+// WithBusinessDays opens every claim, and closes it, on a business day of the
+// calendar: the first episode opens on the report date or the next business
+// day after it, and the close lag runs from the opening. With rollReports the
+// report date itself rolls too. The default, an off calendar, moves nothing.
+func (s *ClaimSimulator) WithBusinessDays(c calendar.Calendar, rollReports bool) *ClaimSimulator {
+	s.calendar, s.rollReports = c, rollReports
 	return s
 }
 
@@ -270,6 +293,12 @@ func (s *ClaimSimulator) simulateClaim(src, holiday shared.RandomSource, pol pol
 	occurrence := first.AddDays(int(src.Uniform() * float64(span)))
 	lag := src.LogNormal(math.Log(sec.ReportLag.Median), sec.ReportLag.Sigma)
 	report := s.holiday.Defer(occurrence.AddDays(int(math.Round(lag))), uReport, s.holiday.ReportShare)
+	if s.rollReports {
+		report = s.calendar.Following(report)
+	}
+	// The claim is opened, and its case set, on a business day; the close
+	// lag runs from then.
+	open := s.calendar.Following(report)
 
 	// Losses are drawn in start-year dollars and trended by the claims index
 	// at the occurrence date. A sum-insured loss is then capped at the drifted
@@ -317,17 +346,19 @@ func (s *ClaimSimulator) simulateClaim(src, holiday shared.RandomSource, pol pol
 	// later claims on the same policy. This is the shift-free contract the reopen
 	// and recovery post-passes also uphold.
 	isNil := src.Bernoulli(s.params.NilProbability)
-	closeDate := report.AddDays(closeLag)
+	closeDate := open.AddDays(closeLag)
 	if !isNil {
 		// The close carries the final settlement, so a paying close can be
 		// deferred; a nil close pays nothing and stays.
 		closeDate = s.holiday.Defer(closeDate.AddDays(s.paymentDelay), uClose, s.holiday.PaymentShare)
 	}
+	closeDate = s.calendar.Following(closeDate) // a close is processed on a business day
 
 	return Claim{
 		PolicyID:       pol.ID,
 		OccurrenceDate: occurrence,
-		Episodes:       []Episode{{Open: report, Close: closeDate, Ultimate: ultimate, Nil: isNil}},
+		Reported:       report,
+		Episodes:       []Episode{{Open: open, Close: closeDate, Ultimate: ultimate, Nil: isNil}},
 		Section:        section,
 		CoverLimit:     coverLimit,
 		RiskFactor:     pol.RiskFactor,

@@ -197,3 +197,11 @@ seasonal_holiday:
   hemisphere: northern
   report_share: 0.30
   payment_share: 0.40
+# Business days. Claims are processed on US federal business days: every
+# case estimate, payment, close, reopen and recovery rolls to the next
+# business day. Fleet operators report through their office or broker, so
+# roll_reports puts report dates on business days too. The calendar is
+# "none" (off), "weekends", "us", "uk" or "za".
+business_days:
+  calendar: us
+  roll_reports: true

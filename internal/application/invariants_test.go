@@ -158,8 +158,10 @@ func TestDatasetInvariants(t *testing.T) {
 		if s == nil {
 			t.Fatalf("claim %d has no transactions", c.ID)
 		}
-		if s.first.Type != transaction.Estimate || s.first.Amount != c.InitialEstimate() || s.first.Date != c.ReportDate() {
-			t.Fatalf("claim %d first transaction %+v is not the initial estimate on the report date", c.ID, s.first)
+		// The claim opens on its report date, or with a business-day
+		// calendar the next business day.
+		if s.first.Type != transaction.Estimate || s.first.Amount != c.InitialEstimate() || s.first.Date != c.Episodes[0].Open || s.first.Date.Before(c.ReportDate()) {
+			t.Fatalf("claim %d first transaction %+v is not the initial estimate on the day it opens, %v, on or after its report %v", c.ID, s.first, c.Episodes[0].Open, c.ReportDate())
 		}
 		if s.outstanding != 0 {
 			t.Fatalf("claim %d outstanding at close = %v, want 0", c.ID, s.outstanding)

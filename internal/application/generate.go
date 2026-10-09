@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/le-marais/claimsgen/internal/domain/calendar"
 	"github.com/le-marais/claimsgen/internal/domain/claim"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/domain/policy"
@@ -53,6 +54,10 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 	if err := ctx.Err(); err != nil {
 		return Dataset{}, err
 	}
+	cal, err := calendar.Lookup(req.LOB.BusinessDays.Calendar)
+	if err != nil {
+		return Dataset{}, fmt.Errorf("business_days.calendar: %w", err)
+	}
 	book := policy.NewBookSimulator(req.LOB.Book, req.LOB.Pricing).
 		Simulate(src.Split("book"), req.StartYear, req.Years, req.InitialBookSize)
 	if err := ctx.Err(); err != nil {
@@ -69,11 +74,13 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 		WithWindow(req.StartYear, req.Years).
 		WithPaymentDelay(delay).
 		WithSeasonalHoliday(req.LOB.SeasonalHoliday).
+		WithBusinessDays(cal, req.LOB.BusinessDays.RollReports).
 		Simulate(src.Split("claims"), book)
 	claims = claim.NewReopenSimulator(req.LOB.Claims).
 		WithInflation(inflation).
 		WithPaymentDelay(delay).
 		WithSeasonalHoliday(req.LOB.SeasonalHoliday).
+		WithCalendar(cal).
 		Apply(src.Split("reopening"), claims)
 	claims = transaction.NewCaseEstimator(req.LOB.Runoff).
 		Apply(src.Split("case-estimate"), claims)
@@ -82,11 +89,13 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 	}
 	txs := transaction.NewRunoffSimulator(req.LOB.Runoff, req.LOB.Claims.Sections).
 		WithSeasonalHoliday(req.LOB.SeasonalHoliday).
+		WithCalendar(cal).
 		Simulate(src.Split("runoff"), claims)
 	if err := ctx.Err(); err != nil {
 		return Dataset{}, err
 	}
 	txs = transaction.NewRecoverySimulator(req.LOB.Claims).
+		WithCalendar(cal).
 		Apply(src.Split("recovery"), claims, txs)
 	return Dataset{Policies: book, Claims: claims, Transactions: txs}, nil
 }

@@ -17,11 +17,13 @@ import (
 // and with it a nil claim's dates: it pays nothing, so it closes without the
 // payment delay, and a reopen follows that earlier close.
 func TestNilClaimsDoNotShiftOtherStages(t *testing.T) {
-	// The seasonal holiday may defer a paying close but never a nil one, so
-	// a nil claim and its paying twin can differ by a month as well as the
-	// payment delay; the test switches it off to compare them.
+	// The seasonal holiday may defer a paying close but never a nil one, and
+	// business days roll each close on its own, so a nil claim and its
+	// paying twin can differ by more than the payment delay; the test
+	// switches both off to compare them.
 	on := request(t)
 	on.LOB.SeasonalHoliday = lob.SeasonalHolidayParams{}
+	on.LOB.BusinessDays = lob.BusinessDayParams{}
 	off := on
 	off.LOB.Claims.NilProbability = 0
 	dsOff, err := application.GenerateDataset(t.Context(), random.NewSource(13), off)

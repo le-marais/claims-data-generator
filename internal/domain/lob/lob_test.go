@@ -120,6 +120,7 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		}},
 		{"book.growth_factor", func(l *LineOfBusiness) { l.Book.GrowthFactor = 0 }},
 		{"seasonal_holiday.hemisphere", func(l *LineOfBusiness) { l.SeasonalHoliday.Hemisphere = "eastern" }},
+		{"business_days.calendar", func(l *LineOfBusiness) { l.BusinessDays.Calendar = "fr" }},
 		{"seasonal_holiday.report_share", func(l *LineOfBusiness) {
 			l.SeasonalHoliday = SeasonalHolidayParams{Hemisphere: Northern, ReportShare: 1.1}
 		}},
@@ -304,6 +305,10 @@ func TestValidateSkipsSwitchedOffBlocks(t *testing.T) {
 		{"seasonal holiday off with stray shares", func(l *LineOfBusiness) {
 			l.SeasonalHoliday = SeasonalHolidayParams{Hemisphere: NoHoliday, ReportShare: 5, PaymentShare: math.NaN()}
 		}},
+		{"business days off with roll reports", func(l *LineOfBusiness) {
+			l.BusinessDays = BusinessDayParams{Calendar: "none", RollReports: true}
+		}},
+		{"business days on", func(l *LineOfBusiness) { l.BusinessDays = BusinessDayParams{Calendar: "za"} }},
 		{"seasonal holiday on", func(l *LineOfBusiness) {
 			l.SeasonalHoliday = SeasonalHolidayParams{Hemisphere: Northern, ReportShare: 0.1, PaymentShare: 1}
 		}},

@@ -17,6 +17,8 @@ type LineOfBusiness struct {
 	// SeasonalHoliday defers some reports and payments dated in the summer
 	// holiday to the next month.
 	SeasonalHoliday SeasonalHolidayParams
+	// BusinessDays rolls processing dates to business days.
+	BusinessDays BusinessDayParams
 }
 
 // BookParams drives the policy book simulation.
@@ -408,7 +410,10 @@ func (l LineOfBusiness) Validate() error {
 	if err := l.Runoff.validate(); err != nil {
 		return err
 	}
-	return l.SeasonalHoliday.validate()
+	if err := l.SeasonalHoliday.validate(); err != nil {
+		return err
+	}
+	return l.BusinessDays.validate()
 }
 
 // checkPricingSections requires the pricing assumptions to cover the claims

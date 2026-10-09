@@ -5,6 +5,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/le-marais/claimsgen/internal/domain/calendar"
 	"github.com/le-marais/claimsgen/internal/domain/claim"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/domain/shared"
@@ -29,6 +30,7 @@ func (t Type) IsRecovery() bool {
 type RecoverySimulator struct {
 	params   lob.RecoveryParams
 	sections []lob.SectionParams
+	calendar calendar.Calendar
 }
 
 // NewRecoverySimulator builds a recovery simulator from the claim parameters:
@@ -36,6 +38,14 @@ type RecoverySimulator struct {
 // eligible.
 func NewRecoverySimulator(p lob.ClaimParams) *RecoverySimulator {
 	return &RecoverySimulator{params: p.Recoveries, sections: p.Sections}
+}
+
+// WithCalendar rolls every recovery to the calendar's next business day; a
+// recovery stays strictly after the close. The default, an off calendar,
+// moves nothing.
+func (s *RecoverySimulator) WithCalendar(c calendar.Calendar) *RecoverySimulator {
+	s.calendar = c
+	return s
 }
 
 // Apply merges each eligible claim's recovery rows into the runoff output
@@ -126,7 +136,7 @@ func (s *RecoverySimulator) simulateClaim(src shared.RandomSource, c claim.Claim
 		}
 		rows = append(rows, Transaction{
 			ClaimID: c.ID,
-			Date:    c.CloseDate().AddDays(lag),
+			Date:    s.calendar.Following(c.CloseDate().AddDays(lag)),
 			Type:    k.t,
 			Amount:  amount,
 		})
