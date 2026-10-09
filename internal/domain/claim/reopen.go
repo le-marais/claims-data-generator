@@ -1,7 +1,6 @@
 package claim
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/le-marais/claimsgen/internal/domain/calendar"
@@ -77,7 +76,7 @@ func (s *ReopenSimulator) Apply(src shared.RandomSource, claims []Claim) []Claim
 	}
 	for i := range claims {
 		c := &claims[i]
-		stream := src.Split(fmt.Sprintf("reopen-claim-%d", c.ID))
+		stream := src.Split("reopen-claim-" + c.StreamKey())
 		if !stream.Bernoulli(r.Probability) {
 			continue
 		}

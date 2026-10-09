@@ -1,7 +1,6 @@
 package transaction
 
 import (
-	"fmt"
 	"math"
 	"sort"
 
@@ -64,7 +63,7 @@ func (s *RecoverySimulator) Apply(src shared.RandomSource, claims []claim.Claim,
 	recoveries := map[int][]Transaction{}
 	total := 0
 	for _, c := range claims {
-		rows := s.simulateClaim(src.Split(fmt.Sprintf("recovery-claim-%d", c.ID)), c, paid[c.ID])
+		rows := s.simulateClaim(src.Split("recovery-claim-"+c.StreamKey()), c, paid[c.ID])
 		if len(rows) > 0 {
 			recoveries[c.ID] = rows
 			total += len(rows)

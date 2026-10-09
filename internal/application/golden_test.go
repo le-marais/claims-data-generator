@@ -20,7 +20,7 @@ import (
 // It guards against unintended changes to the generated data or its CSV
 // encoding. If a change to the output is intentional, regenerate this digest
 // by running the test once (it prints the actual value) and paste it back in.
-const wantHash = "0fa0e4c6df51aa20561a057a758dc75e052812fd622a6cbf747e82b079f6af63"
+const wantHash = "4dd167be7b4451e6d5be5a075d80d50fb4a9d827c203e72f08731e6be1841155"
 
 func TestGoldenCSVBytes(t *testing.T) {
 	ds, err := application.GenerateDataset(t.Context(), random.NewSource(1), request(t))
@@ -49,7 +49,7 @@ func TestGoldenCSVBytes(t *testing.T) {
 // small deterministic dataset. Regenerate it the same way as wantHash: run the
 // test once, it prints the actual value, paste it back in. Do not update it to
 // hide an unintended change.
-const wantAggregateHash = "1fe5ecc2e07524442e8c1a536e23da6c6ed6bbc86e6c73534284f65088cb411b"
+const wantAggregateHash = "f0a8ae1fa47b92a90bd4448b1d82b5ed6649930bdeb65990347676071a7d92a6"
 
 func TestGoldenAggregateCSVBytes(t *testing.T) {
 	req := request(t)
@@ -94,12 +94,12 @@ func TestGoldenAggregateCSVBytes(t *testing.T) {
 // Regenerate it the same way as wantHash: run the test once, it prints the
 // actual value, paste it back in. Do not update it to hide an unintended
 // change.
-const wantAnnualHash = "9b70329e9f378222320565ba10302d9770f167595c0dc06d6a45a322bb6e16f2"
+const wantAnnualHash = "297e043bfb45f36a95938573af2d45548989c9aa0d89c3a693698204761c203e"
 
 // wantCommercialAnnualHash pins the same cells for the commercial motor
 // preset, whose calibration depends on them in the same way. Regenerate it
 // the same way.
-const wantCommercialAnnualHash = "bccf4024d1154343784b8fb8c658a00a622fc438a67c1406d5c8bdf7c7034f76"
+const wantCommercialAnnualHash = "378dae39167ab98d0302c6a33b007d2ded70d92602529ee5c98a2d2a6be2b7b2"
 
 func TestGoldenAnnualTriangles(t *testing.T) {
 	commercial := request(t)

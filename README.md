@@ -327,13 +327,13 @@ flowchart LR
     sectionStreams["own_damage<br/>third_party_property<br/>third_party_injury"]
     holidayStreams["seasonal-holiday"]
     reopening["reopening"]
-    reopenStreams["reopen-claim-1, ..."]
+    reopenStreams["reopen-claim-p1-s0-1, ..."]
     caseEstimate["case-estimate"]
-    caseStreams["case-estimate-claim-1, ..."]
+    caseStreams["case-estimate-claim-p1-s0-1, ..."]
     runoff["runoff"]
-    runoffStreams["runoff-claim-1, ..."]
+    runoffStreams["runoff-claim-p1-s0-1, ..."]
     recovery["recovery"]
-    recoveryStreams["recovery-claim-1, ..."]
+    recoveryStreams["recovery-claim-p1-s0-1, ..."]
     recoveryKinds["SALVAGE<br/>SUBROGATION"]
     seed --> book --> bookStreams
     seed --> inflation
@@ -345,7 +345,7 @@ flowchart LR
     seed --> recovery --> recoveryStreams --> recoveryKinds
 ```
 
-The same seed and config therefore produce byte-identical output, and toggling a knob is invisible to unrelated draws: changing one section, or turning nil claims, reopening, salvage or subrogation on or off, never reshuffles the dates or severities of any other claim or stage. A setting that moves report dates - the summer holiday's report share, or rolling reports to business days - is the exception for now: it changes the order claims are numbered in, and the case estimates, payments, reopens and recoveries of the claims whose number changes are redrawn (MR-24). (Salvage and subrogation amounts remain linked through the rule that a claim's total recovered stays below its gross paid, which is an accounting constraint, not a random draw.)
+The same seed and config therefore produce byte-identical output, and toggling a knob is invisible to unrelated draws: changing one section, or turning nil claims, reopening, salvage, subrogation, the summer holiday or business days on or off, never reshuffles the draws of any other claim or stage. Each claim's later streams are labelled by its policy, section and place among that section's losses on the policy (`p<policy>-s<section>-<n>`), not by its `claim_id`, which follows the order claims are reported in: a setting that moves report dates renumbers claims without redrawing their case estimates, payments, reopens or recoveries. (Salvage and subrogation amounts remain linked through the rule that a claim's total recovered stays below its gross paid, which is an accounting constraint, not a random draw.)
 
 ### Monthly triangles and exposure
 

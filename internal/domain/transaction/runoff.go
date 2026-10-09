@@ -13,7 +13,6 @@
 package transaction
 
 import (
-	"fmt"
 	"math"
 	"sort"
 
@@ -97,7 +96,7 @@ func (s *RunoffSimulator) billOffset(open shared.Date, payment int) int {
 func (s *RunoffSimulator) Simulate(src shared.RandomSource, claims []claim.Claim) []Transaction {
 	var txs []Transaction
 	for _, c := range claims {
-		txs = append(txs, s.simulateClaim(src.Split(fmt.Sprintf("runoff-claim-%d", c.ID)), c)...)
+		txs = append(txs, s.simulateClaim(src.Split("runoff-claim-"+c.StreamKey()), c)...)
 	}
 	for i := range txs {
 		txs[i].ID = i + 1

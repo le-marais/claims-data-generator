@@ -1,8 +1,6 @@
 package transaction
 
 import (
-	"fmt"
-
 	"github.com/le-marais/claimsgen/internal/domain/claim"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/domain/shared"
@@ -31,7 +29,7 @@ func NewCaseEstimator(p lob.RunoffParams) *CaseEstimator {
 func (s *CaseEstimator) Apply(src shared.RandomSource, claims []claim.Claim) []claim.Claim {
 	for i := range claims {
 		c := &claims[i]
-		stream := src.Split(fmt.Sprintf("case-estimate-claim-%d", c.ID))
+		stream := src.Split("case-estimate-claim-" + c.StreamKey())
 		// A fresh slice, so a copy of the claim taken before this stage keeps
 		// its own episodes.
 		episodes := make([]claim.Episode, len(c.Episodes))
