@@ -353,9 +353,11 @@ type RunoffParams struct {
 	// episode's interim payments share across them; higher splits it more
 	// evenly.
 	Concentration float64
-	// MinPayment is the smallest interim payment in nominal dollars: a
-	// smaller one is held over and paid with the next, or with the final
-	// settlement. 0 switches it off.
+	// MinPayment is the smallest interim payment, and the smallest final
+	// settlement after instalments, in nominal dollars: a smaller interim
+	// payment is held over and paid with the next, or with the final
+	// settlement, and the last instalment is paid with the final settlement
+	// when it would leave less. 0 switches it off.
 	MinPayment float64
 	// PaymentDelayDays is the fewest whole days between an ESTIMATE row that
 	// raises the case - the opening case, a reopen, an upward revision, or

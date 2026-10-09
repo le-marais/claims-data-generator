@@ -193,15 +193,32 @@ func (s *RunoffSimulator) runEpisode(src, holiday shared.RandomSource, e *emitte
 		}
 		return float64(offset) / float64(duration)
 	}
+	// cover is the case a payment needs before it is made: the payment plus
+	// the handler's view of what remains after it, read at the payment's
+	// bill, so an interim payment never clears the case of an open claim
+	// (MR-23). From the bill to the payment nothing is paid, so it is the
+	// same throughout.
+	cover := func(p event) shared.Money {
+		rest := ultimate - paid - p.amount
+		if rest <= 0 {
+			return p.amount
+		}
+		return p.amount + max(shared.OneCent, shared.FromDollars(rest.Dollars()*s.adequacyBias(elapsed(max(0, p.offset-delay)))))
+	}
 	for _, ev := range events {
 		switch ev.kind {
 		case kindPayment:
+			if c := cover(ev); e.outstanding < c {
+				// Only without a payment delay; with one, the bill has
+				// already raised the case.
+				e.reviseTo(base+ev.offset, c)
+			}
 			e.pay(base+ev.offset, ev.amount)
 			paid += ev.amount
 			next++
 		case kindBill:
-			if e.outstanding < ev.amount {
-				e.reviseTo(base+ev.offset, max(ev.amount, shared.FromDollars(aim(elapsed(ev.offset)))))
+			if c := cover(payments[next]); e.outstanding < c {
+				e.reviseTo(base+ev.offset, max(c, shared.FromDollars(aim(elapsed(ev.offset)))))
 			}
 		default:
 			u := elapsed(ev.offset)
@@ -211,13 +228,14 @@ func (s *RunoffSimulator) runEpisode(src, holiday shared.RandomSource, e *emitte
 			}
 			if delay > 0 && next < len(payments) {
 				// From a payment's bill to the payment the case keeps
-				// covering the payment, so the bill has nothing to raise;
-				// after the bill's day it is never raised.
+				// covering the payment and what remains after it, so the
+				// bill has nothing to raise; after the bill's day it is
+				// never raised.
 				if bill := payments[next].offset - delay; ev.offset >= bill {
 					if ev.offset > bill {
 						target = min(target, e.outstanding)
 					}
-					target = max(target, payments[next].amount)
+					target = max(target, cover(payments[next]))
 				}
 			}
 			e.reviseTo(base+ev.offset, target)
@@ -235,7 +253,8 @@ func (s *RunoffSimulator) runEpisode(src, holiday shared.RandomSource, e *emitte
 // Poisson count is zero. Otherwise the payments share (1 - settlement share)
 // of the ultimate by Dirichlet weights, given out in date order, and a
 // payment below MinPayment, or less than the payment delay after the
-// previous one, is held over to the next.
+// previous one, is held over to the next. When they would leave the final
+// settlement below MinPayment, the last is paid with it instead.
 //
 // With a seasonal holiday, each payment day in the window may first be
 // deferred a month, taking one draw from holiday per payment; one deferred
@@ -293,6 +312,12 @@ func (s *RunoffSimulator) drawInterimPayments(src, holiday shared.RandomSource, 
 	if paid >= ultimate {
 		// Rounding degenerate: fall back to settling everything at close.
 		return nil
+	}
+	if n := len(events); n > 0 && ultimate-paid < minimum {
+		// The final settlement has the same floor as an interim payment
+		// (MR-23): the last interim payment, itself at least the minimum, is
+		// paid with it instead.
+		events = events[:n-1]
 	}
 	return events
 }
