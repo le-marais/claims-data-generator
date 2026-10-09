@@ -267,13 +267,13 @@ runoff:
 # that month's own; a deferred report or reopen moves the rest of the claim
 # back with it, and a deferred final settlement moves the close. The book is
 # a US Schedule P line, so it takes the northern summer. The shares are
-# judgement values, set high enough that the slowdown shows in single claim
-# ledgers as well as in monthly totals: Schedule P is annual and says nothing
-# about monthly timing. "none" switches it off.
+# judgement values, set high enough that the slowdown is plain in monthly
+# triangles and in single claim ledgers: Schedule P is annual and says
+# nothing about monthly timing. "none" switches it off.
 seasonal_holiday:
   hemisphere: northern
-  report_share: 0.30
-  payment_share: 0.40
+  report_share: 0.50
+  payment_share: 0.60
 # Business days. Claims are processed on US federal business days: every
 # case estimate, payment, close, reopen and recovery rolls to the next
 # business day, and a claim reported at a weekend or on a holiday is opened

@@ -273,7 +273,7 @@ Claims handling slows over the summer holiday. The `seasonal_holiday` block take
 - A report in the window moves with chance `report_share`. The close lag runs from the report, so the claim's whole timeline moves back with it. A reopen in the window moves the same way, and its episode with it, so fewer claims reopen during the holiday and more just after it.
 - A payment in the window moves with chance `payment_share`: an interim payment, or a final settlement together with the close date it lands on. A nil claim's close pays nothing and stays. An interim payment moved past the claim's last day for one is paid with the final settlement instead.
 
-A moved date always lands outside the window, so nothing moves twice, and no claim's cost changes. Both presets use the northern summer, with 30% of reports and reopens and 40% of payments moved, enough that the slowdown shows in single claim ledgers as well as monthly totals; these are judgement values, since Schedule P is annual and says nothing about months. Northern moves stay within the calendar year, so they show in the monthly triangles and leave the annual ones almost unchanged. Southern moves from late December cross the year end.
+A moved date always lands outside the window, so nothing moves twice, and no claim's cost changes. Both presets use the northern summer, with half of reports and reopens and 60% of payments moved, so the slowdown is plain in monthly triangles and in single claim ledgers; these are judgement values, since Schedule P is annual and says nothing about months. Northern moves stay within the calendar year, so they show in the monthly triangles and leave the annual ones almost unchanged. Southern moves from late December cross the year end.
 
 ### Business days
 
