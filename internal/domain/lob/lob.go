@@ -14,6 +14,9 @@ type LineOfBusiness struct {
 	Pricing PricingParams
 	Claims  ClaimParams
 	Runoff  RunoffParams
+	// SeasonalHoliday defers some reports and payments dated in the summer
+	// holiday to the next month.
+	SeasonalHoliday SeasonalHolidayParams
 }
 
 // BookParams drives the policy book simulation.
@@ -400,7 +403,10 @@ func (l LineOfBusiness) Validate() error {
 	if err := l.checkPricingSections(); err != nil {
 		return err
 	}
-	return l.Runoff.validate()
+	if err := l.Runoff.validate(); err != nil {
+		return err
+	}
+	return l.SeasonalHoliday.validate()
 }
 
 // checkPricingSections requires the pricing assumptions to cover the claims
