@@ -37,6 +37,12 @@ type Claim struct {
 	// Section is the index of the claim's section of cover in the line of
 	// business's sections.
 	Section int
+	// Seq is the claim's place, from 1, among the losses its policy's
+	// section drew, reportable or not. With PolicyID and Section it names
+	// the claim independently of the registration order ID follows, so the
+	// claim's later random streams survive a change that moves report dates
+	// (MR-24). Zero means unset, as on a hand-built claim.
+	Seq int
 	// CoverLimit is the most the policy pays on the claim over its whole
 	// life, reopen included: sum insured minus the excess the section takes
 	// for a sum-insured severity, the section's limit for a limited one, zero
@@ -95,6 +101,17 @@ func (c Claim) Record() Record {
 		CloseDate:       c.CloseDate(),
 		InitialEstimate: c.InitialEstimate(),
 	}
+}
+
+// StreamKey labels the claim's own random streams in the later stages: its
+// policy, section and sequence, so the streams do not depend on the order
+// claims are registered in. A hand-built claim without a sequence uses its
+// ID.
+func (c Claim) StreamKey() string {
+	if c.Seq == 0 {
+		return fmt.Sprint(c.ID)
+	}
+	return fmt.Sprintf("p%d-s%d-%d", c.PolicyID, c.Section, c.Seq)
 }
 
 // ReportDate is the day the claim was reported. Its first episode opens, with
@@ -251,8 +268,9 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 				holiday = sectionStream.Split("seasonal-holiday")
 			}
 			n := sectionStream.Poisson(sec.BaseFrequency * pol.RiskFactor * exposed)
-			for range n {
+			for seq := 1; seq <= n; seq++ {
 				if c, ok := s.simulateClaim(sectionStream, holiday, pol, i); ok {
+					c.Seq = seq
 					claims = append(claims, c)
 				}
 			}
