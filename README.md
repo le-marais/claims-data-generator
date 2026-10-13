@@ -12,7 +12,7 @@ One run produces five linked CSV datasets for a class of business:
 
 With `--section-detail`, `generate` also writes two files that break the run down by section of cover (the browser UI and its zip stay at five files):
 
-- **claim_sections.csv** - one row per claim, in `claims.csv` order: `claim_id,section`, where `section` is the section's `name` in the line of business (for the presets `own_damage`, `third_party_property` and `third_party_injury`)
+- **claim_sections.csv** - one row per claim, in `claims.csv` order: `claim_id,section`, where `section` is the section's `name` in the line of business (for the presets `own_damage`, `third_party_property`, `third_party_injury` and `weather`)
 - **exposure_sections.csv** - one row per origin month and section: `origin_month,section,premium`, origin months in `exposure.csv` order and sections in the line of business's order. `premium` is the month's premium for that section on the run's origin basis, aggregated as `exposure.csv`'s premium is but from each policy's premium for the section. A policy's sections are each rounded to the cent, so for a month they add up to `exposure.csv`'s premium to within about a cent per policy in force, not exactly
 
 ## Quickstart
@@ -74,7 +74,7 @@ flowchart TD
     seed(["seed"])
     subgraph sim["Simulation: seven stages, in order"]
         s1["1 - Policy book<br/>fleets, cover dates, sum insured, excess,<br/>risk factor, premium"]
-        s2["2 - Claims inflation path<br/>one random factor per calendar year"]
+        s2["2 - Claims inflation path and loss events<br/>one random factor per calendar year;<br/>book-wide events for an events section"]
         s3["3 - Claim events<br/>occurrence, report and close dates,<br/>true cost"]
         s4["4 - Reopening<br/>an optional second episode"]
         s5["5 - Opening case estimates<br/>the handler's first view of the true cost"]
@@ -112,7 +112,7 @@ Premium and claims come from two separate models. The `pricing` block is what th
 %%{init: {"flowchart": {"wrappingWidth": 480}}}%%
 flowchart LR
     subgraph assumed["pricing block: what the insurer assumes"]
-        assumptions["each section's base_frequency, severity, limit and no_excess,<br/>nil_probability, reopen_probability,<br/>reopen_estimate_factor, inflation_mean"]
+        assumptions["each section's base_frequency or events,<br/>severity, limit and no_excess,<br/>nil_probability, reopen_probability,<br/>reopen_estimate_factor, inflation_mean"]
     end
     subgraph actual["claims and runoff blocks: what happens"]
         truth["true frequency and severity,<br/>the simulated inflation path,<br/>nil claims, reopens"]
@@ -137,7 +137,7 @@ flowchart TD
     draws["each policy is a fleet of one, and draws<br/>cover start: uniform over the year, cover end: start + 364 days<br/>sum insured: lognormal, sigma spread, median sum_insured_median<br/>drifting by sum_insured_inflation a year<br/>risk factor: gamma, mean 1, standard deviation spread<br/>excess: weighted pick from excess_choices"]
     fleet["each fleet draws<br/>cover start: uniform over the year, cover end: start + 364 days<br/>excess: weighted pick from excess_choices<br/>vehicles: lognormal, median size.median, sigma size.sigma,<br/>rounded, at least 1<br/>median vehicle sum insured: sum_insured_median, drifting by<br/>sum_insured_inflation a year, × lognormal, sigma sum_insured_sigma<br/>fleet risk factor: gamma, mean 1, standard deviation risk_spread"]
     vehicle["each vehicle is a policy with the fleet's cover dates and excess<br/>sum insured: lognormal, sigma spread, median the fleet's<br/>risk factor: the fleet's × gamma, mean 1, standard deviation spread"]
-    expected["expected loss under the pricing block, section by section<br/>expected cost above the excess, or from the first dollar<br/>on a no_excess section, from the section's assumed severity:<br/>sum_insured_lognormal, capped at the sum insured<br/>lognormal, pareto or lognormal_pareto,<br/>capped at the section's limit, if set<br/>× base_frequency × risk factor<br/>× (1 - nil_probability<br/>+ reopen_probability × reopen_estimate_factor)<br/>trended at inflation_mean to the middle of the cover"]
+    expected["expected loss under the pricing block, section by section<br/>expected cost above the excess, or from the first dollar<br/>on a no_excess section, from the section's assumed severity:<br/>sum_insured_lognormal, capped at the sum insured<br/>lognormal, pareto or lognormal_pareto,<br/>capped at the section's limit, if set<br/>× base_frequency, or events.per_year × events.hit_share<br/>on an events section, × risk factor<br/>× (1 - nil_probability<br/>+ reopen_probability × reopen_estimate_factor)<br/>trended at inflation_mean to the middle of the cover"]
     premium["premium = expected loss / the year's priced loss ratio<br/>kept per section too, for the realism check"]
     size -- "that many" --> fleetSet
     fleetSet -- "no" --> draws --> expected
@@ -150,13 +150,13 @@ Each year's book size is the previous year's size times a growth factor times ra
 
 ### Claim events
 
-Each section of each policy produces its claims independently, from its own block of `claims.sections`. Both presets have three sections: `own_damage`, the insured vehicle, `third_party_property`, damage to other people's vehicles and property, and `third_party_injury`, bodily injury to others. The severity draw below fixes the claim's true ultimate cost; no later stage changes it, though a reopen adds a separate second amount.
+Each section of each policy produces its claims independently, from its own block of `claims.sections`. Both presets have four sections: `own_damage`, the insured vehicle, `third_party_property`, damage to other people's vehicles and property, `third_party_injury`, bodily injury to others, and `weather`, hail and storm damage to the insured vehicle, which arrives in book-wide events (see "Loss events" below). The severity draw below fixes the claim's true ultimate cost; no later stage changes it, though a reopen adds a separate second amount.
 
 ```mermaid
 %%{init: {"flowchart": {"wrappingWidth": 480}}}%%
 flowchart TD
-    count["each section: number of claims, Poisson<br/>base_frequency × risk factor<br/>× share of the cover inside the run window"]
-    occurrence["occurrence date:<br/>uniform over the cover inside the window"]
+    count["each section: number of claims, Poisson<br/>base_frequency × risk factor<br/>× share of the cover inside the run window;<br/>an events section: one per event that hits the policy"]
+    occurrence["occurrence date:<br/>uniform over the cover inside the window,<br/>or over the event's days the policy is in force"]
     report["report date = occurrence + lognormal lag<br/>report_lag: median, sigma;<br/>in the holiday window, chance seasonal_holiday.report_share<br/>of moving to the same day next month;<br/>rolled to a business day with business_days.roll_reports"]
     kind{"severity kind?"}
     siLoss["sum_insured_lognormal: base-year sum insured<br/>× lognormal fraction, median median_fraction,<br/>sigma sigma"]
@@ -189,6 +189,29 @@ flowchart TD
 ```
 
 Losses that do not exceed the excess are never reported, so the reported frequency sits below `base_frequency`. A section with `no_excess: true` takes no excess and pays every loss from the first dollar, as liability cover usually does: both presets' two liability sections, so third parties are paid in full. In the presets, report lags are short for own damage and property damage and longer for injury claims, so there are claims incurred but not yet reported to estimate. Own-damage and property-damage claims settle in weeks to months. Injury claims are rarer and heavy-tailed - a lognormal body of small claims under a Pareto tail (`lognormal_pareto`), whose share of claims keeps the density continuous where the tail starts - and settle in a slow long-tail regime calibrated to each preset's Schedule P liability reference, so paid losses keep developing at later ages; commercial injury settles more slowly than personal. Property damage is a lognormal in start-year dollars. Injury and property damage are capped at their per-claim limits (`limit`: $100,000 and $50,000 in the personal preset, $1m on both in the commercial preset, as a combined single limit would), which cover a claim's whole life, reopen included. A limit is nominal, a contract term that claims inflation does not trend, so inflation erodes it over the years; a claim settled at its limit settles like a claim of the limit's size. In every section, settlement time lengthens smoothly with claim size. A share of reported claims are nil - they close without any payment at their first close.
+
+### Loss events
+
+A section with an `events` block - `weather` in the presets - draws its claims from book-wide events, such as hail storms, instead of each policy's own Poisson count. This is the generator's only event clustering: one event hits many policies within a few days, so its claims land in one or two origin months as a spike.
+
+```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 480}}}%%
+flowchart TD
+    events["each calendar year of the window, its own stream:<br/>number of events, Poisson per_year"]
+    start["each event: start on a uniform day of the season,<br/>season_months from the first of season_start_month<br/>(all year when season_months is 0),<br/>lasting duration_days"]
+    inForce{"policy in force<br/>during the event?"}
+    skip(["not exposed"])
+    hit{"hit? the policy's own section stream<br/>probability hit_share × risk factor<br/>× share of the event's days in force, at most 1"}
+    miss(["no claim"])
+    claimDraw["a loss on a uniform day of the event the policy is in force,<br/>then the claim simulation above: report lag,<br/>severity, excess, close lag, nil flag"]
+    events --> start --> inForce
+    inForce -- "no" --> skip
+    inForce -- "yes" --> hit
+    hit -- "no" --> miss
+    hit -- "yes" --> claimDraw
+```
+
+A policy in force for a whole year expects `per_year × hit_share × risk factor` claims, which is how the `pricing` block's `events` prices the section. The events are drawn from the section's own root stream (`weather-events`) and the hits from the policy's own section stream, so adding an events section leaves every other section's claims and premium unchanged. In the presets weather has 4 events a year in the April-September hail season, each lasting 3 days and hitting 0.35% of the personal book, 0.3% of the commercial vehicles, at risk factor 1: 0.014 and 0.012 claims per policy-year, about 15% and 13% of own damage's frequency. Weather is sized off the sum insured like own damage, takes the policy's excess, reports within days and settles in weeks. A written-off vehicle yields salvage, but there is no at-fault third party to subrogate against (`no_subrogation: true`). Across seeds 1-30 of a 1998-2007 run (4,000 policies, 1,500 fleets) weather is about 9.5% of the personal preset's reported claims and 9.7% of its premium, and 7.8% and 6.7% of the commercial preset's. It is not scored for realism: Schedule P's auto lines have no physical damage.
 
 Claims inflation is a stochastic path: each calendar year's factor is a mean level (a per-line-of-business knob) times lognormal noise, compounding from the start year and drawn from its own labelled sub-stream so it stays reproducible and independent of the other stages. The index sits at each year's compounded value in the middle of the year and moves smoothly between years rather than stepping each 1 January.
 
@@ -295,7 +318,7 @@ flowchart TD
     totalLoss{"sum-insured total loss<br/>paid in its first episode?"}
     salvage{"salvage?<br/>salvage.probability"}
     salvageRow["SALVAGE = gross paid × Beta share<br/>mean_share, concentration<br/>dated final close + lognormal lag,<br/>rolled to a business day"]
-    subrogation{"subrogation?<br/>subrogation.probability"}
+    subrogation{"subrogation?<br/>subrogation.probability;<br/>never on a no_subrogation section"}
     subrogationRow["SUBROGATION = gross paid × Beta share<br/>mean_share, concentration<br/>dated final close + lognormal lag,<br/>rolled to a business day"]
     done(["done: total recovered<br/>always below gross paid"])
     closed --> eligible
@@ -309,7 +332,7 @@ flowchart TD
     subrogation -- "no" --> done
 ```
 
-Claims in a section with `recoveries: true` - own damage, in the preset - can yield subrogation (the payout is recovered from an at-fault third party), and total losses on a sum-insured section, where the vehicle is written off at its sum insured less excess, can yield salvage (the wreck is sold; a liability claim settled at its limit leaves none). Each is a Beta-distributed share of the claim's gross paid, so salvage is sized off the vehicle's value, received a lognormal lag (`lag_median_days`, `lag_sigma`) after the final close date - subrogation typically much later than salvage. Recoveries are pure cash events: the case estimate stays gross, and a claim's total recovered is always below its gross paid. Recovery rows are the only transactions dated after a claim's final close. Setting a recovery type's probability to 0 switches it off.
+Claims in a section with `recoveries: true` - own damage and weather, in the presets - can yield subrogation (the payout is recovered from an at-fault third party), unless the section sets `no_subrogation: true`, as weather does: hail has no at-fault third party. Total losses on a sum-insured section, where the vehicle is written off at its sum insured less excess, can yield salvage (the wreck is sold; a liability claim settled at its limit leaves none). Each is a Beta-distributed share of the claim's gross paid, so salvage is sized off the vehicle's value, received a lognormal lag (`lag_median_days`, `lag_sigma`) after the final close date - subrogation typically much later than salvage. Recoveries are pure cash events: the case estimate stays gross, and a claim's total recovered is always below its gross paid. Recovery rows are the only transactions dated after a claim's final close. Setting a recovery type's probability to 0 switches it off.
 
 ### Reproducibility
 
@@ -322,9 +345,10 @@ flowchart LR
     book["book"]
     bookStreams["book-size<br/>pricing-adequacy<br/>policy-1, policy-2, ...<br/>fleet-1, ..., on a fleet book"]
     inflation["inflation"]
+    events["weather-events<br/>one per events section"]
     claims["claims"]
     claimStreams["claims-policy-1, ..."]
-    sectionStreams["own_damage<br/>third_party_property<br/>third_party_injury"]
+    sectionStreams["own_damage<br/>third_party_property<br/>third_party_injury<br/>weather"]
     holidayStreams["seasonal-holiday"]
     reopening["reopening"]
     reopenStreams["reopen-claim-p1-s0-1, ..."]
@@ -337,6 +361,7 @@ flowchart LR
     recoveryKinds["SALVAGE<br/>SUBROGATION"]
     seed --> book --> bookStreams
     seed --> inflation
+    seed --> events
     seed --> claims --> claimStreams --> sectionStreams
     seed --> reopening --> reopenStreams
     seed --> caseEstimate --> caseStreams
@@ -345,7 +370,7 @@ flowchart LR
     seed --> recovery --> recoveryStreams --> recoveryKinds
 ```
 
-The same seed and config therefore produce byte-identical output, and toggling a knob is invisible to unrelated draws: changing one section, or turning nil claims, reopening, salvage, subrogation, the summer holiday or business days on or off, never reshuffles the draws of any other claim or stage. Each claim's later streams are labelled by its policy, section and place among that section's losses on the policy (`p<policy>-s<section>-<n>`), not by its `claim_id`, which follows the order claims are reported in: a setting that moves report dates renumbers claims without redrawing their case estimates, payments, reopens or recoveries. (Salvage and subrogation amounts remain linked through the rule that a claim's total recovered stays below its gross paid, which is an accounting constraint, not a random draw.)
+The same seed and config therefore produce byte-identical output, and toggling a knob is invisible to unrelated draws: changing one section, adding one after the others, or turning nil claims, reopening, salvage, subrogation, the summer holiday or business days on or off, never reshuffles the draws of any other claim or stage. Each claim's later streams are labelled by its policy, section and place among that section's losses on the policy (`p<policy>-s<section>-<n>`), not by its `claim_id`, which follows the order claims are reported in: a setting that moves report dates renumbers claims without redrawing their case estimates, payments, reopens or recoveries. (Salvage and subrogation amounts remain linked through the rule that a claim's total recovered stays below its gross paid, which is an accounting constraint, not a random draw.)
 
 ### Monthly triangles and exposure
 
@@ -409,7 +434,7 @@ same way at the end of the window.
 
 ## Parameters per line of business
 
-All behavior is driven by a YAML file mapped to the `LineOfBusiness` domain object - see `internal/infrastructure/config/motor-personal.yaml` and `motor-commercial.yaml` beside it for the annotated presets. The top-level blocks are `book`, `pricing`, `claims`, `runoff`, `seasonal_holiday` and `business_days` - `pricing` holds the insurer's assumed loss cost, kept separate from the `claims` block that generates the true experience. Both list the line's sections of cover under `sections`, by the same names in the same order: each claims section sets its own frequency, severity, per-claim `limit`, whether it takes the excess (`no_excess`), report lag, close lag, how its claims are paid (`settlement`) and recovery eligibility. The YAML holds simulation parameters only. How a preset is scored for realism - its Schedule P line and the sections scored against it - is its realism profile, registered beside it in the preset registry in `internal/infrastructure/config/config.go`. A new short-tail class is a YAML file for the CLI (`generate --config my-lob.yaml` is pure YAML, no code changes); surfacing it as a UI preset also needs the YAML embedded and registered, with its realism profile, in the preset registry.
+All behavior is driven by a YAML file mapped to the `LineOfBusiness` domain object - see `internal/infrastructure/config/motor-personal.yaml` and `motor-commercial.yaml` beside it for the annotated presets. The top-level blocks are `book`, `pricing`, `claims`, `runoff`, `seasonal_holiday` and `business_days` - `pricing` holds the insurer's assumed loss cost, kept separate from the `claims` block that generates the true experience. Both list the line's sections of cover under `sections`, by the same names in the same order: each claims section sets its own frequency, or the book-wide `events` it draws its claims from, severity, per-claim `limit`, whether it takes the excess (`no_excess`), report lag, close lag, how its claims are paid (`settlement`) and recovery eligibility (`recoveries`, `no_subrogation`). The YAML holds simulation parameters only. How a preset is scored for realism - its Schedule P line and the sections scored against it - is its realism profile, registered beside it in the preset registry in `internal/infrastructure/config/config.go`. A new short-tail class is a YAML file for the CLI (`generate --config my-lob.yaml` is pure YAML, no code changes); surfacing it as a UI preset also needs the YAML embedded and registered, with its realism profile, in the preset registry.
 
 ## Assumptions and known simplifications
 
@@ -419,7 +444,8 @@ The model deliberately trades some realism for a clean, reproducible engine. The
 - **Case adequacy bias decays on a fixed path.** Every claim's case closes the adequacy gap the same way, geometrically to parity at close, so case development is systematic and smooth; real case reserving also shifts with handlers, claim types and reserving reviews.
 - **Nil claims draw severity and probability independently of claim size**; real withdrawn or nil claims skew small.
 - **Business-day calendars are rule-based.** The `us`, `uk` and `za` calendars follow each market's standing holiday rules; one-off holidays and bank holidays moved in a particular year are not modelled, and every business day has the same capacity, so work rolled off a weekend lands on the Monday in full.
-- **Seasonality is the summer holiday only, with no catastrophe or event clustering.** Occurrences are uniform within each cover period and claims are independent across policies (the only cross-policy link is the shared inflation path). The holiday window is fixed per hemisphere, and moves reports and payments only; case revisions keep their dates.
+- **Event clustering is one simple weather model.** An events section's claims cluster in book-wide events of a fixed length, starting uniformly through a fixed season, and every policy in force is equally exposed apart from its risk factor: there is no geography, so an event's footprint is a random share of the whole book, and the vehicles of one fleet are hit independently. Event counts are Poisson with no year-to-year correlation, and an event's size varies only through its hit draws. Every other section's occurrences are uniform within each cover period and independent across policies (the only other cross-policy link is the shared inflation path).
+- **Seasonality is the summer holiday and the weather season only.** The holiday window is fixed per hemisphere, and moves reports and payments only; case revisions keep their dates.
 - **Each year's book is an independent cohort** - no policy renews, so per-policy claim histories never correlate across years.
 - **A fleet is fixed for its policy year.** Its vehicles share the fleet's cover dates, excess and the level of their values and risk, and no vehicle joins or leaves mid-term.
 - **The presets' pricing assumptions start from the claims parameters.** Each shipped `pricing` block uses the same values as its `claims` block, so the book carries no systematic mispricing and its loss ratio lands around `target_loss_ratio`: across seeds 1-40 the personal preset's whole-book ultimate loss ratio, gross of recoveries as pricing is, fell between 0.93 and 1.08 times the target, and the commercial preset's between 0.93 and 1.09, mostly from the simulated inflation path; for the personal preset net of recoveries, the basis the realism tab scores, it was about 0.82-0.94 times the target. A small `adequacy_volatility` (0.03) scatters each underwriting year's pricing around the target. Real cycles are larger and persist across years, which this independent per-year noise does not model. Set the `pricing` block away from the claims values to model underpricing, overpricing, or adverse experience. One small built-in gap: the reopen uplift ignores the cap that holds a reopen within the cover left, on own damage or a limited section, so claims near their limit are slightly overpriced.
