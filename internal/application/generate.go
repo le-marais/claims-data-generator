@@ -66,11 +66,15 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 	// Occurrences are constrained to the window (MF-2), so the inflation index
 	// only needs to span the window years.
 	inflation := claim.NewInflationIndex(src.Split("inflation"), req.LOB.Claims.Inflation, req.StartYear, req.Years)
+	// Events sections share one book-wide event set each, drawn over the
+	// window from its own root stream.
+	events := claim.DrawEvents(src, req.LOB.Claims.Sections, req.StartYear, req.Years)
 	// A paying claim stays open long enough for the runoff to keep its
 	// payments the payment delay after the case is raised.
 	delay := int(req.LOB.Runoff.PaymentDelayDays)
 	claims := claim.NewClaimSimulator(req.LOB.Claims).
 		WithInflation(inflation).
+		WithEvents(events).
 		WithWindow(req.StartYear, req.Years).
 		WithPaymentDelay(delay).
 		WithSeasonalHoliday(req.LOB.SeasonalHoliday).

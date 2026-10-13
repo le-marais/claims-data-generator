@@ -67,14 +67,19 @@ pricing:
       severity: {kind: lognormal_pareto, median: 10000, sigma: 1.1, scale: 60000, alpha: 1.8}
       limit: 1000000
       no_excess: true
+    # Weather prices on its claims section's event model: 4 events a year
+    # hitting 0.3% of the book each is 0.012 claims per vehicle-year.
+    - name: weather
+      events: {per_year: 4, hit_share: 0.003}
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.10, sigma: 0.8}
   nil_probability: 0.08
   reopen_probability: 0.05
   reopen_estimate_factor: 0.45
   inflation_mean: 1.05
 claims:
   # Sections of cover, per vehicle-year. See motor-personal.yaml for how a
-  # section draws its claims, severity kinds, report and close lags, limits
-  # and settlement. no_excess: true makes a section take no excess, so every
+  # section draws its claims, severity kinds, report and close lags, limits,
+  # settlement, recoveries and events. no_excess: true makes a section take no excess, so every
   # ground-up loss is reported and paid from the first dollar. Each
   # section's settlement is personal motor's, a judgement value: about 90%
   # of own-damage and 75% of property damage claims pay once, and injury
@@ -142,6 +147,37 @@ claims:
         size_elasticity: 0.05
         risk_loading: 0.3
       settlement: {lump_sum_probability: 0, share: 0.6, concentration: 4}
+    # Weather: hail and storm damage to the insured vehicles, in events (see
+    # motor-personal.yaml). Own damage stays at collision and the other
+    # perils, so weather adds to it. 4 events a year in the April-September
+    # hail season, each lasting 3 days and hitting 0.3% of the vehicles at
+    # risk factor 1: 0.012 claims per vehicle-year, about 13% of own
+    # damage's 0.09, a little below personal motor's share because more of
+    # a fleet is garaged or under cover. Vehicles on one fleet share the
+    # event but are hit independently. A typical hail repair is about
+    # $3,500, 10% of the median $35,000 vehicle (sigma 0.8); the fleet's
+    # excess applies, so more small hail claims fall under it than on
+    # personal motor. Lags and settlement as personal motor's weather, a
+    # little slower to close (mean_days 55, size_reference 3500). Salvage
+    # but no subrogation. All judgement values; weather is not scored.
+    - name: weather
+      events:
+        per_year: 4
+        hit_share: 0.003
+        duration_days: 3
+        season_start_month: 4
+        season_months: 6
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.10, sigma: 0.8}
+      report_lag: {median: 4, sigma: 1.0}
+      close_lag:
+        shape: 1.2
+        mean_days: 55
+        size_reference: 3500
+        size_elasticity: 0.2
+        risk_loading: 0.3
+      settlement: {lump_sum_probability: 0.6, share: 0.25, concentration: 4}
+      recoveries: true
+      no_subrogation: true
   # A little above personal motor's 4% a year; a judgement value.
   inflation:
     mean: 1.05

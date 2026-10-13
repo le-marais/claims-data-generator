@@ -17,6 +17,7 @@ const (
 	ownDamage          = 0
 	thirdPartyProperty = 1
 	thirdPartyInjury   = 2
+	weather            = 3
 )
 
 func request(t *testing.T) application.GenerateRequest {

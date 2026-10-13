@@ -66,6 +66,11 @@ func (p PricingParams) ExpectedPolicyLoss(sumInsured, excess, riskFactor, inflat
 // trended. With no limit it is the uncapped stop-loss. A section that takes
 // no excess prices at d = 0.
 //
+// The section's frequency is its BaseFrequency, or on an events section the
+// event model's: events a year times the hit share. Both scale with the risk
+// factor, as the simulation's do; the cap that holds an event hit's chance at
+// 1 is ignored, which no realistic hit share reaches.
+//
 // Each claim pays its cost unless it is nil, and pays a further
 // ReopenEstimateFactor of that cost if it reopens, nil or not, so the expected
 // payout per claim is the cost times 1 - NilProbability + ReopenProbability *
@@ -77,14 +82,15 @@ func (p PricingParams) ExpectedSectionLoss(section int, sumInsured, excess, risk
 	// A section priced at no frequency is skipped rather than multiplied by
 	// zero: its severity need not be valid (see PricingSectionParams.validate),
 	// and zero times an infinite or NaN layer cost is NaN.
-	if sec.BaseFrequency <= 0 {
+	freq := sec.Frequency()
+	if freq <= 0 {
 		return 0
 	}
 	if sec.NoExcess {
 		excess = 0
 	}
 	payout := 1 - p.NilProbability + p.ReopenProbability*p.ReopenEstimateFactor
-	perClaim := sec.BaseFrequency * riskFactor * payout
+	perClaim := freq * riskFactor * payout
 	sev := sec.Severity
 	switch sev.Kind {
 	case SumInsuredLognormal:

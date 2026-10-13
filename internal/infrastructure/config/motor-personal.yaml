@@ -58,6 +58,12 @@ pricing:
       severity: {kind: lognormal_pareto, median: 5000, sigma: 1.1, scale: 30000, alpha: 1.8}
       limit: 100000
       no_excess: true
+    # Weather prices on its claims section's event model: 4 events a year
+    # hitting 0.35% of the book each is 0.014 claims per policy-year at risk
+    # factor 1, priced like a base_frequency of 0.014.
+    - name: weather
+      events: {per_year: 4, hit_share: 0.0035}
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.15, sigma: 0.8}
   nil_probability: 0.08
   reopen_probability: 0.04
   reopen_estimate_factor: 0.45
@@ -102,7 +108,21 @@ claims:
   # interim payment is paid in one settlement too.
   #
   # recoveries: true makes the section's claims eligible for salvage and
-  # subrogation.
+  # subrogation; no_subrogation: true then keeps salvage only, for a peril
+  # with no at-fault third party.
+  #
+  # events switches a section from each policy's own Poisson count to
+  # book-wide events, such as hail storms, and its base_frequency is then
+  # left out (0). Each year draws a Poisson number of events at per_year,
+  # each starting on a uniform day of the season (season_months from the
+  # first of season_start_month; season_months 0 is all year) and lasting
+  # duration_days. A policy in force through an event is hit with
+  # probability hit_share times its risk factor, scaled down by the share of
+  # the event's days it is not in force, and its loss occurs on one of the
+  # event's days; it then reports and settles like any other claim. So the
+  # section's frequency is per_year x hit_share x risk factor per
+  # policy-year, which is how pricing prices it, but its claims cluster on a
+  # few days a year. per_year 0 switches events off.
   sections:
     # Own damage: vehicle damage, sized off the sum insured, reported within
     # days and settled in weeks. Its lags are judgement values, since no
@@ -188,6 +208,40 @@ claims:
         size_elasticity: 0.25
         risk_loading: 0.3
       settlement: {lump_sum_probability: 0, share: 0.6, concentration: 4}
+    # Weather: hail and storm damage to the insured vehicle, in events. Own
+    # damage stays at collision and the other perils, so weather adds to it.
+    # 4 events a year (Poisson), each lasting 3 days and starting in the
+    # April-September hail season, and each hitting 0.35% of the book at risk
+    # factor 1: 0.014 claims per policy-year, about 15% of own damage's
+    # 0.096, so weather is material but not dominant, and each event brings a
+    # spike of claims into one or two origin months. A typical hail repair is
+    # about $3,000, 15% of the median $20,000 vehicle (sigma 0.8, so a few
+    # vehicles are written off at their sum insured); the policy's excess
+    # applies. Reported within days (median 4, a little slower than own
+    # damage as policyholders wait out the storm) and settled in weeks, a
+    # little slower than own damage (mean_days 50) as a storm's claims queue
+    # for assessors. Most pay once, to the repairer. A written-off vehicle
+    # yields salvage like own damage's, but hail has no at-fault third party
+    # to subrogate against (no_subrogation). All judgement values: the
+    # Schedule P reference has no physical damage, so weather is not scored.
+    - name: weather
+      events:
+        per_year: 4
+        hit_share: 0.0035
+        duration_days: 3
+        season_start_month: 4
+        season_months: 6
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.15, sigma: 0.8}
+      report_lag: {median: 4, sigma: 1.0}
+      close_lag:
+        shape: 1.2
+        mean_days: 50
+        size_reference: 3000
+        size_elasticity: 0.2
+        risk_loading: 0.3
+      settlement: {lump_sum_probability: 0.6, share: 0.25, concentration: 4}
+      recoveries: true
+      no_subrogation: true
   # Claims inflation applied by occurrence date to every claim's ground-up
   # loss. Stochastic: each year's factor is `mean` times lognormal noise of
   # sigma `volatility`, compounded from 1.0 in the start year. The index sits

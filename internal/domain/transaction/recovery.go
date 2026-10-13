@@ -99,7 +99,8 @@ func (s *RecoverySimulator) Apply(src shared.RandomSource, claims []claim.Claim,
 // recovered stays strictly below the claim's gross paid. A nil claim that
 // never reopens has paid 0 and stays ineligible through the paid check
 // alone; a reopened nil claim that paid in its second episode is
-// subrogation-eligible like any other paying claim.
+// subrogation-eligible like any other paying claim. A section with
+// NoSubrogation yields salvage only.
 func (s *RecoverySimulator) simulateClaim(src shared.RandomSource, c claim.Claim, paid shared.Money) []Transaction {
 	if !s.sections[c.Section].Recoveries || paid <= 0 {
 		return nil
@@ -116,6 +117,9 @@ func (s *RecoverySimulator) simulateClaim(src shared.RandomSource, c claim.Claim
 	for _, k := range kinds {
 		if k.t == Salvage && (s.sections[c.Section].Severity.Kind != lob.SumInsuredLognormal || !c.TotalLoss() || c.Nil()) {
 			continue // only a written-off vehicle the claim paid for is sold for salvage
+		}
+		if k.t == Subrogation && s.sections[c.Section].NoSubrogation {
+			continue // no at-fault third party to recover from
 		}
 		ksrc := src.Split(string(k.t)) // recovery-claim-{id}/SALVAGE, .../SUBROGATION
 		if k.p.Probability <= 0 || !ksrc.Bernoulli(k.p.Probability) {

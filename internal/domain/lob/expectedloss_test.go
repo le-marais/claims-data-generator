@@ -249,3 +249,19 @@ func TestExpectedSectionLossIgnoresTheExcessWhenSwitchedOff(t *testing.T) {
 		}
 	}
 }
+
+// An events section prices at the event model's frequency, events a year
+// times the hit share, as a frequency section at that base frequency would.
+func TestExpectedSectionLossPricesAnEventsSectionAtItsEventFrequency(t *testing.T) {
+	p := motorPricing()
+	want := p.ExpectedSectionLoss(0, 20000, 300, 1.3, 1.1, 1.05)
+	p.Sections[0].BaseFrequency = 0
+	p.Sections[0].Events = PricingEventParams{PerYear: 4, HitShare: 0.024}
+	if got := p.ExpectedSectionLoss(0, 20000, 300, 1.3, 1.1, 1.05); math.Abs(got-want) > 1e-9*want {
+		t.Fatalf("events section: got %v, want %v at base frequency %v", got, want, 4*0.024)
+	}
+	p.Sections[0].Events.PerYear = 0
+	if got := p.ExpectedSectionLoss(0, 20000, 300, 1.3, 1.1, 1.05); got != 0 {
+		t.Fatalf("events off and base frequency 0: got %v, want 0", got)
+	}
+}

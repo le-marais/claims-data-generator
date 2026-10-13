@@ -75,6 +75,8 @@ var formFields = []fieldGroup{
 		Fields: slices.Concat([]formField{
 			{Path: []string{"base_frequency"}, Label: "Assumed base frequency", Tip: "Assumed ground-up frequency per policy-year used for pricing (independent of the true claims frequency)."},
 			{Path: []string{"limit"}, Label: "Assumed limit", Tip: "Per-claim limit assumed for pricing, in nominal dollars; 0 is unlimited."},
+			{Path: []string{"events", "per_year"}, Label: "Assumed events per year", Tip: "Assumed mean events a year on an events section, which is then priced at events per year x hit share in place of the base frequency; 0 is off."},
+			{Path: []string{"events", "hit_share"}, Label: "Assumed event hit share", Tip: "Assumed share of the policies in force through an event that it hits, at risk factor 1."},
 		}, severityFields),
 	},
 	{
@@ -107,6 +109,11 @@ var formFields = []fieldGroup{
 			{Path: []string{"settlement", "lump_sum_probability"}, Label: "Lump-sum probability", Tip: "Chance a paying claim pays its whole cost in one settlement at close; claims that draw no interim payments pay once too. 0 switches lump sums off."},
 			{Path: []string{"settlement", "share"}, Label: "Settlement share", Tip: "Mean fraction of the cost a claim with interim payments leaves for its final settlement."},
 			{Path: []string{"settlement", "concentration"}, Label: "Settlement concentration", Tip: "Beta concentration of each claim's settlement share around its mean; 0 fixes it."},
+			{Path: []string{"events", "per_year"}, Label: "Events per year", Tip: "Mean book-wide events a year, such as hail storms; the section then draws a claim for each event that hits a policy, in place of its base frequency, which must be 0. 0 switches events off."},
+			{Path: []string{"events", "hit_share"}, Label: "Event hit share", Tip: "Share of the policies in force through an event that it hits, at risk factor 1; scaled by each policy's risk factor."},
+			{Path: []string{"events", "duration_days"}, Label: "Event duration days", Tip: "Whole days each event lasts; a hit claim occurs on one of them."},
+			{Path: []string{"events", "season_start_month"}, Label: "Event season start month", Tip: "Month, 1 to 12, the season events start in opens."},
+			{Path: []string{"events", "season_months"}, Label: "Event season months", Tip: "Whole months the season runs, into the next year past December; 0 lets events start on any day of the year."},
 		}),
 	},
 	{

@@ -214,6 +214,19 @@ func TestValidationNamesTheOffendingField(t *testing.T) {
 		{"claims.reopening.estimate_sigma", func(l *LineOfBusiness) { l.Claims.Reopening.EstimateSigma = -0.1 }},
 		{"claims.reopening.lag_median_days", func(l *LineOfBusiness) { l.Claims.Reopening.LagMedianDays = 0 }},
 		{"claims.reopening.lag_sigma", func(l *LineOfBusiness) { l.Claims.Reopening.LagSigma = -0.1 }},
+		{"claims.sections[1].events.per_year", func(l *LineOfBusiness) { withEvents(l); l.Claims.Sections[1].Events.PerYear = -1 }},
+		{"claims.sections[1].events.per_year", func(l *LineOfBusiness) { withEvents(l); l.Claims.Sections[1].BaseFrequency = 0.02 }},
+		{"claims.sections[1].events.hit_share", func(l *LineOfBusiness) { withEvents(l); l.Claims.Sections[1].Events.HitShare = 0 }},
+		{"claims.sections[1].events.hit_share", func(l *LineOfBusiness) { withEvents(l); l.Claims.Sections[1].Events.HitShare = 1.5 }},
+		{"claims.sections[1].events.hit_share", func(l *LineOfBusiness) { withEvents(l); l.Claims.Sections[1].Events.HitShare = math.NaN() }},
+		{"claims.sections[1].events.duration_days", func(l *LineOfBusiness) { withEvents(l); l.Claims.Sections[1].Events.DurationDays = 0 }},
+		{"claims.sections[1].events.duration_days", func(l *LineOfBusiness) { withEvents(l); l.Claims.Sections[1].Events.DurationDays = 2.5 }},
+		{"claims.sections[1].events.season_months", func(l *LineOfBusiness) { withEvents(l); l.Claims.Sections[1].Events.SeasonMonths = 13 }},
+		{"claims.sections[1].events.season_months", func(l *LineOfBusiness) { withEvents(l); l.Claims.Sections[1].Events.SeasonMonths = 1.5 }},
+		{"claims.sections[1].events.season_start_month", func(l *LineOfBusiness) { withEvents(l); l.Claims.Sections[1].Events.SeasonStartMonth = 0 }},
+		{"claims.sections[1].events.season_start_month", func(l *LineOfBusiness) { withEvents(l); l.Claims.Sections[1].Events.SeasonStartMonth = 4.5 }},
+		{"pricing.sections[1].events.per_year", func(l *LineOfBusiness) { withEvents(l); l.Pricing.Sections[1].BaseFrequency = 0.02 }},
+		{"pricing.sections[1].events.hit_share", func(l *LineOfBusiness) { withEvents(l); l.Pricing.Sections[1].Events.HitShare = 0 }},
 	}
 	for _, c := range cases {
 		l := validMotor()
@@ -340,6 +353,20 @@ func TestValidateSkipsSwitchedOffBlocks(t *testing.T) {
 			l.Claims.Sections[1].Limit = 100000
 			l.Pricing.Sections[1].Limit = 100000
 		}},
+		{"events section", withEvents},
+		{"events all year", func(l *LineOfBusiness) {
+			withEvents(l)
+			l.Claims.Sections[1].Events.SeasonStartMonth, l.Claims.Sections[1].Events.SeasonMonths = 0, 0
+		}},
+		{"events off with stray fields", func(l *LineOfBusiness) {
+			l.Claims.Sections[0].Events = EventParams{HitShare: 5, DurationDays: -1, SeasonStartMonth: math.NaN()}
+			l.Pricing.Sections[0].Events = PricingEventParams{HitShare: -1}
+		}},
+		{"events alone keep the book active", func(l *LineOfBusiness) {
+			withEvents(l)
+			l.Claims.Sections[0].BaseFrequency = 0
+		}},
+		{"no subrogation", func(l *LineOfBusiness) { l.Claims.Sections[0].NoSubrogation = true }},
 		{"limited lognormal third party", func(l *LineOfBusiness) {
 			l.Claims.Sections[1].Severity = SeverityParams{Kind: Lognormal, Median: 2000, Sigma: 0.8}
 			l.Claims.Sections[1].Limit = 50000
@@ -353,6 +380,26 @@ func TestValidateSkipsSwitchedOffBlocks(t *testing.T) {
 		if err := l.Validate(); err != nil {
 			t.Errorf("%s: want nil, got %v", c.name, err)
 		}
+	}
+}
+
+// withEvents makes the second section an events section, a hail peril, in
+// both claims and pricing.
+func withEvents(l *LineOfBusiness) {
+	l.Claims.Sections[1] = SectionParams{
+		Name:          "third_party",
+		Severity:      SeverityParams{Kind: SumInsuredLognormal, MedianFraction: 0.15, Sigma: 0.8},
+		ReportLag:     ReportLagParams{Median: 3, Sigma: 1.0},
+		CloseLag:      CloseLagParams{Shape: 1.2, MeanDays: 45},
+		Settlement:    SettlementParams{LumpSumProbability: 0.6, Share: 0.25, Concentration: 4},
+		Recoveries:    true,
+		NoSubrogation: true,
+		Events:        EventParams{PerYear: 3, HitShare: 0.005, DurationDays: 3, SeasonStartMonth: 4, SeasonMonths: 6},
+	}
+	l.Pricing.Sections[1] = PricingSectionParams{
+		Name:     "third_party",
+		Severity: SeverityParams{Kind: SumInsuredLognormal, MedianFraction: 0.15, Sigma: 0.8},
+		Events:   PricingEventParams{PerYear: 3, HitShare: 0.005},
 	}
 }
 

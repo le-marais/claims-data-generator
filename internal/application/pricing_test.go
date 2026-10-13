@@ -119,6 +119,7 @@ func TestMatchedPricingAbsorbsNilClaimsAndInflation(t *testing.T) {
 	base.Claims.Sections[ownDamage].BaseFrequency, base.Pricing.Sections[ownDamage].BaseFrequency = 0.12, 0.12
 	base.Claims.Sections[thirdPartyProperty].BaseFrequency, base.Pricing.Sections[thirdPartyProperty].BaseFrequency = 0, 0
 	base.Claims.Sections[thirdPartyInjury].BaseFrequency, base.Pricing.Sections[thirdPartyInjury].BaseFrequency = 0, 0
+	base.Claims.Sections[weather].Events, base.Pricing.Sections[weather].Events = lob.EventParams{}, lob.PricingEventParams{}
 	base.Claims.NilProbability, base.Pricing.NilProbability = 0, 0
 	base.Claims.Inflation = lob.InflationParams{Mean: 1, Volatility: 0}
 	base.Pricing.InflationMean = 1
