@@ -136,6 +136,37 @@ type PricingSectionParams struct {
 	// NoExcess prices the section as taking no excess. See
 	// SectionParams.NoExcess.
 	NoExcess bool
+	// Events prices an events section: its assumed frequency is the event
+	// model's, events a year times the share of the book each hits, in place
+	// of BaseFrequency. See SectionParams.Events. The zero value is off.
+	Events PricingEventParams
+}
+
+// PricingEventParams is the insurer's assumed event model for an events
+// section: only what sets the expected frequency.
+type PricingEventParams struct {
+	// PerYear is the assumed mean number of events a year; 0 is off.
+	PerYear float64
+	// HitShare is the assumed share of the policies in force through an
+	// event that it hits, at risk factor 1.
+	HitShare float64
+}
+
+// Enabled reports whether the section is priced on the event model.
+func (e PricingEventParams) Enabled() bool { return e.PerYear > 0 }
+
+// Frequency is the assumed claims per policy-year at risk factor 1 of an
+// events section: events a year times the hit share.
+func (e PricingEventParams) Frequency() float64 { return e.PerYear * e.HitShare }
+
+// Frequency is the section's assumed ground-up frequency per policy-year at
+// risk factor 1: the event model's on an events section, BaseFrequency
+// otherwise.
+func (s PricingSectionParams) Frequency() float64 {
+	if s.Events.Enabled() {
+		return s.Events.Frequency()
+	}
+	return s.BaseFrequency
 }
 
 // ClaimParams drives claim event simulation.
@@ -168,9 +199,13 @@ type SectionParams struct {
 	// risk factor 1. With a non-zero excess the realized reported frequency
 	// is lower, because sub-excess claims are discarded rather than reported,
 	// unless the section takes no excess (NoExcess).
-	// 0 switches the section off.
+	// 0 switches the section off, unless it draws its claims from Events.
 	BaseFrequency float64
-	Severity      SeverityParams
+	// Events makes the section's claims arrive in book-wide events, such as
+	// hail storms, in place of each policy's own Poisson count. The zero
+	// value is off; an events section leaves BaseFrequency at 0.
+	Events   EventParams
+	Severity SeverityParams
 	// Limit is the most the policy pays on one claim over its whole life,
 	// reopen included, in nominal dollars. It is a contract term, so claims
 	// inflation does not trend it and erodes it over the years. 0 is
@@ -191,7 +226,43 @@ type SectionParams struct {
 	// severity: a liability claim settled at its Limit leaves no wreck to
 	// sell.
 	Recoveries bool
+	// NoSubrogation keeps the section's claims from subrogation, for a peril
+	// with no at-fault third party to recover from, such as hail; salvage
+	// still applies. The zero value leaves subrogation to Recoveries.
+	NoSubrogation bool
 }
+
+// EventParams switches a section to event-clustered claims. Each calendar
+// year of the run draws a Poisson number of events across the book, each
+// starting on a day drawn uniformly through the season and lasting
+// DurationDays. A policy in force through an event is hit with probability
+// HitShare x risk factor, scaled down by the share of the event's days its
+// cover misses, and its claim occurs on a day of the event it was in force.
+// A PerYear of 0 switches events off, and the other fields are then not
+// required.
+type EventParams struct {
+	// PerYear is the mean number of events a year.
+	PerYear float64
+	// HitShare is the share of the policies in force through an event that
+	// it hits, at risk factor 1.
+	HitShare float64
+	// DurationDays is how many days an event lasts, a whole number.
+	DurationDays float64
+	// SeasonStartMonth is the month, 1 to 12, the season events start in
+	// opens; read only when SeasonMonths is above 0.
+	SeasonStartMonth float64
+	// SeasonMonths is how many whole months the season runs, wrapping into
+	// the next year past December; 0 lets events start on any day of the
+	// year.
+	SeasonMonths float64
+}
+
+// Enabled reports whether the section draws its claims from events.
+func (e EventParams) Enabled() bool { return e.PerYear > 0 }
+
+// Active reports whether the section draws any claims: from its own
+// frequency or from events.
+func (s SectionParams) Active() bool { return s.BaseFrequency > 0 || s.Events.Enabled() }
 
 // SettlementParams parameterizes how a section's paying episode splits its
 // cost between interim payments and the final settlement at close.
@@ -555,7 +626,10 @@ func (s PricingSectionParams) validate(prefix string) error {
 	if s.BaseFrequency < 0 {
 		return fmt.Errorf("%s.base_frequency: must not be negative, got %v", prefix, s.BaseFrequency)
 	}
-	if s.BaseFrequency == 0 {
+	if err := s.Events.validate(prefix+".events", s.BaseFrequency); err != nil {
+		return err
+	}
+	if s.Frequency() == 0 {
 		return nil // priced at nothing: the severity is never read
 	}
 	if err := s.Severity.validate(prefix + ".severity"); err != nil {
@@ -604,12 +678,12 @@ func (c ClaimParams) validate() error {
 		if err := sec.validate(prefix); err != nil {
 			return err
 		}
-		if sec.BaseFrequency > 0 {
+		if sec.Active() {
 			active++
 		}
 	}
 	if active == 0 {
-		return fmt.Errorf("claims.sections: at least one section must have a positive base_frequency")
+		return fmt.Errorf("claims.sections: at least one section must have a positive base_frequency or events.per_year")
 	}
 	if err := c.Inflation.validate(); err != nil {
 		return err
@@ -635,7 +709,10 @@ func (s SectionParams) validate(prefix string) error {
 	if s.BaseFrequency < 0 {
 		return fmt.Errorf("%s.base_frequency: must not be negative, got %v", prefix, s.BaseFrequency)
 	}
-	if s.BaseFrequency == 0 {
+	if err := s.Events.validate(prefix+".events", s.BaseFrequency); err != nil {
+		return err
+	}
+	if !s.Active() {
 		return nil
 	}
 	if err := s.Severity.validate(prefix + ".severity"); err != nil {
@@ -651,6 +728,64 @@ func (s SectionParams) validate(prefix string) error {
 		return err
 	}
 	return s.Settlement.validate(prefix + ".settlement")
+}
+
+// checkEventRate checks the event rate and hit share an events block shares
+// with its pricing assumption. An events section draws its claims from events
+// only, so it must leave base_frequency at 0. It reports whether the block is
+// on.
+func checkEventRate(prefix string, perYear, hitShare, baseFrequency float64) (bool, error) {
+	if err := checkFinite(
+		namedFloat{prefix + ".per_year", perYear},
+		namedFloat{prefix + ".hit_share", hitShare},
+	); err != nil {
+		return false, err
+	}
+	if perYear < 0 {
+		return false, fmt.Errorf("%s.per_year: must not be negative, got %v", prefix, perYear)
+	}
+	if perYear == 0 {
+		return false, nil // switched off: the rest of the block is never read
+	}
+	if baseFrequency != 0 {
+		return false, fmt.Errorf("%s.per_year: an events section draws its claims from events only, so base_frequency must be 0, got %v", prefix, baseFrequency)
+	}
+	if hitShare <= 0 || hitShare > 1 {
+		return false, fmt.Errorf("%s.hit_share: must be in (0, 1], got %v", prefix, hitShare)
+	}
+	return true, nil
+}
+
+func (e PricingEventParams) validate(prefix string, baseFrequency float64) error {
+	_, err := checkEventRate(prefix, e.PerYear, e.HitShare, baseFrequency)
+	return err
+}
+
+func (e EventParams) validate(prefix string, baseFrequency float64) error {
+	on, err := checkEventRate(prefix, e.PerYear, e.HitShare, baseFrequency)
+	if err != nil || !on {
+		return err
+	}
+	if err := checkFinite(
+		namedFloat{prefix + ".duration_days", e.DurationDays},
+		namedFloat{prefix + ".season_start_month", e.SeasonStartMonth},
+		namedFloat{prefix + ".season_months", e.SeasonMonths},
+	); err != nil {
+		return err
+	}
+	if e.DurationDays < 1 || e.DurationDays != math.Trunc(e.DurationDays) {
+		return fmt.Errorf("%s.duration_days: must be a whole number of days, at least 1, got %v", prefix, e.DurationDays)
+	}
+	if e.SeasonMonths < 0 || e.SeasonMonths > 12 || e.SeasonMonths != math.Trunc(e.SeasonMonths) {
+		return fmt.Errorf("%s.season_months: must be a whole number of months from 0 to 12, got %v", prefix, e.SeasonMonths)
+	}
+	if e.SeasonMonths == 0 {
+		return nil // all year: the season start is never read
+	}
+	if e.SeasonStartMonth < 1 || e.SeasonStartMonth > 12 || e.SeasonStartMonth != math.Trunc(e.SeasonStartMonth) {
+		return fmt.Errorf("%s.season_start_month: must be a whole month from 1 to 12, got %v", prefix, e.SeasonStartMonth)
+	}
+	return nil
 }
 
 func (s SettlementParams) validate(prefix string) error {

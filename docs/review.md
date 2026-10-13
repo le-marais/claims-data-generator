@@ -81,3 +81,20 @@ touching the area.
 - Do it with the first class that needs the two set apart. It changes the
   schema, so it belongs with that class's other schema changes.
 - Action: split it into two parameters.
+
+## 5. MR-25 (low) - weather hits follow the driving risk factor, not location
+
+- Where: `internal/domain/claim/claim.go`, `eventLosses`;
+  `lob.EventParams`.
+- An event hits each policy in force with probability `hit_share` times the
+  policy's risk factor, the same factor that drives its collision and
+  liability frequency. Hail exposure depends on where a vehicle is kept
+  and whether it is garaged, not on how it is driven, and the book has no
+  geography, so an event's footprint is a random share of the whole book.
+  On a fleet book the vehicles of one fleet, kept in one yard, are hit
+  independently.
+- Pricing reads the same factor, so premium and claims stay coherent; the
+  gap is in which policies an event picks, not in the totals.
+- Action: when a class needs it, give the book a region (or a separate
+  weather risk factor) and let an event hit one region, with a fleet's
+  vehicles hit together.

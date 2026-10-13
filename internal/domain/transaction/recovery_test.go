@@ -96,6 +96,60 @@ func TestRecoveriesOnlyOnEligibleClaims(t *testing.T) {
 	}
 }
 
+// A no_subrogation section, such as hail, yields salvage on its total losses
+// and never subrogation, and leaves the salvage draws where they were.
+func TestNoSubrogationSectionYieldsSalvageOnly(t *testing.T) {
+	certain := recoveryParams()
+	certain.Salvage.Probability = 1
+	certain.Subrogation.Probability = 1
+	claims := testClaims(300)
+	for i := range claims {
+		claims[i].Section = ownDamage
+		if i%4 == 1 {
+			claims[i].CoverLimit = claims[i].Episodes[0].Ultimate
+		}
+	}
+	runoff := transaction.NewRunoffSimulator(params(), sections(lob.SettlementParams{Share: 0.4}, lob.SettlementParams{Share: 0.4}))
+	txs := runoff.Simulate(random.NewSource(3), claims)
+	off := withSections(certain)
+	off.Sections[ownDamage].NoSubrogation = true
+	with := transaction.NewRecoverySimulator(withSections(certain)).Apply(random.NewSource(3), claims, txs)
+	without := transaction.NewRecoverySimulator(off).Apply(random.NewSource(3), claims, txs)
+
+	salvage := func(txs []transaction.Transaction) []transaction.Transaction {
+		var out []transaction.Transaction
+		for _, tx := range txs {
+			if tx.Type == transaction.Subrogation {
+				t.Fatalf("subrogation on claim %d of a no_subrogation section", tx.ClaimID)
+			}
+			if tx.Type == transaction.Salvage {
+				tx.ID = 0
+				out = append(out, tx)
+			}
+		}
+		return out
+	}
+	got := salvage(without)
+	if len(got) == 0 {
+		t.Fatal("no salvage on a no_subrogation section")
+	}
+	var want []transaction.Transaction
+	for _, tx := range with {
+		if tx.Type == transaction.Salvage {
+			tx.ID = 0
+			want = append(want, tx)
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("salvage rows = %d, want %d as with subrogation on", len(got), len(want))
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("salvage row %d moved: got %+v, want %+v", i, got[i], want[i])
+		}
+	}
+}
+
 func TestRecoveryBoundsAndDates(t *testing.T) {
 	claims, txs := recoveryFixture(t, recoveryParams(), 2)
 	closeDate := map[int]shared.Date{}

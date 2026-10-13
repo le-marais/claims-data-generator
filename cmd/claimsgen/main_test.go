@@ -305,7 +305,7 @@ func TestGenerateSectionDetailLeavesTheFiveFilesUnchanged(t *testing.T) {
 }
 
 func TestGenerateSectionDetailClaimSectionsMatchClaims(t *testing.T) {
-	known := map[string]bool{"own_damage": true, "third_party_property": true, "third_party_injury": true}
+	known := map[string]bool{"own_damage": true, "third_party_property": true, "third_party_injury": true, "weather": true}
 	out := filepath.Join(t.TempDir(), "output")
 	var buf bytes.Buffer
 	if code := run(sectionDetailArgs(out, "--section-detail"), &buf, &buf); code != 0 {
@@ -342,11 +342,11 @@ func TestGenerateSectionDetailExposureSectionsSumToExposure(t *testing.T) {
 			if strings.Join(detail[0], ",") != "origin_month,section,premium" {
 				t.Errorf("header = %v", detail[0])
 			}
-			const sections = 3
+			const sections = 4
 			if got, want := len(detail)-1, (len(exposure)-1)*sections; got != want {
 				t.Fatalf("exposure_sections.csv has %d rows, want %d", got, want)
 			}
-			wantOrder := []string{"own_damage", "third_party_property", "third_party_injury"}
+			wantOrder := []string{"own_damage", "third_party_property", "third_party_injury", "weather"}
 			for m := 1; m < len(exposure); m++ {
 				total := 0.0
 				for s := 0; s < sections; s++ {

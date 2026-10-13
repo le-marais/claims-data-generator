@@ -161,6 +161,7 @@ type ClaimSimulator struct {
 	holiday      lob.SeasonalHolidayParams
 	calendar     calendar.Calendar
 	rollReports  bool
+	events       EventSet
 }
 
 // NewClaimSimulator builds a claim simulator from the claim parameters.
@@ -200,6 +201,13 @@ func (s *ClaimSimulator) WithSeasonalHoliday(h lob.SeasonalHolidayParams) *Claim
 // report date itself rolls too. The default, an off calendar, moves nothing.
 func (s *ClaimSimulator) WithBusinessDays(c calendar.Calendar, rollReports bool) *ClaimSimulator {
 	s.calendar, s.rollReports = c, rollReports
+	return s
+}
+
+// WithEvents sets the event set events sections draw their claims from (see
+// DrawEvents). An events section with no events in the set draws no claims.
+func (s *ClaimSimulator) WithEvents(e EventSet) *ClaimSimulator {
+	s.events = e
 	return s
 }
 
@@ -256,6 +264,10 @@ func (s *ClaimSimulator) exposedFraction(pol policy.Policy) float64 {
 // draws its claims from its own sub-stream, so a change to one section never
 // moves another's draws. Claims are returned sorted by report date with
 // sequential IDs, resembling a claims system's registration order.
+//
+// A section draws a Poisson count of losses over the policy's cover, each
+// occurring on a uniform day of it, or on an events section a loss for each
+// event that hits the policy (see eventLosses).
 func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy) []Claim {
 	var claims []Claim
 	for _, pol := range book {
@@ -267,10 +279,19 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 			if s.holiday.Enabled() {
 				holiday = sectionStream.Split("seasonal-holiday")
 			}
-			n := sectionStream.Poisson(sec.BaseFrequency * pol.RiskFactor * exposed)
-			for seq := 1; seq <= n; seq++ {
-				if c, ok := s.simulateClaim(sectionStream, holiday, pol, i); ok {
-					c.Seq = seq
+			var spans []span
+			if sec.Events.Enabled() {
+				spans = s.eventLosses(sectionStream, pol, i)
+			} else {
+				first, days := s.occurrenceSpan(pol)
+				n := sectionStream.Poisson(sec.BaseFrequency * pol.RiskFactor * exposed)
+				for range n {
+					spans = append(spans, span{first, days})
+				}
+			}
+			for seq, sp := range spans {
+				if c, ok := s.simulateClaim(sectionStream, holiday, pol, i, sp); ok {
+					c.Seq = seq + 1
 					claims = append(claims, c)
 				}
 			}
@@ -291,6 +312,50 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 	return claims
 }
 
+// span is the days a loss can occur on: from first, for days days.
+type span struct {
+	first shared.Date
+	days  int
+}
+
+// eventLosses draws which of the section's events hit the policy, in event
+// order, from the policy's section stream, and returns the days each hit's
+// loss can occur on. Every event that overlaps the policy's occurrence span
+// takes one Bernoulli draw, hit or not, so a change to one event's chance
+// never moves the draws of the next. The chance is the hit share times the
+// risk factor, times the share of the event's days the policy is in force
+// for, capped at 1; summed over the year's events it gives the frequency
+// pricing assumes, PerYear x HitShare x risk factor per policy-year in force.
+// The loss occurs on one of the days of the event the policy is in force.
+func (s *ClaimSimulator) eventLosses(src shared.RandomSource, pol policy.Policy, section int) []span {
+	sec := s.params.Sections[section]
+	first, days := s.occurrenceSpan(pol)
+	end := first.AddDays(days)
+	var events []Event
+	if section < len(s.events) {
+		events = s.events[section]
+	}
+	var hits []span
+	for _, e := range events {
+		from, to := e.Start, e.End()
+		if from.Before(first) {
+			from = first
+		}
+		if end.Before(to) {
+			to = end
+		}
+		overlap := shared.DaysBetween(from, to)
+		if overlap <= 0 {
+			continue
+		}
+		p := math.Min(1, sec.Events.HitShare*pol.RiskFactor*float64(overlap)/float64(e.Days))
+		if src.Bernoulli(p) {
+			hits = append(hits, span{from, overlap})
+		}
+	}
+	return hits
+}
+
 // simulateClaim draws one claim in the given section; ok is false when the
 // ground-up loss does not exceed the excess, making the claim unreportable.
 // A section that takes no excess reports every loss.
@@ -301,14 +366,16 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 // holiday is the section's seasonal-holiday stream, nil when the holiday is
 // off. Every claim takes two draws from it, one for its report and one for
 // its close, so the holiday never moves a draw of src.
-func (s *ClaimSimulator) simulateClaim(src, holiday shared.RandomSource, pol policy.Policy, section int) (Claim, bool) {
+//
+// The loss occurs on a uniform day of occurs: the policy's occurrence span,
+// or the days of an event the policy was hit in.
+func (s *ClaimSimulator) simulateClaim(src, holiday shared.RandomSource, pol policy.Policy, section int, occurs span) (Claim, bool) {
 	uReport, uClose := 1.0, 1.0 // 1 never defers
 	if holiday != nil {
 		uReport, uClose = holiday.Uniform(), holiday.Uniform()
 	}
 	sec := s.params.Sections[section]
-	first, span := s.occurrenceSpan(pol)
-	occurrence := first.AddDays(int(src.Uniform() * float64(span)))
+	occurrence := occurs.first.AddDays(int(src.Uniform() * float64(occurs.days)))
 	lag := src.LogNormal(math.Log(sec.ReportLag.Median), sec.ReportLag.Sigma)
 	report := s.holiday.Defer(occurrence.AddDays(int(math.Round(lag))), uReport, s.holiday.ReportShare)
 	if s.rollReports {

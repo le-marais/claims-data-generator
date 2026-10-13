@@ -316,7 +316,7 @@ func TestRealismScoresTheUnionOfScoredSections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	all, err := application.SectionComparison(ds, req.StartYear, req.Years, []int{ownDamage, thirdPartyProperty, thirdPartyInjury})
+	all, err := application.SectionComparison(ds, req.StartYear, req.Years, []int{ownDamage, thirdPartyProperty, thirdPartyInjury, weather})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -80,11 +80,18 @@ type PricingParams struct {
 
 // PricingSectionParams mirrors lob.PricingSectionParams for YAML/JSON.
 type PricingSectionParams struct {
-	Name          string         `yaml:"name" json:"name"`
-	BaseFrequency float64        `yaml:"base_frequency" json:"base_frequency"`
-	Severity      SeverityParams `yaml:"severity" json:"severity"`
-	Limit         float64        `yaml:"limit" json:"limit"`
-	NoExcess      bool           `yaml:"no_excess" json:"no_excess"`
+	Name          string             `yaml:"name" json:"name"`
+	BaseFrequency float64            `yaml:"base_frequency" json:"base_frequency"`
+	Severity      SeverityParams     `yaml:"severity" json:"severity"`
+	Limit         float64            `yaml:"limit" json:"limit"`
+	NoExcess      bool               `yaml:"no_excess" json:"no_excess"`
+	Events        PricingEventParams `yaml:"events" json:"events"`
+}
+
+// PricingEventParams mirrors lob.PricingEventParams for YAML/JSON.
+type PricingEventParams struct {
+	PerYear  float64 `yaml:"per_year" json:"per_year"`
+	HitShare float64 `yaml:"hit_share" json:"hit_share"`
 }
 
 // ClaimsParams mirrors lob.ClaimParams for YAML/JSON.
@@ -107,6 +114,17 @@ type SectionParams struct {
 	CloseLag      CloseLagParams   `yaml:"close_lag" json:"close_lag"`
 	Settlement    SettlementParams `yaml:"settlement" json:"settlement"`
 	Recoveries    bool             `yaml:"recoveries" json:"recoveries"`
+	NoSubrogation bool             `yaml:"no_subrogation" json:"no_subrogation"`
+	Events        EventParams      `yaml:"events" json:"events"`
+}
+
+// EventParams mirrors lob.EventParams for YAML/JSON.
+type EventParams struct {
+	PerYear          float64 `yaml:"per_year" json:"per_year"`
+	HitShare         float64 `yaml:"hit_share" json:"hit_share"`
+	DurationDays     float64 `yaml:"duration_days" json:"duration_days"`
+	SeasonStartMonth float64 `yaml:"season_start_month" json:"season_start_month"`
+	SeasonMonths     float64 `yaml:"season_months" json:"season_months"`
 }
 
 // InflationParams mirrors lob.InflationParams for YAML/JSON.
@@ -308,6 +326,7 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 			Severity:      sec.Severity.toDomain(),
 			Limit:         sec.Limit,
 			NoExcess:      sec.NoExcess,
+			Events:        lob.PricingEventParams{PerYear: sec.Events.PerYear, HitShare: sec.Events.HitShare},
 		}
 	}
 	sections := make([]lob.SectionParams, len(d.Claims.Sections))
@@ -334,7 +353,15 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 				Share:              sec.Settlement.Share,
 				Concentration:      sec.Settlement.Concentration,
 			},
-			Recoveries: sec.Recoveries,
+			Recoveries:    sec.Recoveries,
+			NoSubrogation: sec.NoSubrogation,
+			Events: lob.EventParams{
+				PerYear:          sec.Events.PerYear,
+				HitShare:         sec.Events.HitShare,
+				DurationDays:     sec.Events.DurationDays,
+				SeasonStartMonth: sec.Events.SeasonStartMonth,
+				SeasonMonths:     sec.Events.SeasonMonths,
+			},
 		}
 	}
 	return lob.LineOfBusiness{

@@ -22,7 +22,7 @@ func pooledLossRatio(r application.SummaryReport) float64 {
 // the simulated inflation path, which pricing knows only by its mean, and
 // with each underwriting year's adequacy noise. Over seeds 1-40 the motor
 // preset at a 40k initial book landed between 0.93 and 1.08 times the target,
-// and the commercial motor preset at 15k fleets between 0.93 and 1.09; the
+// and the commercial motor preset at 15k fleets between 0.91 and 1.09; the
 // spread barely narrows with book size. +/-15% leaves room for a preset's
 // pricing and claims assumptions to drift apart by design.
 const presetLossRatioBand = 0.15
@@ -119,6 +119,7 @@ func TestMatchedPricingAbsorbsNilClaimsAndInflation(t *testing.T) {
 	base.Claims.Sections[ownDamage].BaseFrequency, base.Pricing.Sections[ownDamage].BaseFrequency = 0.12, 0.12
 	base.Claims.Sections[thirdPartyProperty].BaseFrequency, base.Pricing.Sections[thirdPartyProperty].BaseFrequency = 0, 0
 	base.Claims.Sections[thirdPartyInjury].BaseFrequency, base.Pricing.Sections[thirdPartyInjury].BaseFrequency = 0, 0
+	base.Claims.Sections[weather].Events, base.Pricing.Sections[weather].Events = lob.EventParams{}, lob.PricingEventParams{}
 	base.Claims.NilProbability, base.Pricing.NilProbability = 0, 0
 	base.Claims.Inflation = lob.InflationParams{Mean: 1, Volatility: 0}
 	base.Pricing.InflationMean = 1
