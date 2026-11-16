@@ -217,13 +217,13 @@ claims:
       limit: 100000
       no_excess: true
       # Demo: the slow peril. Reported late (median 40 days, sigma 1.4),
-      # settled in about 600 days, opening case about 75% of cost
-      # (case_adequacy_mean 1.3333, the true cost over the opening case).
+      # settled in about 600 days, opening case about 67% of cost
+      # (case_adequacy_mean 1.5, the true cost over the opening case).
       # The frequency change is an unpriced surge: 1.0 through 2006-01-01,
       # rising to 2.5 by 2006-12-31, so the last origin year is the one
       # a size-based chain ladder understates (claimsgen 2006 is shown as
       # 2025 in the app). Pricing keeps the original 0.010, hence unpriced.
-      case_adequacy_mean: 1.3333333333
+      case_adequacy_mean: 1.5
       frequency_changes:
         - {date: 2006-01-01, factor: 1.0}
         - {date: 2006-12-31, factor: 2.5}
