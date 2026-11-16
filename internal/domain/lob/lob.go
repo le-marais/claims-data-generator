@@ -239,6 +239,11 @@ type SectionParams struct {
 	// an events section it scales each policy's hit share and saturates at
 	// the probability cap of 1.
 	FrequencyChanges []FrequencyChange
+	// CaseAdequacyMean overrides runoff.case_adequacy_mean for this section's
+	// claims: the true cost over the opening case, which every case revision,
+	// reopened episodes included, then converges to parity from. It must be
+	// finite and not negative; 0 means absent and uses the runoff value.
+	CaseAdequacyMean float64
 }
 
 // FrequencyChange is one point of a frequency schedule: from Date the
@@ -731,6 +736,9 @@ func (s SectionParams) validate(prefix string) error {
 	}
 	if err := validateFrequencyChanges(prefix+".frequency_changes", s.FrequencyChanges); err != nil {
 		return err
+	}
+	if math.IsNaN(s.CaseAdequacyMean) || math.IsInf(s.CaseAdequacyMean, 0) || s.CaseAdequacyMean < 0 {
+		return fmt.Errorf("%s.case_adequacy_mean: must be finite and not negative, got %v", prefix, s.CaseAdequacyMean)
 	}
 	if !s.Active() {
 		return nil

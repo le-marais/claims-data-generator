@@ -118,6 +118,9 @@ type SectionParams struct {
 	Events        EventParams      `yaml:"events" json:"events"`
 	// FrequencyChanges is YAML-only: a list of dated points, not form fields.
 	FrequencyChanges []FrequencyChange `yaml:"frequency_changes,omitempty" json:"frequency_changes,omitempty"`
+	// CaseAdequacyMean overrides the runoff case adequacy mean for the section;
+	// 0 uses the runoff value.
+	CaseAdequacyMean float64 `yaml:"case_adequacy_mean,omitempty" json:"case_adequacy_mean,omitempty"`
 }
 
 // FrequencyChange mirrors lob.FrequencyChange for YAML/JSON.
@@ -345,6 +348,7 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 		}
 		sections[i] = lob.SectionParams{
 			FrequencyChanges: changes,
+			CaseAdequacyMean: sec.CaseAdequacyMean,
 			Name:             sec.Name,
 			BaseFrequency:    sec.BaseFrequency,
 			Severity:         sec.Severity.toDomain(),

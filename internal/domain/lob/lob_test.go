@@ -458,3 +458,20 @@ func TestSettlementShareIsNotRequiredForAlwaysLumpSum(t *testing.T) {
 		t.Errorf("fixed share 1: %v", err)
 	}
 }
+
+func TestSectionCaseAdequacyMeanValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		v    float64
+		ok   bool
+	}{
+		{"absent", 0, true}, {"positive", 1.3, true},
+		{"negative", -1, false}, {"nan", math.NaN(), false}, {"inf", math.Inf(1), false},
+	} {
+		l := validMotor()
+		l.Claims.Sections[0].CaseAdequacyMean = tc.v
+		if err := l.Validate(); (err == nil) != tc.ok {
+			t.Errorf("%s: validate error = %v, want ok=%v", tc.name, err, tc.ok)
+		}
+	}
+}

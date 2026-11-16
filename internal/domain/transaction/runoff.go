@@ -44,8 +44,10 @@ type RunoffSimulator struct {
 	params lob.RunoffParams
 	// settlement is each section's settlement, by section index.
 	settlement []lob.SettlementParams
-	holiday    lob.SeasonalHolidayParams
-	calendar   calendar.Calendar
+	// adequacy is each section's case adequacy mean, by section index.
+	adequacy []float64
+	holiday  lob.SeasonalHolidayParams
+	calendar calendar.Calendar
 }
 
 // NewRunoffSimulator builds a runoff simulator from the runoff parameters
@@ -56,7 +58,7 @@ func NewRunoffSimulator(p lob.RunoffParams, sections []lob.SectionParams) *Runof
 	for i, sec := range sections {
 		settlement[i] = sec.Settlement
 	}
-	return &RunoffSimulator{params: p, settlement: settlement}
+	return &RunoffSimulator{params: p, settlement: settlement, adequacy: adequacyMeans(p, sections)}
 }
 
 // WithSeasonalHoliday defers a share of the interim payments dated in the
@@ -133,7 +135,7 @@ func (s *RunoffSimulator) simulateClaim(src shared.RandomSource, c claim.Claim) 
 	}
 	for _, ep := range c.Episodes {
 		e.reviseTo(shared.DaysBetween(e.report, ep.Open), ep.OpeningCase)
-		s.runEpisode(src, holiday, e, ep, s.settlement[c.Section])
+		s.runEpisode(src, holiday, e, ep, s.settlement[c.Section], s.adequacy[c.Section])
 	}
 	return e.txs
 }
@@ -143,9 +145,9 @@ func (s *RunoffSimulator) simulateClaim(src shared.RandomSource, c claim.Claim) 
 // The case opens at about 1/CaseAdequacyMean of the truth (CaseEstimator), and
 // the bias closes geometrically to parity at close instead of vanishing at the
 // first revision, so incurred develops the way IBNER methods expect (SL-7). A
-// mean of 1 makes every revision unbiased.
-func (s *RunoffSimulator) adequacyBias(u float64) float64 {
-	return math.Pow(s.params.CaseAdequacyMean, u-1)
+// mean of 1 makes every revision unbiased. The mean is the claim section's.
+func (s *RunoffSimulator) adequacyBias(mean, u float64) float64 {
+	return math.Pow(mean, u-1)
 }
 
 // runEpisode develops one open-close episode: interim payments and pure
@@ -169,7 +171,7 @@ func (s *RunoffSimulator) adequacyBias(u float64) float64 {
 //
 // holiday, nil when the seasonal holiday is off, draws the interim payments'
 // deferrals.
-func (s *RunoffSimulator) runEpisode(src, holiday shared.RandomSource, e *emitter, ep claim.Episode, st lob.SettlementParams) {
+func (s *RunoffSimulator) runEpisode(src, holiday shared.RandomSource, e *emitter, ep claim.Episode, st lob.SettlementParams, adequacy float64) {
 	ultimate, isNil := ep.Ultimate, ep.Nil
 	base := shared.DaysBetween(e.report, ep.Open)
 	duration := shared.DaysBetween(ep.Open, ep.Close)
@@ -209,7 +211,7 @@ func (s *RunoffSimulator) runEpisode(src, holiday shared.RandomSource, e *emitte
 		if isNil {
 			return e.outstanding.Dollars()
 		}
-		return (ultimate - paid).Dollars() * s.adequacyBias(u)
+		return (ultimate - paid).Dollars() * s.adequacyBias(adequacy, u)
 	}
 	elapsed := func(offset int) float64 {
 		if duration == 0 {
@@ -227,7 +229,7 @@ func (s *RunoffSimulator) runEpisode(src, holiday shared.RandomSource, e *emitte
 		if rest <= 0 {
 			return p.amount
 		}
-		return p.amount + max(shared.OneCent, shared.FromDollars(rest.Dollars()*s.adequacyBias(elapsed(s.billOffset(ep.Open, p.offset)))))
+		return p.amount + max(shared.OneCent, shared.FromDollars(rest.Dollars()*s.adequacyBias(adequacy, elapsed(s.billOffset(ep.Open, p.offset)))))
 	}
 	for _, ev := range events {
 		switch ev.kind {

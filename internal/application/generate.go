@@ -86,7 +86,7 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 		WithSeasonalHoliday(req.LOB.SeasonalHoliday).
 		WithCalendar(cal).
 		Apply(src.Split("reopening"), claims)
-	claims = transaction.NewCaseEstimator(req.LOB.Runoff).
+	claims = transaction.NewCaseEstimator(req.LOB.Runoff, req.LOB.Claims.Sections).
 		Apply(src.Split("case-estimate"), claims)
 	if err := ctx.Err(); err != nil {
 		return Dataset{}, err
