@@ -337,7 +337,7 @@ claims:
 # day and no bill is raised and paid on the same day. Judgement values.
 runoff:
   case_adequacy_mean: 1.05
-  case_adequacy_sigma: 0.2
+  case_adequacy_sigma: 0.35
   payments_per_year: 2.5
   concentration: 4
   min_payment: 50
