@@ -6,6 +6,7 @@ package lob
 import (
 	"fmt"
 	"math"
+	"time"
 )
 
 type LineOfBusiness struct {
@@ -230,6 +231,22 @@ type SectionParams struct {
 	// with no at-fault third party to recover from, such as hail; salvage
 	// still applies. The zero value leaves subrogation to Recoveries.
 	NoSubrogation bool
+	// FrequencyChanges schedules a multiplier on the section's occurrence
+	// frequency over calendar time. Absent means 1 throughout. The factor is
+	// 1 before the first point, the last point's factor after the last, and
+	// linear in whole days between points. A factor may be 0. It changes
+	// occurrence only, never pricing, so the premium does not follow it. On
+	// an events section it scales each policy's hit share and saturates at
+	// the probability cap of 1.
+	FrequencyChanges []FrequencyChange
+}
+
+// FrequencyChange is one point of a frequency schedule: from Date the
+// frequency multiplier moves towards Factor.
+type FrequencyChange struct {
+	// Date is an ISO calendar date, YYYY-MM-DD. Dates must strictly increase.
+	Date   string
+	Factor float64
 }
 
 // EventParams switches a section to event-clustered claims. Each calendar
@@ -712,6 +729,9 @@ func (s SectionParams) validate(prefix string) error {
 	if err := s.Events.validate(prefix+".events", s.BaseFrequency); err != nil {
 		return err
 	}
+	if err := validateFrequencyChanges(prefix+".frequency_changes", s.FrequencyChanges); err != nil {
+		return err
+	}
 	if !s.Active() {
 		return nil
 	}
@@ -728,6 +748,30 @@ func (s SectionParams) validate(prefix string) error {
 		return err
 	}
 	return s.Settlement.validate(prefix + ".settlement")
+}
+
+// validateFrequencyChanges checks a frequency schedule: each date parses, the
+// dates strictly increase, and each factor is finite and not negative.
+func validateFrequencyChanges(prefix string, points []FrequencyChange) error {
+	var prev time.Time
+	for i, p := range points {
+		at := fmt.Sprintf("%s[%d]", prefix, i)
+		d, err := time.Parse("2006-01-02", p.Date)
+		if err != nil {
+			return fmt.Errorf("%s.date: must be a YYYY-MM-DD date, got %q", at, p.Date)
+		}
+		if i > 0 && !d.After(prev) {
+			return fmt.Errorf("%s.date: must be after the previous point's date, got %s", at, p.Date)
+		}
+		prev = d
+		if err := checkFinite(namedFloat{at + ".factor", p.Factor}); err != nil {
+			return err
+		}
+		if p.Factor < 0 {
+			return fmt.Errorf("%s.factor: must not be negative, got %v", at, p.Factor)
+		}
+	}
+	return nil
 }
 
 // checkEventRate checks the event rate and hit share an events block shares

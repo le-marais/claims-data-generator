@@ -162,11 +162,17 @@ type ClaimSimulator struct {
 	calendar     calendar.Calendar
 	rollReports  bool
 	events       EventSet
+	schedules    []*FrequencySchedule // per section; nil entry means no schedule
 }
 
 // NewClaimSimulator builds a claim simulator from the claim parameters.
 func NewClaimSimulator(p lob.ClaimParams) *ClaimSimulator {
-	return &ClaimSimulator{params: p}
+	schedules := make([]*FrequencySchedule, len(p.Sections))
+	for i, sec := range p.Sections {
+		// An invalid schedule is rejected by lob validation; here it is off.
+		schedules[i], _ = NewFrequencySchedule(sec.FrequencyChanges)
+	}
+	return &ClaimSimulator{params: p, schedules: schedules}
 }
 
 // WithInflation sets the occurrence-date inflation index. The zero-value
@@ -284,9 +290,15 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 				spans = s.eventLosses(sectionStream, pol, i)
 			} else {
 				first, days := s.occurrenceSpan(pol)
-				n := sectionStream.Poisson(sec.BaseFrequency * pol.RiskFactor * exposed)
+				mean := sec.BaseFrequency * pol.RiskFactor * exposed
+				weights := s.schedules[i]
+				if weights != nil {
+					coverDays := shared.DaysBetween(pol.CoverStart, pol.CoverEnd) + 1
+					mean = sec.BaseFrequency * pol.RiskFactor * weights.Sum(first, days) / float64(coverDays)
+				}
+				n := sectionStream.Poisson(mean)
 				for range n {
-					spans = append(spans, span{first, days})
+					spans = append(spans, span{first, days, weights})
 				}
 			}
 			for seq, sp := range spans {
@@ -316,6 +328,8 @@ func (s *ClaimSimulator) Simulate(src shared.RandomSource, book []policy.Policy)
 type span struct {
 	first shared.Date
 	days  int
+	// weights skews the occurrence day by a frequency schedule; nil is uniform.
+	weights *FrequencySchedule
 }
 
 // eventLosses draws which of the section's events hit the policy, in event
@@ -349,8 +363,15 @@ func (s *ClaimSimulator) eventLosses(src shared.RandomSource, pol policy.Policy,
 			continue
 		}
 		p := math.Min(1, sec.Events.HitShare*pol.RiskFactor*float64(overlap)/float64(e.Days))
+		weights := s.schedules[section]
+		if weights != nil {
+			// Saturates at the cap: doubling the factor need not double hits
+			// near p = 1. The draw is taken even when p is 0.
+			mean := weights.Sum(from, overlap) / float64(overlap)
+			p = math.Min(1, sec.Events.HitShare*pol.RiskFactor*float64(overlap)/float64(e.Days)*mean)
+		}
 		if src.Bernoulli(p) {
-			hits = append(hits, span{from, overlap})
+			hits = append(hits, span{from, overlap, weights})
 		}
 	}
 	return hits
@@ -375,7 +396,12 @@ func (s *ClaimSimulator) simulateClaim(src, holiday shared.RandomSource, pol pol
 		uReport, uClose = holiday.Uniform(), holiday.Uniform()
 	}
 	sec := s.params.Sections[section]
-	occurrence := occurs.first.AddDays(int(src.Uniform() * float64(occurs.days)))
+	u := src.Uniform()
+	offset := int(u * float64(occurs.days))
+	if occurs.weights != nil {
+		offset = occurs.weights.Pick(occurs.first, occurs.days, u)
+	}
+	occurrence := occurs.first.AddDays(offset)
 	lag := src.LogNormal(math.Log(sec.ReportLag.Median), sec.ReportLag.Sigma)
 	report := s.holiday.Defer(occurrence.AddDays(int(math.Round(lag))), uReport, s.holiday.ReportShare)
 	if s.rollReports {

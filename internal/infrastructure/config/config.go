@@ -116,6 +116,14 @@ type SectionParams struct {
 	Recoveries    bool             `yaml:"recoveries" json:"recoveries"`
 	NoSubrogation bool             `yaml:"no_subrogation" json:"no_subrogation"`
 	Events        EventParams      `yaml:"events" json:"events"`
+	// FrequencyChanges is YAML-only: a list of dated points, not form fields.
+	FrequencyChanges []FrequencyChange `yaml:"frequency_changes,omitempty" json:"frequency_changes,omitempty"`
+}
+
+// FrequencyChange mirrors lob.FrequencyChange for YAML/JSON.
+type FrequencyChange struct {
+	Date   string  `yaml:"date" json:"date"`
+	Factor float64 `yaml:"factor" json:"factor"`
 }
 
 // EventParams mirrors lob.EventParams for YAML/JSON.
@@ -331,12 +339,17 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 	}
 	sections := make([]lob.SectionParams, len(d.Claims.Sections))
 	for i, sec := range d.Claims.Sections {
+		var changes []lob.FrequencyChange
+		for _, c := range sec.FrequencyChanges {
+			changes = append(changes, lob.FrequencyChange{Date: c.Date, Factor: c.Factor})
+		}
 		sections[i] = lob.SectionParams{
-			Name:          sec.Name,
-			BaseFrequency: sec.BaseFrequency,
-			Severity:      sec.Severity.toDomain(),
-			Limit:         sec.Limit,
-			NoExcess:      sec.NoExcess,
+			FrequencyChanges: changes,
+			Name:             sec.Name,
+			BaseFrequency:    sec.BaseFrequency,
+			Severity:         sec.Severity.toDomain(),
+			Limit:            sec.Limit,
+			NoExcess:         sec.NoExcess,
 			ReportLag: lob.ReportLagParams{
 				Median: sec.ReportLag.Median,
 				Sigma:  sec.ReportLag.Sigma,

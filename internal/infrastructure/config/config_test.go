@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -376,5 +377,25 @@ func TestToDomainMapsEveryField(t *testing.T) {
 		if _, ok := want[path]; !ok {
 			t.Errorf("domain field %s has no config field of the same name", path)
 		}
+	}
+}
+
+// A frequency schedule shapes occurrence only: pricing, and so the premium,
+// is identical with and without it.
+func TestFrequencyChangesDoNotChangePricing(t *testing.T) {
+	plain, err := Preset("motor-personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	scheduled := plain
+	scheduled.Claims.Sections = slices.Clone(plain.Claims.Sections)
+	scheduled.Claims.Sections[0].FrequencyChanges = []lob.FrequencyChange{{Date: "2000-01-01", Factor: 2}}
+	if !reflect.DeepEqual(plain.Pricing, scheduled.Pricing) {
+		t.Fatal("pricing params changed with the schedule")
+	}
+	args := []float64{20000, 300, 1, 1, 1}
+	if a, b := plain.Pricing.ExpectedPolicyLoss(args[0], args[1], args[2], args[3], args[4]),
+		scheduled.Pricing.ExpectedPolicyLoss(args[0], args[1], args[2], args[3], args[4]); a != b {
+		t.Fatalf("expected loss %v vs %v", a, b)
 	}
 }
