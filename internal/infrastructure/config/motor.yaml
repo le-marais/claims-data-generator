@@ -75,7 +75,9 @@ pricing:
   nil_probability: 0.08
   reopen_probability: 0.04
   reopen_estimate_factor: 0.45
-  inflation_mean: 1.04
+  # Demo: 1.0, as the claims inflation below, so pricing does not trend
+  # ahead of flat claims.
+  inflation_mean: 1.0
 claims:
   # Sections of cover. Each draws its own claims per policy-year: a Poisson
   # count at base_frequency times the policy's risk factor, a ground-up loss
@@ -275,9 +277,13 @@ claims:
   # loss. Stochastic: each year's factor is `mean` times lognormal noise of
   # sigma `volatility`, compounded from 1.0 in the start year. The index sits
   # at each year's compounded value mid-year and moves smoothly between them.
+  # Demo: no claims inflation (mean 1, volatility 0). The Large threshold
+  # is nominal, so with inflation claims drift from Attritional into Large
+  # over the years and the size mix moves even without the surge, which
+  # biases the by-size reserve in the no-surge control.
   inflation:
-    mean: 1.04
-    volatility: 0.015
+    mean: 1.0
+    volatility: 0
   # Probability a reported claim closes without payment. 0 switches nil
   # claims off.
   nil_probability: 0.08
