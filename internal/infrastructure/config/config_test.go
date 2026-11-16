@@ -383,19 +383,22 @@ func TestToDomainMapsEveryField(t *testing.T) {
 // A frequency schedule shapes occurrence only: pricing, and so the premium,
 // is identical with and without it.
 func TestFrequencyChangesDoNotChangePricing(t *testing.T) {
-	plain, err := Preset("motor-personal")
+	params, err := PresetParams("motor-personal")
 	if err != nil {
 		t.Fatal(err)
 	}
-	scheduled := plain
-	scheduled.Claims.Sections = slices.Clone(plain.Claims.Sections)
-	scheduled.Claims.Sections[0].FrequencyChanges = []lob.FrequencyChange{{Date: "2000-01-01", Factor: 2}}
+	plain := params.ToDomain()
+	params.Claims.Sections = slices.Clone(params.Claims.Sections)
+	params.Claims.Sections[0].FrequencyChanges = []FrequencyChange{{Date: "2000-01-01", Factor: 2}}
+	scheduled := params.ToDomain()
+	if len(scheduled.Claims.Sections[0].FrequencyChanges) != 1 {
+		t.Fatal("the schedule did not reach the domain section")
+	}
 	if !reflect.DeepEqual(plain.Pricing, scheduled.Pricing) {
 		t.Fatal("pricing params changed with the schedule")
 	}
-	args := []float64{20000, 300, 1, 1, 1}
-	if a, b := plain.Pricing.ExpectedPolicyLoss(args[0], args[1], args[2], args[3], args[4]),
-		scheduled.Pricing.ExpectedPolicyLoss(args[0], args[1], args[2], args[3], args[4]); a != b {
+	if a, b := plain.Pricing.ExpectedPolicyLoss(20000, 300, 1, 1, 1),
+		scheduled.Pricing.ExpectedPolicyLoss(20000, 300, 1, 1, 1); a != b || a <= 0 {
 		t.Fatalf("expected loss %v vs %v", a, b)
 	}
 }
