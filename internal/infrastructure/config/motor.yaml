@@ -218,13 +218,13 @@ claims:
       # settled in about 600 days, opening case about 75% of cost
       # (case_adequacy_mean 1.3333, the true cost over the opening case).
       # The frequency change is an unpriced surge: 1.0 through 2006-01-01,
-      # rising to 1.5 by 2006-12-31, so the last origin year is the one
+      # rising to 2.5 by 2006-12-31, so the last origin year is the one
       # a size-based chain ladder understates (claimsgen 2006 is shown as
       # 2025 in the app). Pricing keeps the original 0.010, hence unpriced.
       case_adequacy_mean: 1.3333333333
       frequency_changes:
         - {date: 2006-01-01, factor: 1.0}
-        - {date: 2006-12-31, factor: 1.5}
+        - {date: 2006-12-31, factor: 2.5}
       report_lag: {median: 40, sigma: 1.4}
       close_lag:
         shape: 2.0
