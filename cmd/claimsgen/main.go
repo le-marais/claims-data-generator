@@ -44,6 +44,8 @@ generate flags:
   --section-detail         also write claim_sections.csv and
                            exposure_sections.csv, the section of cover of each
                            claim and the premium by origin month and section
+  --episodes               also write claim_episodes.csv, each claim's open and
+                           close dates per episode (a reopening is episode 2)
 
 ui flags:
   --port N                 port to listen on (default 8080)
@@ -81,6 +83,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	initialBookSize := fs.Int("initial-book-size", 20000, "policies in the first year")
 	originBasis := fs.String("origin-basis", "accident", "monthly triangle origin basis")
 	sectionDetail := fs.Bool("section-detail", false, "also write claim_sections.csv and exposure_sections.csv")
+	episodes := fs.Bool("episodes", false, "also write claim_episodes.csv")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -144,6 +147,13 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 			names[i] = sec.Name
 		}
 		if err := csvout.WriteSectionDetail(*out, names, ds, ag); err != nil {
+			fmt.Fprintf(stderr, "claimsgen: %v\n", err)
+			return 1
+		}
+	}
+
+	if *episodes {
+		if err := csvout.WriteEpisodes(*out, ds); err != nil {
 			fmt.Fprintf(stderr, "claimsgen: %v\n", err)
 			return 1
 		}
