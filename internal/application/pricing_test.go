@@ -31,6 +31,7 @@ const presetLossRatioBand = 0.15
 var lossRatioBookSize = map[string]int{
 	"motor-personal":   4000,
 	"motor-commercial": 1500,
+	"motor":            4000,
 }
 
 // Each preset's simulated loss ratio lands in a range around its target, not

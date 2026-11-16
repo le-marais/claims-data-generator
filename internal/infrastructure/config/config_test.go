@@ -232,7 +232,7 @@ func TestPresets(t *testing.T) {
 	for _, p := range Presets() {
 		got = append(got, p.ID+" "+p.Name)
 	}
-	want := []string{"motor-personal Motor personal", "motor-commercial Motor commercial"}
+	want := []string{"motor-personal Motor personal", "motor-commercial Motor commercial", "motor Motor segmentation demo"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Presets() = %v, want %v", got, want)
 	}

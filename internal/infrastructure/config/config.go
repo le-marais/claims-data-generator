@@ -23,6 +23,9 @@ var motorPersonalYAML []byte
 //go:embed motor-commercial.yaml
 var motorCommercialYAML []byte
 
+//go:embed motor.yaml
+var motorYAML []byte
+
 // LOBParams mirrors the domain structs so the domain stays free of yaml tags.
 // These exported types also serve as the JSON shape of the web API.
 
@@ -266,11 +269,13 @@ var thirdParty = []string{"third_party_property", "third_party_injury"}
 var presetInfos = []PresetInfo{
 	{ID: "motor-personal", Name: "Motor personal", Realism: application.RealismProfile{Line: application.PrivatePassengerAuto, Sections: thirdParty}},
 	{ID: "motor-commercial", Name: "Motor commercial", Realism: application.RealismProfile{Line: application.CommercialAuto, Sections: thirdParty}},
+	{ID: "motor", Name: "Motor segmentation demo", Realism: application.RealismProfile{Line: application.PrivatePassengerAuto, Sections: thirdParty}},
 }
 
 var presetYAML = map[string][]byte{
 	"motor-personal":   motorPersonalYAML,
 	"motor-commercial": motorCommercialYAML,
+	"motor":            motorYAML,
 }
 
 // Presets lists the embedded presets in display order.

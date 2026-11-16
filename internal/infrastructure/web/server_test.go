@@ -68,7 +68,7 @@ func TestLOBList(t *testing.T) {
 	want := []struct {
 		ID   string `json:"id"`
 		Name string `json:"name"`
-	}{{"motor-personal", "Motor personal"}, {"motor-commercial", "Motor commercial"}}
+	}{{"motor-personal", "Motor personal"}, {"motor-commercial", "Motor commercial"}, {"motor", "Motor segmentation demo"}}
 	if !reflect.DeepEqual(lobs, want) {
 		t.Fatalf("lobs = %+v, want %+v", lobs, want)
 	}

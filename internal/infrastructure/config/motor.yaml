@@ -1,0 +1,370 @@
+# Motor segmentation demo preset. It exists to demonstrate why reserving
+# by peril beats reserving by size: an unpriced third-party injury frequency
+# surge in the last year makes a size-based chain ladder understate recent
+# origins, while reserving by peril separates the slow injury claims. It is
+# motor-personal with the changes marked "Demo:" below; everything else is
+# as in that preset (see motor-personal.yaml for how each parameter works).
+# The two third-party sections are still scored against Schedule P private
+# passenger auto liability, so the injury and property lags are the slowest
+# that stay inside its bands (injury is still the slowest peril).
+# The preset is calibrated against Schedule P Part 1B, private passenger auto
+# liability (data/reference/schedule p/ppauto_pos98-07.csv, the 45
+# companies application.PersonalMotorCriteria selects). Part 1B covers
+# bodily injury and property damage liability, plus personal injury
+# protection, medical payments and uninsured motorist, which this product
+# does not carry. The preset registry (internal/infrastructure/config) scores
+# the two third-party sections, property damage and injury, together against
+# it: their claims against their share of premium, so their combined
+# development triangles fall within the reference's P5-P95 bands. The
+# reference has no physical damage in it, so own damage is not scored; its
+# settlement is set as a short-tail class instead of being bent to liability
+# speed.
+name: motor
+book:
+  growth_factor: 1.03
+  size_volatility: 0.06
+  spread: 0.4
+  sum_insured_median: 20000
+  sum_insured_inflation: 1.03
+  excess_choices:
+    - {value: 0, weight: 0.10}
+    - {value: 100, weight: 0.20}
+    - {value: 300, weight: 0.30}
+    - {value: 500, weight: 0.30}
+    - {value: 1000, weight: 0.10}
+# Pricing basis: the insurer's assumed loss cost, used only to set premium.
+# Independent of the claims block, which generates the true experience:
+# target_loss_ratio sets premium, and the realized loss ratio is emergent.
+# These assumptions start from the claims values (as below), so the loss
+# ratio lands around target_loss_ratio, moved by claim sampling and the
+# simulated inflation path; deviate them to model underpricing or adverse
+# experience. Each policy's assumed cost is trended at inflation_mean to the
+# middle of its cover.
+pricing:
+  target_loss_ratio: 0.72
+  # Each underwriting year's rates miss the target by mean-one lognormal
+  # noise of this sigma, as in an underwriting cycle, so cohort loss ratios
+  # scatter around the target. 0 switches it off. 0.03 is a modest default;
+  # real underwriting cycles are larger and persist across years.
+  adequacy_volatility: 0.03
+  # The assumed frequency and severity of each claims section below, by the
+  # same names and in the same order. Each section's premium is priced on
+  # its own assumption.
+  sections:
+    - name: own_damage
+      base_frequency: 0.096
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.12, sigma: 1.0}
+    # Each third-party section prices with the same limit as its claims
+    # section below.
+    - name: third_party_property
+      base_frequency: 0.030
+      severity: {kind: lognormal, median: 1800, sigma: 0.9}
+      limit: 50000
+      no_excess: true
+    - name: third_party_injury
+      base_frequency: 0.010
+      severity: {kind: lognormal_pareto, median: 5000, sigma: 1.1, scale: 30000, alpha: 1.8}
+      limit: 100000
+      no_excess: true
+    # Weather prices on its claims section's event model: 4 events a year
+    # hitting 0.35% of the book each is 0.014 claims per policy-year at risk
+    # factor 1, priced like a base_frequency of 0.014.
+    - name: weather
+      events: {per_year: 4, hit_share: 0.0035}
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.15, sigma: 0.8}
+  nil_probability: 0.08
+  reopen_probability: 0.04
+  reopen_estimate_factor: 0.45
+  inflation_mean: 1.04
+claims:
+  # Sections of cover. Each draws its own claims per policy-year: a Poisson
+  # count at base_frequency times the policy's risk factor, a ground-up loss
+  # from its severity, and its own report and close lags. base_frequency 0
+  # switches a section off. Losses that do not exceed the policy's excess
+  # are never reported, unless the section takes no excess (no_excess:
+  # true), as liability cover does: it pays every loss from the first
+  # dollar.
+  #
+  # severity kinds: sum_insured_lognormal is a lognormal fraction of the sum
+  # insured in start-year dollars, capped at the sum insured (a total loss);
+  # lognormal is a lognormal loss in start-year dollars with median and
+  # sigma; pareto is a Pareto loss in dollars; lognormal_pareto is a
+  # lognormal body (median, sigma) below scale and a Pareto tail (alpha)
+  # above it, joined so the density is continuous at scale, which sets the
+  # tail's share of losses. None of the last three has a cap of its own: a
+  # section's limit (below) caps what the policy pays.
+  #
+  # report_lag is the lognormal occurrence-to-report lag in days. close_lag
+  # is the gamma report-to-close lag: a claim costing size_reference in
+  # start-year dollars (deflated by the claims inflation index) settles in
+  # mean_days on average, and the mean scales by
+  # (size / size_reference)^size_elasticity and risk factor^risk_loading,
+  # so larger and riskier claims take longer, smoothly. A claim that pays
+  # stays open runoff.payment_delay_days longer, so its payment can be
+  # processed.
+  #
+  # limit is the most the policy pays on one claim, reopen included, in
+  # nominal dollars: a contract term, so claims inflation does not trend it.
+  # 0 or absent is unlimited. A sum_insured_lognormal section leaves it at 0,
+  # because its sum insured is its limit.
+  #
+  # settlement shapes how a paying claim's cost is paid. With chance
+  # lump_sum_probability it is paid in one settlement at close. Otherwise
+  # its interim payments (see runoff) share part of the cost and the final
+  # settlement pays the rest, a Beta-distributed share of the cost with mean
+  # share and concentration (0 fixes it at share). A claim that draws no
+  # interim payment is paid in one settlement too.
+  #
+  # recoveries: true makes the section's claims eligible for salvage and
+  # subrogation; no_subrogation: true then keeps salvage only, for a peril
+  # with no at-fault third party.
+  #
+  # events switches a section from each policy's own Poisson count to
+  # book-wide events, such as hail storms, and its base_frequency is then
+  # left out (0). Each year draws a Poisson number of events at per_year,
+  # each starting on a uniform day of the season (season_months from the
+  # first of season_start_month; season_months 0 is all year) and lasting
+  # duration_days. A policy in force through an event is hit with
+  # probability hit_share times its risk factor, scaled down by the share of
+  # the event's days it is not in force, and its loss occurs on one of the
+  # event's days; it then reports and settles like any other claim. So the
+  # section's frequency is per_year x hit_share x risk factor per
+  # policy-year, which is how pricing prices it, but its claims cluster on a
+  # few days a year. per_year 0 switches events off.
+  sections:
+    # Own damage: vehicle damage, sized off the sum insured, reported within
+    # days and settled in weeks. Its lags are judgement values, since no
+    # 10-year physical damage reference exists to score them against. A
+    # typical repair costs about size_reference and settles in about
+    # mean_days plus the payment delay; the size elasticity has a $20,000 write-off take about 1.6
+    # times as long. Most own-damage claims pay once, to the repairer or as
+    # the total-loss payout: lump_sum_probability 0.57 takes the share paying
+    # once from about 77% to about 90%. A claim paid in instalments mostly
+    # ends on a small balance, such as a towing bill or a supplementary
+    # invoice (share 0.25). Its settlement is judgement.
+    - name: own_damage
+      base_frequency: 0.096
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.12, sigma: 1.0}
+      # Demo: opens at true cost (case_adequacy_mean 1.0) and settles in
+      # about 60 days, the fastest peril, so peril mix drives development.
+      case_adequacy_mean: 1.0
+      report_lag: {median: 2, sigma: 1.2}
+      close_lag:
+        shape: 1.2
+        mean_days: 60
+        size_reference: 2000
+        size_elasticity: 0.2
+        risk_loading: 0.3
+      settlement: {lump_sum_probability: 0.57, share: 0.25, concentration: 4}
+      recoveries: true
+    # Third-party property damage: the other party's vehicle and property.
+    # The most common Schedule P Part 1B claim: reported within days, small,
+    # and settled in weeks to months. Median 1800 is a typical small property
+    # damage repair; mean_days 80 was set with injury's lags by calibration
+    # (see below). Liability takes no excess: the policy's excess is an
+    # own-damage term, and the third party is paid in full. Scored together
+    # with injury. The two third-party frequencies, 0.030 here and 0.010 for
+    # injury, give a liability cost of about $175 per policy-year, injury
+    # about half of it, and three property damage claims per injury claim.
+    # limit 50000 is a common property damage liability limit; it rarely
+    # binds at this severity. About three in four claims pay once
+    # (lump_sum_probability 0.28, from about 65%); the rest pay the repair
+    # and a separate bill, such as a hire car, and end on about 30% of the
+    # cost (share 0.3). Its settlement is judgement.
+    - name: third_party_property
+      base_frequency: 0.030
+      severity: {kind: lognormal, median: 1800, sigma: 0.9}
+      limit: 50000
+      no_excess: true
+      # Demo: reported in about 2 weeks, settled in about 120 days, opening
+      # case 15% short of cost (case_adequacy_mean 1.15), a middling peril.
+      case_adequacy_mean: 1.15
+      report_lag: {median: 14, sigma: 1.2}
+      close_lag:
+        shape: 1.2
+        mean_days: 120
+        size_reference: 2000
+        size_elasticity: 0.2
+        risk_loading: 0.3
+      settlement: {lump_sum_probability: 0.28, share: 0.3, concentration: 4}
+    # Third-party bodily injury: rarer, heavy-tailed, reported later (median
+    # 20 days, about 3.5% more than a year after the accident, so the reported
+    # counts and the incurred develop as late claims are reported) and
+    # settled slowly. Its lognormal_pareto severity has a body of small
+    # claims, about 20% under $2,000 and a median near $5,000, and a Pareto
+    # tail from $30,000 holding about 5% of claims; the average claim is
+    # about $9,300 under the limit. Liability takes no excess.
+    # Its lags carry the later-age development of the Schedule P reference:
+    # property damage's mean_days 80, and close_lag shape 2.0 and mean_days
+    # 650 here, were set by calibration against the 45-company pool. They
+    # keep paid development at ages 1-4 off the pool's fast edge, and the
+    # factors at age 9-10 inside their bands, across seeds 1-30.
+    # size_reference 10000 is a typical injury claim's cost.
+    # base_frequency 0.010 is set with property damage's (see above). limit
+    # 100000 is a common per-person bodily injury limit on US personal auto
+    # (the 100 in 100/300); it stops single claims in the millions that
+    # personal auto limits do not pay.
+    # An injury claim pays as treatment and lost earnings come in and ends
+    # on its largest payment, the settlement of general damages, at about
+    # 60% of the cost (share 0.6); none is a lump sum by rule. Its settlement
+    # is judgement.
+    # Re-run the realism gate after any change to either third-party section.
+    - name: third_party_injury
+      base_frequency: 0.010
+      severity: {kind: lognormal_pareto, median: 5000, sigma: 1.1, scale: 30000, alpha: 1.8}
+      limit: 100000
+      no_excess: true
+      # Demo: the slow peril. Reported late (median 40 days, sigma 1.4),
+      # settled in about 600 days, opening case about 75% of cost
+      # (case_adequacy_mean 1.3333, the true cost over the opening case).
+      # The frequency change is an unpriced surge: 1.0 through 2006-01-01,
+      # rising to 1.5 by 2006-12-31, so the last origin year is the one
+      # a size-based chain ladder understates (claimsgen 2006 is shown as
+      # 2025 in the app). Pricing keeps the original 0.010, hence unpriced.
+      case_adequacy_mean: 1.3333333333
+      frequency_changes:
+        - {date: 2006-01-01, factor: 1.0}
+        - {date: 2006-12-31, factor: 1.5}
+      report_lag: {median: 40, sigma: 1.4}
+      close_lag:
+        shape: 2.0
+        mean_days: 600
+        size_reference: 10000
+        size_elasticity: 0.25
+        risk_loading: 0.3
+      settlement: {lump_sum_probability: 0, share: 0.6, concentration: 4}
+    # Weather: hail and storm damage to the insured vehicle, in events. Own
+    # damage stays at collision and the other perils, so weather adds to it.
+    # 4 events a year (Poisson), each lasting 3 days and starting in the
+    # April-September hail season, and each hitting 0.35% of the book at risk
+    # factor 1: 0.014 claims per policy-year, about 15% of own damage's
+    # 0.096, so weather is material but not dominant, and each event brings a
+    # spike of claims into one or two origin months. A typical hail repair is
+    # about $3,000, 15% of the median $20,000 vehicle (sigma 0.8, so a few
+    # vehicles are written off at their sum insured); the policy's excess
+    # applies. Reported within days (median 4, a little slower than own
+    # damage as policyholders wait out the storm) and settled in weeks, a
+    # little slower than own damage (mean_days 50) as a storm's claims queue
+    # for assessors. Most pay once, to the repairer. A written-off vehicle
+    # yields salvage like own damage's, but hail has no at-fault third party
+    # to subrogate against (no_subrogation). All judgement values: the
+    # Schedule P reference has no physical damage, so weather is not scored.
+    - name: weather
+      events:
+        per_year: 4
+        hit_share: 0.0035
+        duration_days: 3
+        # Demo: events all year (season_months 0), so weather volume does
+        # not follow a hail season in the segmentation demo.
+        season_months: 0
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.15, sigma: 0.8}
+      # Demo: opening case 5% short of cost and settlement in about 200
+      # days, a storm backlog slower than own damage.
+      case_adequacy_mean: 1.05
+      report_lag: {median: 4, sigma: 1.0}
+      close_lag:
+        shape: 1.2
+        mean_days: 200
+        size_reference: 3000
+        size_elasticity: 0.2
+        risk_loading: 0.3
+      settlement: {lump_sum_probability: 0.6, share: 0.25, concentration: 4}
+      recoveries: true
+      no_subrogation: true
+  # Claims inflation applied by occurrence date to every claim's ground-up
+  # loss. Stochastic: each year's factor is `mean` times lognormal noise of
+  # sigma `volatility`, compounded from 1.0 in the start year. The index sits
+  # at each year's compounded value mid-year and moves smoothly between them.
+  inflation:
+    mean: 1.04
+    volatility: 0.015
+  # Probability a reported claim closes without payment. 0 switches nil
+  # claims off.
+  nil_probability: 0.08
+  # Recoveries: money coming back after close on claims in a section with
+  # recoveries: true. Salvage sells the insured vehicle's wreck; subrogation
+  # recovers the payout from an at-fault third party. Each recovery is a
+  # Beta-distributed share of the claim's gross paid, received a lognormal
+  # lag after close. probability 0 switches a recovery type off, and the
+  # other fields of that type may then be left out.
+  recoveries:
+    # Salvage only on total losses, where the vehicle is written off and its
+    # wreck sold: most total losses yield it, at about a fifth of the payout.
+    salvage:
+      probability: 0.90
+      mean_share: 0.20
+      concentration: 10
+      lag_median_days: 21
+      lag_sigma: 0.5
+    subrogation:
+      probability: 0.20
+      mean_share: 0.80
+      concentration: 10
+      lag_median_days: 180
+      lag_sigma: 0.7
+  # Reopening: a closed claim can reopen once - the case is re-raised a
+  # lognormal lag after the first close, a second episode develops and pays
+  # an additional amount (`estimate_factor` times the claim's ultimate, with
+  # lognormal noise, capped on a sum-insured section at the cover left), then
+  # the claim closes for good. claims.csv shows the final close date.
+  # probability 0 switches reopening off, and the other fields may then be
+  # left out.
+  reopening:
+    probability: 0.04
+    estimate_factor: 0.45
+    estimate_sigma: 0.5
+    lag_median_days: 90
+    lag_sigma: 0.7
+# Case runoff. The claim's true cost is fixed in the claims stage; the case
+# adequacy knobs only set the case estimate it opens at (ultimate over the
+# expected opening case, and the noise on each estimate), so they move
+# reserves and incurred development, never the loss cost. The bias decays
+# over each claim's life, reaching parity at close, so incurred development
+# carries a persistent signal for IBNER methods to find. 1.05 opens cases
+# about 5% deficient, so incurred develops a little upward as cases
+# strengthen, the shape Schedule P Part 1B's case incurred shows (a median
+# factor of about 1.12 from age 1 to 2); it also keeps the incurred factor
+# at age 2-3 off the pool's low edge.
+# Interim payments fall at a Poisson rate of payments_per_year while a claim
+# is open, unless its section's settlement makes it a lump sum, and share
+# what the settlement leaves by Dirichlet weights. concentration 4 splits it
+# fairly evenly, where 1 often left one payment a few dollars, and
+# min_payment 50 holds a smaller payment over to the next and keeps the final
+# settlement from being a token amount.
+# payment_delay_days 7, about five working days, is the fewest days from an
+# event that raises the case - the report, a reopen, a revision up, or a bill
+# above the case - to a payment, so no claim is reported and paid the next
+# day and no bill is raised and paid on the same day. Judgement values.
+runoff:
+  case_adequacy_mean: 1.05
+  case_adequacy_sigma: 0.35
+  payments_per_year: 2.5
+  concentration: 4
+  min_payment: 50
+  payment_delay_days: 7
+  revisions_per_year: 4
+  revision_sigma: 0.3
+# Summer holiday slowdown. A share of the reports and reopens, and of the
+# payments, dated from 15 July to 14 August (northern; southern is 15
+# December to 14 January) move to the same day of the next month, on top of
+# that month's own; a deferred report or reopen moves the rest of the claim
+# back with it, and a deferred final settlement moves the close. The book is
+# a US Schedule P line, so it takes the northern summer. The shares are
+# judgement values, set high enough that the slowdown is plain in monthly
+# triangles and in single claim ledgers: Schedule P is annual and says
+# nothing about monthly timing. "none" switches it off.
+seasonal_holiday:
+  # Demo: holiday slowdown off (none), so monthly development shows peril
+  # speed alone.
+  hemisphere: none
+  report_share: 0.50
+  payment_share: 0.60
+# Business days. Claims are processed on US federal business days: every
+# case estimate, payment, close, reopen and recovery rolls to the next
+# business day, and a claim reported at a weekend or on a holiday is opened
+# on the next one. Reports keep the day they are made - policyholders report
+# motor claims at weekends - so roll_reports is off. The calendar is "none"
+# (off), "weekends", "us", "uk" or "za".
+business_days:
+  calendar: us
+  roll_reports: false

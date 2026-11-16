@@ -90,6 +90,8 @@ var gateBookSize = map[string]int{
 	"motor-personal": 100000,
 	// 30k fleets is about 125k vehicles a year; every seed of 1-30 passes.
 	"motor-commercial": 30000,
+	// Same pool and book size as motor-personal.
+	"motor": 100000,
 }
 
 // TestPresetsAreRealistic is the realism gate: data generated with each
@@ -277,6 +279,7 @@ const systematicDriftTolerance = 0.035
 var driftBookSize = map[string]int{
 	"motor-personal":   40000,
 	"motor-commercial": 18000,
+	"motor":            40000,
 }
 
 // MR-13: the realism report scores drift against the reference companies'
@@ -294,6 +297,11 @@ func TestPresetHasNoSystematicLossRatioDrift(t *testing.T) {
 			req := presetRequest(t, p.ID, book)
 			req.LOB.Claims.Inflation.Volatility = 0
 			req.LOB.Pricing.AdequacyVolatility = 0
+			// The motor demo's unpriced frequency surge is deliberate drift, so
+			// it is scored on its no-surge control; no other preset has changes.
+			for i := range req.LOB.Claims.Sections {
+				req.LOB.Claims.Sections[i].FrequencyChanges = nil
+			}
 
 			if d := pooledLiabilityDrift(t, p.ID, req, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}); math.Abs(d-1) > systematicDriftTolerance {
 				t.Errorf("noise-free loss-ratio drift %.4f, want within %.3f of 1", d, systematicDriftTolerance)

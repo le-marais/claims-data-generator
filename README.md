@@ -26,7 +26,7 @@ go build ./cmd/claimsgen
 ./claimsgen generate
 ```
 
-That generates a personal motor book (10 calendar years from 1998, 20,000 policies in year one) into `./output/` using the embedded `motor-personal` preset. Two presets are embedded: `motor-personal`, a personal motor book, and `motor-commercial`, a commercial motor book of fleets. Options:
+That generates a personal motor book (10 calendar years from 1998, 20,000 policies in year one) into `./output/` using the embedded `motor-personal` preset. Three presets are embedded: `motor-personal`, a personal motor book, `motor-commercial`, a commercial motor book of fleets, and `motor`, a segmentation demo (personal motor with an unpriced third-party injury surge, so reserving by peril beats reserving by size). Options:
 
 ```
 claimsgen generate \
@@ -487,6 +487,7 @@ loss reserving database (accident years 1998-2007; see
   includes bodily injury and property damage liability, personal injury
   protection, medical payments and uninsured motorist; the preset carries no
   first-party injury cover.
+- `motor` against the same Part 1B reference as `motor-personal`, on its two third-party sections.
 - `motor-commercial` against Schedule P Part 1C, commercial auto/truck
   liability/medical (`data/reference/schedule p/comauto_pos_98-07.csv`).
 

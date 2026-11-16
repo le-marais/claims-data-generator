@@ -31,8 +31,8 @@ Commands:
   ui          serve the browser UI on localhost
 
 generate flags:
-  --preset ID              embedded line of business: motor-personal or
-                           motor-commercial (default motor-personal)
+  --preset ID              embedded line of business: motor-personal,
+                           motor-commercial or motor (default motor-personal)
   --config PATH            line of business YAML, instead of a preset
   --seed N                 master random seed (default 1)
   --out DIR                output directory (default ./output)
