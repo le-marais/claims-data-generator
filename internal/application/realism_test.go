@@ -79,6 +79,14 @@ func presetRequest(t *testing.T, id string, initialBookSize int) application.Gen
 	return application.GenerateRequest{LOB: l, StartYear: 1998, Years: 10, InitialBookSize: initialBookSize}
 }
 
+// clearFrequencyChanges removes every section's occurrence frequency
+// schedule, leaving the no-surge control. Only the motor demo preset has one.
+func clearFrequencyChanges(req *application.GenerateRequest) {
+	for i := range req.LOB.Claims.Sections {
+		req.LOB.Claims.Sections[i].FrequencyChanges = nil
+	}
+}
+
 // gateBookSize is each preset's initial book in the realism gate, big enough
 // that claim sampling noise in the late single-origin factors and in the
 // drift stays below the spread of its reference pool. A preset with no entry
@@ -90,6 +98,8 @@ var gateBookSize = map[string]int{
 	"motor-personal": 100000,
 	// 30k fleets is about 125k vehicles a year; every seed of 1-30 passes.
 	"motor-commercial": 30000,
+	// Same pool and book size as motor-personal.
+	"motor": 100000,
 }
 
 // TestPresetsAreRealistic is the realism gate: data generated with each
@@ -106,6 +116,8 @@ func TestPresetsAreRealistic(t *testing.T) {
 				t.Fatalf("no gate book size for preset %s", p.ID)
 			}
 			req := presetRequest(t, p.ID, book)
+			// The surge is the demo's deliberate unpriced scenario; the gate checks the model's realism.
+			clearFrequencyChanges(&req)
 			sections := scoredSections(t, p.ID, req.LOB)
 			refs := pools[p.Realism.Line].Refs
 			for _, seed := range []uint64{1, 42, 7} {
@@ -277,6 +289,7 @@ const systematicDriftTolerance = 0.035
 var driftBookSize = map[string]int{
 	"motor-personal":   40000,
 	"motor-commercial": 18000,
+	"motor":            40000,
 }
 
 // MR-13: the realism report scores drift against the reference companies'
@@ -294,6 +307,9 @@ func TestPresetHasNoSystematicLossRatioDrift(t *testing.T) {
 			req := presetRequest(t, p.ID, book)
 			req.LOB.Claims.Inflation.Volatility = 0
 			req.LOB.Pricing.AdequacyVolatility = 0
+			// The motor demo's unpriced frequency surge is deliberate drift, so
+			// it is scored on its no-surge control; no other preset has changes.
+			clearFrequencyChanges(&req)
 
 			if d := pooledLiabilityDrift(t, p.ID, req, []uint64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}); math.Abs(d-1) > systematicDriftTolerance {
 				t.Errorf("noise-free loss-ratio drift %.4f, want within %.3f of 1", d, systematicDriftTolerance)

@@ -109,6 +109,7 @@ var formFields = []fieldGroup{
 			{Path: []string{"settlement", "lump_sum_probability"}, Label: "Lump-sum probability", Tip: "Chance a paying claim pays its whole cost in one settlement at close; claims that draw no interim payments pay once too. 0 switches lump sums off."},
 			{Path: []string{"settlement", "share"}, Label: "Settlement share", Tip: "Mean fraction of the cost a claim with interim payments leaves for its final settlement."},
 			{Path: []string{"settlement", "concentration"}, Label: "Settlement concentration", Tip: "Beta concentration of each claim's settlement share around its mean; 0 fixes it."},
+			{Path: []string{"case_adequacy_mean"}, Label: "Case adequacy mean", Tip: "Section override of the runoff case adequacy mean: true cost over opening case. Blank or 0 uses the runoff value."},
 			{Path: []string{"events", "per_year"}, Label: "Events per year", Tip: "Mean book-wide events a year, such as hail storms; the section then draws a claim for each event that hits a policy, in place of its base frequency, which must be 0. 0 switches events off."},
 			{Path: []string{"events", "hit_share"}, Label: "Event hit share", Tip: "Share of the policies in force through an event that it hits, at risk factor 1; scaled by each policy's risk factor."},
 			{Path: []string{"events", "duration_days"}, Label: "Event duration days", Tip: "Whole days each event lasts; a hit claim occurs on one of them."},

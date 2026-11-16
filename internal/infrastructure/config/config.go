@@ -23,6 +23,9 @@ var motorPersonalYAML []byte
 //go:embed motor-commercial.yaml
 var motorCommercialYAML []byte
 
+//go:embed motor.yaml
+var motorYAML []byte
+
 // LOBParams mirrors the domain structs so the domain stays free of yaml tags.
 // These exported types also serve as the JSON shape of the web API.
 
@@ -116,6 +119,17 @@ type SectionParams struct {
 	Recoveries    bool             `yaml:"recoveries" json:"recoveries"`
 	NoSubrogation bool             `yaml:"no_subrogation" json:"no_subrogation"`
 	Events        EventParams      `yaml:"events" json:"events"`
+	// FrequencyChanges is YAML-only: a list of dated points, not form fields.
+	FrequencyChanges []FrequencyChange `yaml:"frequency_changes,omitempty" json:"frequency_changes,omitempty"`
+	// CaseAdequacyMean overrides the runoff case adequacy mean for the section;
+	// 0 uses the runoff value.
+	CaseAdequacyMean float64 `yaml:"case_adequacy_mean,omitempty" json:"case_adequacy_mean,omitempty"`
+}
+
+// FrequencyChange mirrors lob.FrequencyChange for YAML/JSON.
+type FrequencyChange struct {
+	Date   string  `yaml:"date" json:"date"`
+	Factor float64 `yaml:"factor" json:"factor"`
 }
 
 // EventParams mirrors lob.EventParams for YAML/JSON.
@@ -255,11 +269,13 @@ var thirdParty = []string{"third_party_property", "third_party_injury"}
 var presetInfos = []PresetInfo{
 	{ID: "motor-personal", Name: "Motor personal", Realism: application.RealismProfile{Line: application.PrivatePassengerAuto, Sections: thirdParty}},
 	{ID: "motor-commercial", Name: "Motor commercial", Realism: application.RealismProfile{Line: application.CommercialAuto, Sections: thirdParty}},
+	{ID: "motor", Name: "Motor segmentation demo", Realism: application.RealismProfile{Line: application.PrivatePassengerAuto, Sections: thirdParty}},
 }
 
 var presetYAML = map[string][]byte{
 	"motor-personal":   motorPersonalYAML,
 	"motor-commercial": motorCommercialYAML,
+	"motor":            motorYAML,
 }
 
 // Presets lists the embedded presets in display order.
@@ -331,12 +347,18 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 	}
 	sections := make([]lob.SectionParams, len(d.Claims.Sections))
 	for i, sec := range d.Claims.Sections {
+		var changes []lob.FrequencyChange
+		for _, c := range sec.FrequencyChanges {
+			changes = append(changes, lob.FrequencyChange{Date: c.Date, Factor: c.Factor})
+		}
 		sections[i] = lob.SectionParams{
-			Name:          sec.Name,
-			BaseFrequency: sec.BaseFrequency,
-			Severity:      sec.Severity.toDomain(),
-			Limit:         sec.Limit,
-			NoExcess:      sec.NoExcess,
+			FrequencyChanges: changes,
+			CaseAdequacyMean: sec.CaseAdequacyMean,
+			Name:             sec.Name,
+			BaseFrequency:    sec.BaseFrequency,
+			Severity:         sec.Severity.toDomain(),
+			Limit:            sec.Limit,
+			NoExcess:         sec.NoExcess,
 			ReportLag: lob.ReportLagParams{
 				Median: sec.ReportLag.Median,
 				Sigma:  sec.ReportLag.Sigma,

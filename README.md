@@ -15,6 +15,10 @@ With `--section-detail`, `generate` also writes two files that break the run dow
 - **claim_sections.csv** - one row per claim, in `claims.csv` order: `claim_id,section`, where `section` is the section's `name` in the line of business (for the presets `own_damage`, `third_party_property`, `third_party_injury` and `weather`)
 - **exposure_sections.csv** - one row per origin month and section: `origin_month,section,premium`, origin months in `exposure.csv` order and sections in the line of business's order. `premium` is the month's premium for that section on the run's origin basis, aggregated as `exposure.csv`'s premium is but from each policy's premium for the section. A policy's sections are each rounded to the cent, so for a month they add up to `exposure.csv`'s premium to within about a cent per policy in force, not exactly
 
+With `--episodes`, `generate` also writes (independently of `--section-detail`):
+
+- **claim_episodes.csv** - each claim's open and close dates per episode: `claim_id,episode,open_date,close_date`, in `claims.csv` order then episode order; a reopening is episode 2
+
 ## Quickstart
 
 ```
@@ -22,7 +26,7 @@ go build ./cmd/claimsgen
 ./claimsgen generate
 ```
 
-That generates a personal motor book (10 calendar years from 1998, 20,000 policies in year one) into `./output/` using the embedded `motor-personal` preset. Two presets are embedded: `motor-personal`, a personal motor book, and `motor-commercial`, a commercial motor book of fleets. Options:
+That generates a personal motor book (10 calendar years from 1998, 20,000 policies in year one) into `./output/` using the embedded `motor-personal` preset. Three presets are embedded: `motor-personal`, a personal motor book, `motor-commercial`, a commercial motor book of fleets, and `motor`, a segmentation demo (personal motor with an unpriced third-party injury surge, so reserving by peril beats reserving by size: injury frequency rises from x1.0 at 2006-01-01 to x2.5 at 2006-12-31 through `frequency_changes`, injury cases open at about 67% of true cost (`case_adequacy_mean` 1.5 under the inverse convention, set per section), and claims inflation, pricing inflation and the holiday window are off; its realism is scored on the no-surge control). Options:
 
 ```
 claimsgen generate \
@@ -34,7 +38,8 @@ claimsgen generate \
   --years 10 \                # number of calendar years
   --initial-book-size 20000 \ # policies written in the first year, or fleets on a fleet book
   --origin-basis accident \   # monthly origin: accident or underwriting
-  --section-detail            # also write claim_sections.csv and exposure_sections.csv
+  --section-detail \          # also write claim_sections.csv and exposure_sections.csv
+  --episodes                  # also write claim_episodes.csv
 ```
 
 ## Browser UI
@@ -150,13 +155,13 @@ Each year's book size is the previous year's size times a growth factor times ra
 
 ### Claim events
 
-Each section of each policy produces its claims independently, from its own block of `claims.sections`. Both presets have four sections: `own_damage`, the insured vehicle, `third_party_property`, damage to other people's vehicles and property, `third_party_injury`, bodily injury to others, and `weather`, hail and storm damage to the insured vehicle, which arrives in book-wide events (see "Loss events" below). The severity draw below fixes the claim's true ultimate cost; no later stage changes it, though a reopen adds a separate second amount.
+Each section of each policy produces its claims independently, from its own block of `claims.sections`. All three presets have four sections: `own_damage`, the insured vehicle, `third_party_property`, damage to other people's vehicles and property, `third_party_injury`, bodily injury to others, and `weather`, hail and storm damage to the insured vehicle, which arrives in book-wide events (see "Loss events" below). The severity draw below fixes the claim's true ultimate cost; no later stage changes it, though a reopen adds a separate second amount.
 
 ```mermaid
 %%{init: {"flowchart": {"wrappingWidth": 480}}}%%
 flowchart TD
-    count["each section: number of claims, Poisson<br/>base_frequency × risk factor<br/>× share of the cover inside the run window;<br/>an events section: one per event that hits the policy"]
-    occurrence["occurrence date:<br/>uniform over the cover inside the window,<br/>or over the event's days the policy is in force"]
+    count["each section: number of claims, Poisson<br/>base_frequency × risk factor<br/>× share of the cover inside the run window<br/>× mean frequency_changes factor over it, if set;<br/>an events section: one per event that hits the policy"]
+    occurrence["occurrence date:<br/>uniform over the cover inside the window, weighted by<br/>the frequency_changes factor if set,<br/>or over the event's days the policy is in force"]
     report["report date = occurrence + lognormal lag<br/>report_lag: median, sigma;<br/>in the holiday window, chance seasonal_holiday.report_share<br/>of moving to the same day next month;<br/>rolled to a business day with business_days.roll_reports"]
     kind{"severity kind?"}
     siLoss["sum_insured_lognormal: base-year sum insured<br/>× lognormal fraction, median median_fraction,<br/>sigma sigma"]
@@ -188,7 +193,9 @@ flowchart TD
     pierce -- "yes" --> ultimate --> limitCap --> closeDate --> nilFlag
 ```
 
-Losses that do not exceed the excess are never reported, so the reported frequency sits below `base_frequency`. A section with `no_excess: true` takes no excess and pays every loss from the first dollar, as liability cover usually does: both presets' two liability sections, so third parties are paid in full. In the presets, report lags are short for own damage and property damage and longer for injury claims, so there are claims incurred but not yet reported to estimate. Own-damage and property-damage claims settle in weeks to months. Injury claims are rarer and heavy-tailed - a lognormal body of small claims under a Pareto tail (`lognormal_pareto`), whose share of claims keeps the density continuous where the tail starts - and settle in a slow long-tail regime calibrated to each preset's Schedule P liability reference, so paid losses keep developing at later ages; commercial injury settles more slowly than personal. Property damage is a lognormal in start-year dollars. Injury and property damage are capped at their per-claim limits (`limit`: $100,000 and $50,000 in the personal preset, $1m on both in the commercial preset, as a combined single limit would), which cover a claim's whole life, reopen included. A limit is nominal, a contract term that claims inflation does not trend, so inflation erodes it over the years; a claim settled at its limit settles like a claim of the limit's size. In every section, settlement time lengthens smoothly with claim size. A share of reported claims are nil - they close without any payment at their first close.
+Losses that do not exceed the excess are never reported, so the reported frequency sits below `base_frequency`. A section with `no_excess: true` takes no excess and pays every loss from the first dollar, as liability cover usually does: every preset's two liability sections, so third parties are paid in full. In the presets, report lags are short for own damage and property damage and longer for injury claims, so there are claims incurred but not yet reported to estimate. Own-damage and property-damage claims settle in weeks to months. Injury claims are rarer and heavy-tailed - a lognormal body of small claims under a Pareto tail (`lognormal_pareto`), whose share of claims keeps the density continuous where the tail starts - and settle in a slow long-tail regime calibrated to each preset's Schedule P liability reference, so paid losses keep developing at later ages; commercial injury settles more slowly than personal. Property damage is a lognormal in start-year dollars. Injury and property damage are capped at their per-claim limits (`limit`: $100,000 and $50,000 in the personal preset, $1m on both in the commercial preset, as a combined single limit would), which cover a claim's whole life, reopen included. A limit is nominal, a contract term that claims inflation does not trend, so inflation erodes it over the years; a claim settled at its limit settles like a claim of the limit's size. In every section, settlement time lengthens smoothly with claim size. A share of reported claims are nil - they close without any payment at their first close.
+
+A section may set `frequency_changes`, an occurrence schedule of `date` and `factor` points. The factor is 1 before the first point, moves linearly in days between points and keeps the last point's factor afterwards. A section's Poisson mean uses the schedule's integral over the cover inside the window, and occurrence dates are drawn in proportion to the factor, so a rising schedule adds claims late in the window. The schedule is a change in the true process only: pricing never reads it, so it is unpriced experience, and a section without one is unchanged. On an events section it scales each event's hit probability by the schedule's mean factor over the event's overlap with the policy's cover, capped at 1. The `motor` preset uses it for an injury surge.
 
 ### Loss events
 
@@ -211,7 +218,7 @@ flowchart TD
     hit -- "yes" --> claimDraw
 ```
 
-A policy in force for a whole year expects `per_year × hit_share × risk factor` claims, which is how the `pricing` block's `events` prices the section. The events are drawn from the section's own root stream (`weather-events`) and the hits from the policy's own section stream, so adding an events section leaves every other section's claims and premium unchanged. In the presets weather has 4 events a year in the April-September hail season, each lasting 3 days and hitting 0.35% of the personal book, 0.3% of the commercial vehicles, at risk factor 1: 0.014 and 0.012 claims per policy-year, about 15% and 13% of own damage's frequency. Weather is sized off the sum insured like own damage, takes the policy's excess, reports within days and settles in weeks. A written-off vehicle yields salvage, but there is no at-fault third party to subrogate against (`no_subrogation: true`). Across seeds 1-30 of a 1998-2007 run (4,000 policies, 1,500 fleets) weather is about 9.5% of the personal preset's reported claims and 9.7% of its premium, and 7.8% and 6.7% of the commercial preset's. It is not scored for realism: Schedule P's auto lines have no physical damage.
+A policy in force for a whole year expects `per_year × hit_share × risk factor` claims, which is how the `pricing` block's `events` prices the section. The events are drawn from the section's own root stream (`weather-events`) and the hits from the policy's own section stream, so adding an events section leaves every other section's claims and premium unchanged. In the personal and commercial presets weather has 4 events a year in the April-September hail season (`motor` runs them all year), each lasting 3 days and hitting 0.35% of the personal book, 0.3% of the commercial vehicles, at risk factor 1: 0.014 and 0.012 claims per policy-year, about 15% and 13% of own damage's frequency. Weather is sized off the sum insured like own damage, takes the policy's excess, reports within days and settles in weeks. A written-off vehicle yields salvage, but there is no at-fault third party to subrogate against (`no_subrogation: true`). Across seeds 1-30 of a 1998-2007 run (4,000 policies, 1,500 fleets) weather is about 9.5% of the personal preset's reported claims and 9.7% of its premium, and 7.8% and 6.7% of the commercial preset's. It is not scored for realism: Schedule P's auto lines have no physical damage.
 
 Claims inflation is a stochastic path: each calendar year's factor is a mean level (a per-line-of-business knob) times lognormal noise, compounding from the start year and drawn from its own labelled sub-stream so it stays reproducible and independent of the other stages. The index sits at each year's compounded value in the middle of the year and moves smoothly between years rather than stepping each 1 January.
 
@@ -263,7 +270,7 @@ flowchart TD
     nextEvent -- "close date" --> settle
 ```
 
-The claim opens at a case estimate drawn around its ultimate - `case_adequacy_mean` sets whether cases open deficient or redundant, which moves reserves and incurred development but never the loss cost - payments split the ultimate over the claim's life, and the case estimate is a noisy view of the remaining cost that settles as the claim ages. The opening bias decays over the claim's life rather than vanishing at the first revision, so incurred keeps developing in one direction - upward in both presets, whose cases open deficient - for incurred-based and IBNER methods to pick up. A nil episode draws revisions but no payments: its handler, who does not know it will pay nothing, revises the case around its current level, and the case is released to zero at close. A reopened claim's second episode opens at a reopen estimate drawn the same way as the opening case, and runs the same loop on the reopen's additional cost.
+The claim opens at a case estimate drawn around its ultimate - `case_adequacy_mean` (the `runoff` default, which a section may override with its own `case_adequacy_mean`, applying to its opening cases and every revision, reopens included) sets whether cases open deficient or redundant, which moves reserves and incurred development but never the loss cost - payments split the ultimate over the claim's life, and the case estimate is a noisy view of the remaining cost that settles as the claim ages. The opening bias decays over the claim's life rather than vanishing at the first revision, so incurred keeps developing in one direction - upward in the personal and commercial presets, whose cases open deficient - for incurred-based and IBNER methods to pick up. A nil episode draws revisions but no payments: its handler, who does not know it will pay nothing, revises the case around its current level, and the case is released to zero at close. A reopened claim's second episode opens at a reopen estimate drawn the same way as the opening case, and runs the same loop on the reopen's additional cost.
 
 How a claim is paid follows its section's `settlement`. With chance `lump_sum_probability` a paying episode is paid in one settlement at close, and so is one that draws no interim payment. Otherwise the final settlement is a Beta-distributed share of the cost, with mean `share`, and the interim payments split the rest. In the presets about nine in ten own-damage claims and three in four property damage claims pay once; one paid in instalments ends on a small balance, about a quarter of its cost on average. Injury claims rarely pay once and usually end on their largest payment, a settlement of about 60% of the cost on average. An interim payment below `min_payment` is held over to the next, and the final settlement has the same floor: when the instalments would leave less than `min_payment` for close, the last one is paid with the settlement instead.
 
@@ -296,7 +303,7 @@ Claims handling slows over the summer holiday. The `seasonal_holiday` block take
 - A report in the window moves with chance `report_share`. The close lag runs from the report, so the claim's whole timeline moves back with it. A reopen in the window moves the same way, and its episode with it, so fewer claims reopen during the holiday and more just after it.
 - A payment in the window moves with chance `payment_share`: an interim payment, or a final settlement together with the close date it lands on. A nil claim's close pays nothing and stays. An interim payment moved past the claim's last day for one is paid with the final settlement instead.
 
-A moved date always lands outside the window, so nothing moves twice, and no claim's cost changes. Both presets use the northern summer, with half of reports and reopens and 60% of payments moved, so the slowdown is plain in monthly triangles and in single claim ledgers; these are judgement values, since Schedule P is annual and says nothing about months. Northern moves stay within the calendar year, so they show in the monthly triangles and leave the annual ones almost unchanged. Southern moves from late December cross the year end.
+A moved date always lands outside the window, so nothing moves twice, and no claim's cost changes. The personal and commercial presets use the northern summer (`motor` has it off), with half of reports and reopens and 60% of payments moved, so the slowdown is plain in monthly triangles and in single claim ledgers; these are judgement values, since Schedule P is annual and says nothing about months. Northern moves stay within the calendar year, so they show in the monthly triangles and leave the annual ones almost unchanged. Southern moves from late December cross the year end.
 
 ### Business days
 
@@ -305,7 +312,7 @@ Claims are processed on business days. With a `business_days.calendar`, every tr
 - `calendar`: `none` (the default, off), `weekends` (Saturday and Sunday only), `us` (US federal holidays), `uk` (England and Wales bank holidays) or `za` (South African public holidays). Holidays come from each market's rules, with its weekend substitutes; one-off holidays, such as royal events or election days, and bank holidays moved in a particular year are not modelled.
 - `roll_reports`: off, a report keeps the day it is made, and a claim reported at a weekend or on a holiday is opened, with its case, on the next business day; on, the report date itself moves to the next business day. `claims.csv` shows the report date; the claim's first transaction is on the day it opens.
 
-The close lag runs from the day the claim opens. A payment's bill rolls back to the business day before, so every payment still comes at least `payment_delay_days` calendar days after the case was last raised. Interim payments and revisions roll before the hold-over rules apply, and a revision rolled onto the close is dropped. Rolling takes no random draws, so `none` reproduces the output without the block exactly. Both presets use `us`; the personal preset leaves reports on any day, as policyholders report motor claims at weekends, and the commercial preset rolls them, as fleets report through an office or broker. Weekend and holiday work lands on the next business day, so Mondays carry about two and a half days' processing.
+The close lag runs from the day the claim opens. A payment's bill rolls back to the business day before, so every payment still comes at least `payment_delay_days` calendar days after the case was last raised. Interim payments and revisions roll before the hold-over rules apply, and a revision rolled onto the close is dropped. Rolling takes no random draws, so `none` reproduces the output without the block exactly. All three presets use `us`; the personal preset leaves reports on any day, as policyholders report motor claims at weekends, and the commercial preset rolls them, as fleets report through an office or broker. Weekend and holiday work lands on the next business day, so Mondays carry about two and a half days' processing.
 
 ### Recoveries
 
@@ -434,7 +441,7 @@ same way at the end of the window.
 
 ## Parameters per line of business
 
-All behavior is driven by a YAML file mapped to the `LineOfBusiness` domain object - see `internal/infrastructure/config/motor-personal.yaml` and `motor-commercial.yaml` beside it for the annotated presets. The top-level blocks are `book`, `pricing`, `claims`, `runoff`, `seasonal_holiday` and `business_days` - `pricing` holds the insurer's assumed loss cost, kept separate from the `claims` block that generates the true experience. Both list the line's sections of cover under `sections`, by the same names in the same order: each claims section sets its own frequency, or the book-wide `events` it draws its claims from, severity, per-claim `limit`, whether it takes the excess (`no_excess`), report lag, close lag, how its claims are paid (`settlement`) and recovery eligibility (`recoveries`, `no_subrogation`). The YAML holds simulation parameters only. How a preset is scored for realism - its Schedule P line and the sections scored against it - is its realism profile, registered beside it in the preset registry in `internal/infrastructure/config/config.go`. A new short-tail class is a YAML file for the CLI (`generate --config my-lob.yaml` is pure YAML, no code changes); surfacing it as a UI preset also needs the YAML embedded and registered, with its realism profile, in the preset registry.
+All behavior is driven by a YAML file mapped to the `LineOfBusiness` domain object - see `internal/infrastructure/config/motor-personal.yaml` and `motor-commercial.yaml` beside it for the annotated presets. The top-level blocks are `book`, `pricing`, `claims`, `runoff`, `seasonal_holiday` and `business_days` - `pricing` holds the insurer's assumed loss cost, kept separate from the `claims` block that generates the true experience. Both list the line's sections of cover under `sections`, by the same names in the same order: each claims section sets its own frequency, or the book-wide `events` it draws its claims from, severity, per-claim `limit`, whether it takes the excess (`no_excess`), report lag, close lag, how its claims are paid (`settlement`) and recovery eligibility (`recoveries`, `no_subrogation`), an optional occurrence schedule (`frequency_changes`) and an optional case adequacy mean (`case_adequacy_mean`). The YAML holds simulation parameters only. How a preset is scored for realism - its Schedule P line and the sections scored against it - is its realism profile, registered beside it in the preset registry in `internal/infrastructure/config/config.go`. A new short-tail class is a YAML file for the CLI (`generate --config my-lob.yaml` is pure YAML, no code changes); surfacing it as a UI preset also needs the YAML embedded and registered, with its realism profile, in the preset registry.
 
 ## Assumptions and known simplifications
 
@@ -482,6 +489,7 @@ loss reserving database (accident years 1998-2007; see
   includes bodily injury and property damage liability, personal injury
   protection, medical payments and uninsured motorist; the preset carries no
   first-party injury cover.
+- `motor` against the same Part 1B reference as `motor-personal`, on its two third-party sections.
 - `motor-commercial` against Schedule P Part 1C, commercial auto/truck
   liability/medical (`data/reference/schedule p/comauto_pos_98-07.csv`).
 
@@ -536,7 +544,7 @@ alike, and the generator models no market cycle, so the band keeps the spread
 between companies and leaves out the level they share. A separate test
 (`TestPresetHasNoSystematicLossRatioDrift`) switches the model's inflation and
 pricing noise off and requires the loss ratio to stay flat, which catches
-systematic drift such as pricing and claims inflation trending apart.
+systematic drift such as pricing and claims inflation trending apart. The `motor` preset's injury surge is deliberate, unpriced drift, so both tests score it on its no-surge control, the preset with `frequency_changes` cleared.
 
 ## Development
 

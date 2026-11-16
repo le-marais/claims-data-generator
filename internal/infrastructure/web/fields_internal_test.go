@@ -12,8 +12,9 @@ import (
 
 // numericPaths lists the json path of every float64 leaf in a config struct.
 // A section list's elements are written as "[]", so a section field's path
-// reads like claims.sections.[].base_frequency. The excess choices are a
-// table, not form fields, so they are skipped.
+// reads like claims.sections.[].base_frequency. The excess choices and the
+// sections' frequency_changes are YAML-only lists, not form fields, so they
+// are skipped.
 func numericPaths(t reflect.Type, prefix []string, out *[]string) {
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
@@ -22,7 +23,7 @@ func numericPaths(t reflect.Type, prefix []string, out *[]string) {
 		case reflect.Struct:
 			numericPaths(f.Type, path, out)
 		case reflect.Slice:
-			if f.Type.Elem().Kind() == reflect.Struct && strings.Join(path, ".") != "book.excess_choices" {
+			if f.Type.Elem().Kind() == reflect.Struct && strings.Join(path, ".") != "book.excess_choices" && f.Name != "FrequencyChanges" {
 				numericPaths(f.Type.Elem(), append(path, "[]"), out)
 			}
 		case reflect.Float64:

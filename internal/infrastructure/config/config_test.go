@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -231,7 +232,7 @@ func TestPresets(t *testing.T) {
 	for _, p := range Presets() {
 		got = append(got, p.ID+" "+p.Name)
 	}
-	want := []string{"motor-personal Motor personal", "motor-commercial Motor commercial"}
+	want := []string{"motor-personal Motor personal", "motor-commercial Motor commercial", "motor Motor segmentation demo"}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Presets() = %v, want %v", got, want)
 	}
@@ -376,5 +377,28 @@ func TestToDomainMapsEveryField(t *testing.T) {
 		if _, ok := want[path]; !ok {
 			t.Errorf("domain field %s has no config field of the same name", path)
 		}
+	}
+}
+
+// A frequency schedule shapes occurrence only: pricing, and so the premium,
+// is identical with and without it.
+func TestFrequencyChangesDoNotChangePricing(t *testing.T) {
+	params, err := PresetParams("motor-personal")
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain := params.ToDomain()
+	params.Claims.Sections = slices.Clone(params.Claims.Sections)
+	params.Claims.Sections[0].FrequencyChanges = []FrequencyChange{{Date: "2000-01-01", Factor: 2}}
+	scheduled := params.ToDomain()
+	if len(scheduled.Claims.Sections[0].FrequencyChanges) != 1 {
+		t.Fatal("the schedule did not reach the domain section")
+	}
+	if !reflect.DeepEqual(plain.Pricing, scheduled.Pricing) {
+		t.Fatal("pricing params changed with the schedule")
+	}
+	if a, b := plain.Pricing.ExpectedPolicyLoss(20000, 300, 1, 1, 1),
+		scheduled.Pricing.ExpectedPolicyLoss(20000, 300, 1, 1, 1); a != b || a <= 0 {
+		t.Fatalf("expected loss %v vs %v", a, b)
 	}
 }
