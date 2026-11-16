@@ -26,7 +26,7 @@ go build ./cmd/claimsgen
 ./claimsgen generate
 ```
 
-That generates a personal motor book (10 calendar years from 1998, 20,000 policies in year one) into `./output/` using the embedded `motor-personal` preset. Three presets are embedded: `motor-personal`, a personal motor book, `motor-commercial`, a commercial motor book of fleets, and `motor`, a segmentation demo (personal motor with an unpriced third-party injury surge, so reserving by peril beats reserving by size: injury frequency rises from x1.0 at 2006-01-01 to x2.5 at 2006-12-31 through `frequency_changes`, injury cases open at 1.5 times adequacy through a section `case_adequacy_mean`, and claims inflation and the holiday window are off; its realism is scored on the no-surge control). Options:
+That generates a personal motor book (10 calendar years from 1998, 20,000 policies in year one) into `./output/` using the embedded `motor-personal` preset. Three presets are embedded: `motor-personal`, a personal motor book, `motor-commercial`, a commercial motor book of fleets, and `motor`, a segmentation demo (personal motor with an unpriced third-party injury surge, so reserving by peril beats reserving by size: injury frequency rises from x1.0 at 2006-01-01 to x2.5 at 2006-12-31 through `frequency_changes`, injury cases open at about 67% of true cost (`case_adequacy_mean` 1.5 under the inverse convention, set per section), and claims inflation, pricing inflation and the holiday window are off; its realism is scored on the no-surge control). Options:
 
 ```
 claimsgen generate \
@@ -38,7 +38,7 @@ claimsgen generate \
   --years 10 \                # number of calendar years
   --initial-book-size 20000 \ # policies written in the first year, or fleets on a fleet book
   --origin-basis accident \   # monthly origin: accident or underwriting
-  --section-detail \         # also write claim_sections.csv and exposure_sections.csv
+  --section-detail \          # also write claim_sections.csv and exposure_sections.csv
   --episodes                  # also write claim_episodes.csv
 ```
 
