@@ -152,7 +152,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	if *episodes && len(ds.Binders) == 0 {
+	if *episodes {
 		if err := csvout.WriteEpisodes(*out, ds); err != nil {
 			fmt.Fprintf(stderr, "claimsgen: %v\n", err)
 			return 1

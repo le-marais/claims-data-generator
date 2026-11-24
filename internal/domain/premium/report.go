@@ -22,14 +22,15 @@ type Declaration struct {
 	Amount                             shared.Money
 }
 type Report struct {
-	Batches      []Batch
+	Batches []Batch
+	// A nil ledger means reporting is unavailable. An enabled empty ledger has zero movements.
 	Declarations []Declaration
 }
 
 // Generate records the full premium once, except when a clerical error needs
 // a later, linked correction. Processing time is shared by each monthly batch.
 func Generate(src shared.RandomSource, params lob.PremiumReportingParams, book []policy.Policy) Report {
-	var report Report
+	report := Report{Declarations: []Declaration{}}
 	batches := map[string]Batch{}
 	batch := func(p policy.Policy, month shared.Month) Batch {
 		id := fmt.Sprintf("%d-%s", p.BinderID, month)

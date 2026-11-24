@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/le-marais/claimsgen/internal/application"
@@ -20,17 +21,56 @@ func TestPropertyBinderExport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ds, err := application.GenerateDataset(t.Context(), random.NewSource(71), application.GenerateRequest{LOB: l, StartYear: 2017, Years: 3, InitialBookSize: 1200})
-	if err != nil {
-		t.Fatal(err)
-	}
-	dir := t.TempDir()
-	if err := csvout.WriteDataset(dir, ds); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"binders.csv", "policy_binders.csv", "premium_batches.csv", "premium_declarations.csv", "claim_episodes.csv"} {
-		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
+	for _, enabled := range []bool{false, true} {
+		l.PremiumReporting.Enabled = enabled
+		ds, err := application.GenerateDataset(t.Context(), random.NewSource(71), application.GenerateRequest{LOB: l, StartYear: 2017, Years: 1, InitialBookSize: 100})
+		if err != nil {
 			t.Fatal(err)
+		}
+		dir := t.TempDir()
+		if err := csvout.WriteDataset(dir, ds); err != nil {
+			t.Fatal(err)
+		}
+		ag, err := application.Aggregate(ds, 2017, 1, "binder")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := csvout.WriteAggregates(dir, ag); err != nil {
+			t.Fatal(err)
+		}
+		hasFile := func(name string) bool {
+			_, err := os.Stat(filepath.Join(dir, name))
+			if err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			return err == nil
+		}
+		for _, name := range []string{"binders.csv", "policy_binders.csv"} {
+			if !hasFile(name) {
+				t.Errorf("missing %s", name)
+			}
+		}
+		for _, name := range []string{"premium_batches.csv", "premium_declarations.csv"} {
+			if hasFile(name) != enabled {
+				t.Errorf("%s availability differs from reporting enabled=%v", name, enabled)
+			}
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, "triangles.csv"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		header, _, _ := strings.Cut(string(raw), "\n")
+		if strings.Contains(header, "declared_premium_cents") != enabled {
+			t.Errorf("unexpected premium series for reporting enabled=%v: %s", enabled, header)
+		}
+		if hasFile("claim_episodes.csv") {
+			t.Error("episodes exported without opt-in")
+		}
+		if err := csvout.WriteEpisodes(dir, ds); err != nil {
+			t.Fatal(err)
+		}
+		if !hasFile("claim_episodes.csv") {
+			t.Error("missing requested episodes")
 		}
 	}
 }

@@ -150,7 +150,7 @@ func BuildMonthlyGrid(
 		Reported:   newIntCells(originMonths, devPeriods),
 	}
 
-	if basis == BinderYear {
+	if basis == BinderYear && declarations != nil {
 		g.DeclaredPremiumCents = make([][]int64, originMonths)
 		for i := range g.DeclaredPremiumCents {
 			g.DeclaredPremiumCents[i] = make([]int64, devPeriods)
