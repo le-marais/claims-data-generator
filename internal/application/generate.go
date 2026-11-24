@@ -10,6 +10,7 @@ import (
 	"github.com/le-marais/claimsgen/internal/domain/claim"
 	"github.com/le-marais/claimsgen/internal/domain/lob"
 	"github.com/le-marais/claimsgen/internal/domain/policy"
+	"github.com/le-marais/claimsgen/internal/domain/premium"
 	"github.com/le-marais/claimsgen/internal/domain/shared"
 	"github.com/le-marais/claimsgen/internal/domain/transaction"
 )
@@ -24,6 +25,8 @@ type GenerateRequest struct {
 
 // Dataset is the generated output: three linked datasets.
 type Dataset struct {
+	Binders      []policy.Binder
+	Premium      premium.Report
 	Policies     []policy.Policy
 	Claims       []claim.Claim
 	Transactions []transaction.Transaction
@@ -58,24 +61,32 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 	if err != nil {
 		return Dataset{}, fmt.Errorf("business_days.calendar: %w", err)
 	}
-	book := policy.NewBookSimulator(req.LOB.Book, req.LOB.Pricing).
-		Simulate(src.Split("book"), req.StartYear, req.Years, req.InitialBookSize)
+	sim := policy.NewBookSimulator(req.LOB.Book, req.LOB.Pricing)
+	book := sim.Simulate(src.Split("book"), req.StartYear, req.Years, req.InitialBookSize)
 	if err := ctx.Err(); err != nil {
 		return Dataset{}, err
 	}
-	// Occurrences are constrained to the window (MF-2), so the inflation index
-	// only needs to span the window years.
-	inflation := claim.NewInflationIndex(src.Split("inflation"), req.LOB.Claims.Inflation, req.StartYear, req.Years)
-	// Events sections share one book-wide event set each, drawn over the
-	// window from its own root stream.
-	events := claim.DrawEvents(src, req.LOB.Claims.Sections, req.StartYear, req.Years)
+	horizon := req.Years
+	var binders []policy.Binder
+	var report premium.Report
+	if req.LOB.Book.AnnualBinders {
+		binders = sim.BinderPlans(src.Split("binder-plans"), req.StartYear, req.Years, req.InitialBookSize)
+		for _, p := range book {
+			horizon = max(horizon, p.CoverEnd.Year()-req.StartYear+1)
+		}
+	}
+	if req.LOB.PremiumReporting.Enabled {
+		report = premium.Generate(src.Split("premium-reporting"), req.LOB.PremiumReporting, book)
+	}
+	inflation := claim.NewInflationIndex(src.Split("inflation"), req.LOB.Claims.Inflation, req.StartYear, horizon)
+	events := claim.DrawEvents(src, req.LOB.Claims.Sections, req.StartYear, horizon)
 	// A paying claim stays open long enough for the runoff to keep its
 	// payments the payment delay after the case is raised.
 	delay := int(req.LOB.Runoff.PaymentDelayDays)
 	claims := claim.NewClaimSimulator(req.LOB.Claims).
 		WithInflation(inflation).
 		WithEvents(events).
-		WithWindow(req.StartYear, req.Years).
+		WithWindow(req.StartYear, horizon).
 		WithPaymentDelay(delay).
 		WithSeasonalHoliday(req.LOB.SeasonalHoliday).
 		WithBusinessDays(cal, req.LOB.BusinessDays.RollReports).
@@ -101,5 +112,5 @@ func GenerateDataset(ctx context.Context, src shared.RandomSource, req GenerateR
 	txs = transaction.NewRecoverySimulator(req.LOB.Claims).
 		WithCalendar(cal).
 		Apply(src.Split("recovery"), claims, txs)
-	return Dataset{Policies: book, Claims: claims, Transactions: txs}, nil
+	return Dataset{Binders: binders, Premium: report, Policies: book, Claims: claims, Transactions: txs}, nil
 }

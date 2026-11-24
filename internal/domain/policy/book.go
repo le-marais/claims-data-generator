@@ -15,7 +15,9 @@ import (
 // it is one vehicle on a fleet's contract, sharing the fleet's cover dates and
 // excess.
 type Policy struct {
-	ID int
+	BinderID   int
+	BinderYear int
+	ID         int
 	// FleetID is the fleet the vehicle is on. Without a fleet book every
 	// policy is its own fleet, and FleetID equals ID.
 	FleetID    int
@@ -146,9 +148,18 @@ func ProjectedSize(book lob.BookParams, years, initialSize int) float64 {
 // cover start, sum insured, risk factor and excess, in that order.
 func (s *BookSimulator) simulatePolicy(src shared.RandomSource, id int, uw underwritingYear) Policy {
 	start := drawStart(src, uw.year)
+	var binderID, binderYear int
+	if s.book.AnnualBinders {
+		attach := src.Split("binder-attachment")
+		b := annualBinder(uw.year, 1+int(attach.Uniform()*Coverholders))
+		start = b.Inception.AddDays(int(attach.Uniform() * float64(shared.DaysBetween(b.Inception, b.Expiry)+1)))
+		binderID, binderYear = b.ID, b.YearOfAccount
+	}
 	sumInsured, riskFactor := s.drawVehicle(src, uw.medianSI, 1)
 	excess := s.drawExcess(src)
-	return s.price(id, id, start, sumInsured, riskFactor, excess, uw)
+	p := s.price(id, id, start, sumInsured, riskFactor, excess, uw)
+	p.BinderID, p.BinderYear = binderID, binderYear
+	return p
 }
 
 // simulateFleet writes one fleet's vehicles onto the book. The fleet draws

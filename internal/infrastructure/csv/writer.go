@@ -67,12 +67,18 @@ func writeDataset(open opener, ds application.Dataset) error {
 		}); err != nil {
 		return err
 	}
-	return writeFile(open, "transactions.csv",
+	if err := writeFile(open, "transactions.csv",
 		"transaction_id,claim_id,date,type,amount",
 		len(ds.Transactions), func(i int) string {
 			tx := ds.Transactions[i]
 			return fmt.Sprintf("%d,%d,%s,%s,%s", tx.ID, tx.ClaimID, tx.Date, tx.Type, tx.Amount)
-		})
+		}); err != nil {
+		return err
+	}
+	if len(ds.Binders) > 0 {
+		return writeBinderDataset(open, ds)
+	}
+	return nil
 }
 
 // FormatRiskFactor renders a risk factor with fixed precision so output is

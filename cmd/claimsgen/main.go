@@ -40,7 +40,7 @@ generate flags:
   --years N                number of calendar years (default 10)
   --initial-book-size N    policies written in the first year, or fleets on a
                            fleet book (default 20000)
-  --origin-basis B         monthly triangle origin: accident or underwriting (default accident)
+  --origin-basis B         monthly triangle origin: accident, underwriting or binder (default accident)
   --section-detail         also write claim_sections.csv and
                            exposure_sections.csv, the section of cover of each
                            claim and the premium by origin month and section
@@ -81,7 +81,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 	startYear := fs.Int("start-year", 1998, "first calendar year")
 	years := fs.Int("years", 10, "number of calendar years")
 	initialBookSize := fs.Int("initial-book-size", 20000, "policies in the first year")
-	originBasis := fs.String("origin-basis", "accident", "monthly triangle origin basis")
+	originBasis := fs.String("origin-basis", "accident", "monthly triangle origin basis: accident, underwriting or binder")
 	sectionDetail := fs.Bool("section-detail", false, "also write claim_sections.csv and exposure_sections.csv")
 	episodes := fs.Bool("episodes", false, "also write claim_episodes.csv")
 	if err := fs.Parse(args); err != nil {
@@ -152,7 +152,7 @@ func runGenerate(args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	if *episodes {
+	if *episodes && len(ds.Binders) == 0 {
 		if err := csvout.WriteEpisodes(*out, ds); err != nil {
 			fmt.Fprintf(stderr, "claimsgen: %v\n", err)
 			return 1

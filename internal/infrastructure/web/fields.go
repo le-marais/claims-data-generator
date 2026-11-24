@@ -44,6 +44,10 @@ var severityFields = []formField{
 // enforces; the excess choices table, the names and the section switches are
 // built separately or left to the YAML.
 var formFields = []fieldGroup{
+	{Label: "Premium reporting", Fields: []formField{
+		{Path: []string{"premium_reporting", "correction_probability"}, Label: "Correction probability", Tip: "Chance an initial declaration contains a clerical error."},
+		{Path: []string{"premium_reporting", "delayed_batch_probability"}, Label: "Delayed batch probability", Tip: "Chance a monthly binder batch is held for an extra two months."},
+	}},
 	{
 		Label: "Book",
 		Fields: []formField{

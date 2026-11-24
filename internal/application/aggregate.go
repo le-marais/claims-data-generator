@@ -41,7 +41,7 @@ func Aggregate(ds Dataset, startYear, years int, basis triangle.OriginBasis) (Ag
 	}
 	start := shared.NewMonth(startYear, time.January)
 	months := years * 12
-	grid, err := triangle.BuildMonthlyGrid(ds.Policies, ds.Claims, ds.Transactions, start, months, basis)
+	grid, err := triangle.BuildMonthlyGrid(ds.Policies, ds.Claims, ds.Transactions, start, months, basis, ds.Premium.Declarations...)
 	if err != nil {
 		return Aggregates{}, err
 	}
