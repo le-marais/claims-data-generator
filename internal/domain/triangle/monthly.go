@@ -2,9 +2,11 @@ package triangle
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/le-marais/claimsgen/internal/domain/claim"
 	"github.com/le-marais/claimsgen/internal/domain/policy"
+	"github.com/le-marais/claimsgen/internal/domain/premium"
 	"github.com/le-marais/claimsgen/internal/domain/shared"
 	"github.com/le-marais/claimsgen/internal/domain/transaction"
 )
@@ -13,10 +15,11 @@ import (
 type Measure int
 
 const (
-	MeasurePaid     Measure = iota // payments, gross of recoveries
-	MeasurePaidNet                 // payments net of salvage and subrogation
-	MeasureIncurred                // gross case movements plus net paid
-	MeasureReported                // claim counts, by report month
+	MeasurePaid            Measure = iota // payments, gross of recoveries
+	MeasurePaidNet                        // payments net of salvage and subrogation
+	MeasureIncurred                       // gross case movements plus net paid
+	MeasureReported                       // claim counts, by report month
+	MeasureDeclaredPremium                // actual declared premium in dollars
 )
 
 // MonthlyGrid holds incremental monthly triangles: row o is origin month
@@ -29,13 +32,14 @@ const (
 // grain is a plain sum over cells (see Coarsen) and a cumulative view is a
 // running sum along a row.
 type MonthlyGrid struct {
-	Basis      OriginBasis
-	StartMonth shared.Month
-	DevPeriods int
-	Paid       [][]float64
-	PaidNet    [][]float64
-	Incurred   [][]float64
-	Reported   [][]int
+	DeclaredPremiumCents [][]int64
+	Basis                OriginBasis
+	StartMonth           shared.Month
+	DevPeriods           int
+	Paid                 [][]float64
+	PaidNet              [][]float64
+	Incurred             [][]float64
+	Reported             [][]int
 }
 
 // Origins returns the number of origin months in the grid.
@@ -44,6 +48,12 @@ func (g MonthlyGrid) Origins() int { return len(g.Paid) }
 // Cell reads one cell with a 1-based development period. Reported counts
 // convert to float64. Indices outside the grid read as zero.
 func (g MonthlyGrid) Cell(m Measure, origin, dev int) float64 {
+	if m == MeasureDeclaredPremium {
+		if origin < 0 || origin >= len(g.DeclaredPremiumCents) || dev < 1 || dev > len(g.DeclaredPremiumCents[origin]) {
+			return 0
+		}
+		return float64(g.DeclaredPremiumCents[origin][dev-1]) / 100
+	}
 	if m == MeasureReported {
 		if origin < 0 || origin >= len(g.Reported) || dev < 1 || dev > len(g.Reported[origin]) {
 			return 0
@@ -80,6 +90,7 @@ func BuildMonthlyGrid(
 	startMonth shared.Month,
 	originMonths int,
 	basis OriginBasis,
+	declarations ...premium.Declaration,
 ) (MonthlyGrid, error) {
 	if err := basis.Validate(); err != nil {
 		return MonthlyGrid{}, err
@@ -111,6 +122,24 @@ func BuildMonthlyGrid(
 		widen(tx.ClaimID, tx.Date.Month())
 	}
 
+	binderOrigins := map[int]int{}
+	if basis == BinderYear {
+		for _, p := range policies {
+			if p.BinderID == 0 {
+				return MonthlyGrid{}, fmt.Errorf("policy %d has no binder", p.ID)
+			}
+			binderOrigins[p.BinderID] = shared.MonthsBetween(startMonth, shared.NewMonth(p.BinderYear, time.January))
+		}
+		for _, decl := range declarations {
+			row, ok := binderOrigins[decl.BinderID]
+			if !ok {
+				return MonthlyGrid{}, fmt.Errorf("declaration %d has unknown binder %d", decl.ID, decl.BinderID)
+			}
+			if row >= 0 && row < originMonths {
+				devPeriods = max(devPeriods, devPeriod(startMonth, row, decl.Processed.Month()))
+			}
+		}
+	}
 	g := MonthlyGrid{
 		Basis:      basis,
 		StartMonth: startMonth,
@@ -121,6 +150,18 @@ func BuildMonthlyGrid(
 		Reported:   newIntCells(originMonths, devPeriods),
 	}
 
+	if basis == BinderYear && declarations != nil {
+		g.DeclaredPremiumCents = make([][]int64, originMonths)
+		for i := range g.DeclaredPremiumCents {
+			g.DeclaredPremiumCents[i] = make([]int64, devPeriods)
+		}
+		for _, decl := range declarations {
+			row := binderOrigins[decl.BinderID]
+			if row >= 0 && row < originMonths {
+				g.DeclaredPremiumCents[row][devPeriod(startMonth, row, decl.Processed.Month())-1] += int64(decl.Amount)
+			}
+		}
+	}
 	// Pass two places every movement. The weights match the annual triangles
 	// this grid replaces: paid counts payments only; net paid subtracts
 	// recoveries; incurred adds every case movement and payment and subtracts
@@ -159,16 +200,19 @@ func BuildMonthlyGrid(
 // absent from the book is an error rather than a silent drop.
 func originRows(policies []policy.Policy, claims []claim.Claim, basis OriginBasis, startMonth shared.Month, originMonths int) (map[int]int, error) {
 	var coverStart map[int]shared.Month
-	if basis == UnderwritingMonth {
+	if basis == UnderwritingMonth || basis == BinderYear {
 		coverStart = make(map[int]shared.Month, len(policies))
 		for _, p := range policies {
 			coverStart[p.ID] = p.CoverStart.Month()
+			if basis == BinderYear {
+				coverStart[p.ID] = shared.NewMonth(p.BinderYear, time.January)
+			}
 		}
 	}
 	rows := make(map[int]int, len(claims))
 	for _, c := range claims {
 		origin := c.OccurrenceDate.Month()
-		if basis == UnderwritingMonth {
+		if basis == UnderwritingMonth || basis == BinderYear {
 			m, ok := coverStart[c.PolicyID]
 			if !ok {
 				return nil, fmt.Errorf("claim %d: policy %d is not in the book", c.ID, c.PolicyID)

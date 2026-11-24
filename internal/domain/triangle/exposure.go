@@ -57,8 +57,12 @@ func ExposureByMonth(policies []policy.Policy, startMonth shared.Month, months i
 		if termDays <= 0 {
 			continue
 		}
-		if basis == UnderwritingMonth {
-			i := shared.MonthsBetween(startMonth, p.CoverStart.Month())
+		if basis == UnderwritingMonth || basis == BinderYear {
+			origin := p.CoverStart.Month()
+			if basis == BinderYear {
+				origin = shared.NewMonth(p.BinderYear, time.January)
+			}
+			i := shared.MonthsBetween(startMonth, origin)
 			if i < 0 || i >= months {
 				continue
 			}

@@ -571,3 +571,32 @@ If you contribute to claimsgen, keep the five living docs in `docs/` current in 
 - `docs/todo.md` - smaller or administrative items still to be done
 
 See "Living docs" in `AGENTS.md` for the full rules.
+
+### Delegated commercial property
+
+The Property configuration writes annual binding authorities for four coverholders,
+renewing in January, April, July and October. A risk incepts during its binder
+term and keeps its binder year of account throughout claims and premium runoff.
+The two sections simulate attritional building damage and shared storm events.
+All amounts are USD at full participation. Premium is gross of commission and
+brokerage and excludes taxes. Claims are gross and recoveries are disabled.
+
+```sh
+go run ./cmd/claimsgen generate --config data/property.yaml --seed 71 --start-year 2017 --years 10 --initial-book-size 1200 --origin-basis binder --episodes --out output/property
+```
+
+The annual binder book and its optional monthly declarations use separate
+switches. Reporting cannot change the policies, claims or contractual
+premiums of a binder book. Most policies have a single initial declaration.
+A clerical error creates a linked additional or return correction. Movements
+in the same binder and reporting month are processed together.
+
+The raw export includes all runoff and a warm-up binder year. Each binder's
+fixed estimate uses its planned writing volume and an independent sample of
+anticipated risk prices. Retain estimates only from binders incepted by the
+valuation. Use only movements processed by that valuation in observed premium.
+A policy premium and its complete ledger are validation truth. The binder
+basis keys the monthly grid to January of the binder inception year. A monthly
+cell's calendar month is its origin plus its one-based development month minus
+one. Sum monthly increments into the desired calendar quarters, then cumulate.
+See the [Property calibration and file contract](data/property-calibration.md).

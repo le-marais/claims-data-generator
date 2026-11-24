@@ -137,3 +137,15 @@ The CLI dispatches `generate` (load a `--preset`, motor personal by default, or 
 - **No free text in the CSVs.** If a free-text column is ever added, switch to `encoding/csv` with formula-lead-character escaping in the same change.
 
 The model's deliberate simplifications are listed in the README's "Assumptions and known simplifications".
+
+## Delegated property
+
+The binder book in the policy domain allocates each risk to a renewable
+coverholder authority before drawing its inception in that authority's term.
+The application extends the occurrence, event and inflation horizons through
+the last policy expiry. Fixed inception estimates price independently sampled
+anticipated risks against planned volumes. The premium domain writes signed
+declarations and corrections into binder-month batches on a separate stream.
+Binder aggregation joins claims to their policies and keys each movement to
+January of the binder year and its own processing calendar month. Actual
+premium remains integer cents through aggregation and CSV export.

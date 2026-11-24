@@ -30,18 +30,25 @@ var motorYAML []byte
 // These exported types also serve as the JSON shape of the web API.
 
 type LOBParams struct {
-	Name    string        `yaml:"name" json:"name"`
-	Book    BookParams    `yaml:"book" json:"book"`
-	Pricing PricingParams `yaml:"pricing" json:"pricing"`
-	Claims  ClaimsParams  `yaml:"claims" json:"claims"`
-	Runoff  RunoffParams  `yaml:"runoff" json:"runoff"`
+	PremiumReporting PremiumReportingParams `yaml:"premium_reporting" json:"premium_reporting"`
+	Name             string                 `yaml:"name" json:"name"`
+	Book             BookParams             `yaml:"book" json:"book"`
+	Pricing          PricingParams          `yaml:"pricing" json:"pricing"`
+	Claims           ClaimsParams           `yaml:"claims" json:"claims"`
+	Runoff           RunoffParams           `yaml:"runoff" json:"runoff"`
 
 	SeasonalHoliday SeasonalHolidayParams `yaml:"seasonal_holiday" json:"seasonal_holiday"`
 	BusinessDays    BusinessDayParams     `yaml:"business_days" json:"business_days"`
 }
 
 // BookParams mirrors lob.BookParams for YAML/JSON.
+type PremiumReportingParams struct {
+	Enabled                 bool    `yaml:"enabled" json:"enabled"`
+	CorrectionProbability   float64 `yaml:"correction_probability" json:"correction_probability"`
+	DelayedBatchProbability float64 `yaml:"delayed_batch_probability" json:"delayed_batch_probability"`
+}
 type BookParams struct {
+	AnnualBinders       bool                 `yaml:"annual_binders" json:"annual_binders"`
 	GrowthFactor        float64              `yaml:"growth_factor" json:"growth_factor"`
 	SizeVolatility      float64              `yaml:"size_volatility" json:"size_volatility"`
 	Spread              float64              `yaml:"spread" json:"spread"`
@@ -387,8 +394,10 @@ func (d LOBParams) ToDomain() lob.LineOfBusiness {
 		}
 	}
 	return lob.LineOfBusiness{
-		Name: d.Name,
+		Name:             d.Name,
+		PremiumReporting: lob.PremiumReportingParams(d.PremiumReporting),
 		Book: lob.BookParams{
+			AnnualBinders:       d.Book.AnnualBinders,
 			GrowthFactor:        d.Book.GrowthFactor,
 			SizeVolatility:      d.Book.SizeVolatility,
 			Spread:              d.Book.Spread,

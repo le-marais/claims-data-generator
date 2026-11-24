@@ -1,0 +1,55 @@
+# Delegated commercial property, USD, 100% participation. Gross of commission
+# and brokerage, excluding tax. Gross claims with no recoveries.
+name: property
+book:
+  annual_binders: true
+  growth_factor: 1.02
+  size_volatility: 0.025
+  spread: 0.45
+  sum_insured_median: 600000
+  sum_insured_inflation: 1.025
+  excess_choices: [{value: 1000, weight: 0.5}, {value: 2500, weight: 0.5}]
+premium_reporting:
+  enabled: true
+  correction_probability: 0.06
+  delayed_batch_probability: 0.08
+pricing:
+  target_loss_ratio: 0.68
+  adequacy_volatility: 0.02
+  inflation_mean: 1.035
+  nil_probability: 0.04
+  reopen_probability: 0.02
+  reopen_estimate_factor: 0.30
+  sections:
+    - name: building_damage
+      base_frequency: 0.10
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.025, sigma: 0.95}
+    - name: storm_damage
+      events: {per_year: 5, hit_share: 0.009}
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.05, sigma: 1.10}
+claims:
+  inflation: {mean: 1.035, volatility: 0.02}
+  nil_probability: 0.04
+  reopening: {probability: 0.02, estimate_factor: 0.30, estimate_sigma: 0.4, lag_median_days: 90, lag_sigma: 0.6}
+  sections:
+    - name: building_damage
+      base_frequency: 0.10
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.025, sigma: 0.95}
+      report_lag: {median: 7, sigma: 1.0}
+      close_lag: {shape: 1.7, mean_days: 125, size_reference: 15000, size_elasticity: 0.35, risk_loading: 0.2}
+      settlement: {lump_sum_probability: 0.35, share: 0.45, concentration: 4}
+    - name: storm_damage
+      events: {per_year: 5, hit_share: 0.009, duration_days: 4, season_start_month: 5, season_months: 6}
+      severity: {kind: sum_insured_lognormal, median_fraction: 0.05, sigma: 1.10}
+      report_lag: {median: 12, sigma: 0.9}
+      close_lag: {shape: 1.8, mean_days: 200, size_reference: 30000, size_elasticity: 0.4, risk_loading: 0.15}
+      settlement: {lump_sum_probability: 0.25, share: 0.55, concentration: 5}
+runoff:
+  case_adequacy_mean: 1.08
+  case_adequacy_sigma: 0.35
+  payments_per_year: 3
+  concentration: 4
+  min_payment: 250
+  payment_delay_days: 10
+  revisions_per_year: 4
+  revision_sigma: 0.3

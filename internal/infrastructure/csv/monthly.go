@@ -29,16 +29,23 @@ func WriteAggregates(dir string, ag application.Aggregates) error {
 func writeAggregates(open opener, ag application.Aggregates) error {
 	g := ag.Grid
 	rows := g.Origins() * g.DevPeriods
-	if err := writeFile(open, "triangles.csv",
-		"origin_month,dev_month,paid,paid_net,incurred,reported_count",
+	header := "origin_month,dev_month,paid,paid_net,incurred,reported_count"
+	if g.DeclaredPremiumCents != nil {
+		header += ",declared_premium_cents"
+	}
+	if err := writeFile(open, "triangles.csv", header,
 		rows, func(i int) string {
 			o, d := i/g.DevPeriods, i%g.DevPeriods
-			return fmt.Sprintf("%s,%d,%s,%s,%s,%d",
+			line := fmt.Sprintf("%s,%d,%s,%s,%s,%d",
 				g.StartMonth.Add(o), d+1,
 				formatAmount(g.Paid[o][d]),
 				formatAmount(g.PaidNet[o][d]),
 				formatAmount(g.Incurred[o][d]),
 				g.Reported[o][d])
+			if g.DeclaredPremiumCents != nil {
+				line += "," + strconv.FormatInt(g.DeclaredPremiumCents[o][d], 10)
+			}
+			return line
 		}); err != nil {
 		return err
 	}

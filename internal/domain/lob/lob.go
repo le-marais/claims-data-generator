@@ -10,11 +10,12 @@ import (
 )
 
 type LineOfBusiness struct {
-	Name    string
-	Book    BookParams
-	Pricing PricingParams
-	Claims  ClaimParams
-	Runoff  RunoffParams
+	PremiumReporting PremiumReportingParams
+	Name             string
+	Book             BookParams
+	Pricing          PricingParams
+	Claims           ClaimParams
+	Runoff           RunoffParams
 	// SeasonalHoliday defers some reports and payments dated in the summer
 	// holiday to the next month.
 	SeasonalHoliday SeasonalHolidayParams
@@ -22,8 +23,15 @@ type LineOfBusiness struct {
 	BusinessDays BusinessDayParams
 }
 
+// PremiumReportingParams controls clerical errors and monthly processing delays.
+type PremiumReportingParams struct {
+	Enabled                                        bool
+	CorrectionProbability, DelayedBatchProbability float64
+}
+
 // BookParams drives the policy book simulation.
 type BookParams struct {
+	AnnualBinders bool
 	// GrowthFactor is the year-on-year trend in the number of fleets written,
 	// which without a fleet book is the policy count; each year's book size is
 	// previous size x GrowthFactor x lognormal noise.
@@ -485,6 +493,16 @@ func checkFinite(fields ...namedFloat) error {
 
 // Validate checks every parameter and names the offending field in errors.
 func (l LineOfBusiness) Validate() error {
+	r := l.PremiumReporting
+	if !(r.CorrectionProbability >= 0 && r.CorrectionProbability <= 1 && r.DelayedBatchProbability >= 0 && r.DelayedBatchProbability <= 1) {
+		return fmt.Errorf("premium_reporting probabilities must be between zero and one")
+	}
+	if r.Enabled && !l.Book.AnnualBinders {
+		return fmt.Errorf("premium_reporting requires book.annual_binders")
+	}
+	if l.Book.AnnualBinders && l.Book.Fleet.Enabled() {
+		return fmt.Errorf("annual_binders requires individual policies")
+	}
 	if l.Name == "" {
 		return fmt.Errorf("name: must not be empty")
 	}
